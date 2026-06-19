@@ -3,67 +3,401 @@
 <head>
   <meta charset="utf-8">
   <title>Lead Time Midiática</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
 </head>
 <body>
 <script>
 (function () {
-  // ─── Configure sua API Key aqui ───────────────────────────
-  // Obtenha em https://trello.com/power-ups/admin
   var APP_KEY = '35b840777660fac1ae7823df3d2398f6';
   var APP_NAME = 'Lead Time Midiática';
+  var MIN_STAGE_MS = 60000;
+  var ICON = 'https://vitorbernardesb.github.io/lead-time-trello/icon.svg';
+
+  // ═══════════════════════════════════════════════
+  //  UTILITÁRIOS
+  // ═══════════════════════════════════════════════
 
   function countBusinessDays(from, to) {
-    var start = new Date(from);
-    start.setHours(0, 0, 0, 0);
-    var end = new Date(to);
-    end.setHours(0, 0, 0, 0);
-    var count = 0;
-    var d = new Date(start);
-    while (d < end) {
-      if (d.getDay() !== 0 && d.getDay() !== 6) count++;
-      d.setDate(d.getDate() + 1);
-    }
-    return count;
+    var s = new Date(from); s.setHours(0,0,0,0);
+    var e = new Date(to);   e.setHours(0,0,0,0);
+    var c = 0, d = new Date(s);
+    while (d < e) { if (d.getDay()!==0 && d.getDay()!==6) c++; d.setDate(d.getDate()+1); }
+    return c;
   }
 
+  function fmtDate(v) {
+    if (!v) return '';
+    var d = new Date(v);
+    return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+  }
+
+  function buildTimeline(actions) {
+    actions.sort(function(a,b){ return new Date(a.date)-new Date(b.date); });
+    var stages = [];
+    for (var i=0; i<actions.length; i++) {
+      var act=actions[i], date=new Date(act.date);
+      if ((act.type==='createCard'||act.type==='copyCard') && act.data.list) {
+        stages.push({name:act.data.list.name, enteredAt:date, leftAt:null});
+      } else if (act.type==='updateCard' && act.data.listAfter) {
+        if (stages.length===0 && act.data.listBefore)
+          stages.push({name:act.data.listBefore.name, enteredAt:date, leftAt:date});
+        if (stages.length>0) stages[stages.length-1].leftAt = date;
+        stages.push({name:act.data.listAfter.name, enteredAt:date, leftAt:null});
+      }
+    }
+    var out = [];
+    for (var j=0; j<stages.length; j++) {
+      var st=stages[j], dur=(st.leftAt?st.leftAt.getTime():Date.now())-st.enteredAt.getTime();
+      if (dur<MIN_STAGE_MS && st.leftAt && out.length>0) out[out.length-1].leftAt=st.leftAt;
+      else out.push(st);
+    }
+    return out;
+  }
+
+  function api(path, token) {
+    return 'https://api.trello.com/1'+path+(path.indexOf('?')>=0?'&':'?')+'key='+APP_KEY+'&token='+token;
+  }
+
+  function avg(arr, ignoreZeros) {
+    var f = ignoreZeros ? arr.filter(function(v){return v>0;}) : arr.filter(function(v){return v!=null;});
+    if (!f.length) return 0;
+    return Math.round(f.reduce(function(a,b){return a+b;},0)/f.length*10)/10;
+  }
+
+  // ═══════════════════════════════════════════════
+  //  BADGE
+  // ═══════════════════════════════════════════════
+
   function fetchActions(t) {
-    return t.card('id').then(function (card) {
-      return t.getRestApi().getToken().then(function (token) {
-        var url =
-          'https://api.trello.com/1/cards/' + card.id +
-          '/actions?filter=updateCard:idList,createCard,copyCard&limit=1000' +
-          '&key=' + APP_KEY + '&token=' + token;
-        return fetch(url).then(function (r) { return r.json(); });
+    return t.card('id').then(function(card) {
+      return t.getRestApi().getToken().then(function(token) {
+        return fetch(api('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000',token))
+          .then(function(r){return r.json();});
       });
     });
   }
 
-  var MIN_STAGE_MS = 60000;
-
   function badgeFromActions(actions) {
-    if (!actions || !actions.length) return null;
-    var sorted = actions.slice().sort(function (a, b) {
-      return new Date(b.date) - new Date(a.date);
-    });
-    var enteredAt = new Date(sorted[0].date);
-    for (var i = 1; i < sorted.length; i++) {
-      var prev = new Date(sorted[i].date);
-      if (enteredAt.getTime() - prev.getTime() < MIN_STAGE_MS) {
-        enteredAt = prev;
-      } else {
-        break;
-      }
+    if (!actions||!actions.length) return null;
+    var sorted=actions.slice().sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+    var enteredAt=new Date(sorted[0].date);
+    for (var i=1;i<sorted.length;i++) {
+      var prev=new Date(sorted[i].date);
+      if (enteredAt.getTime()-prev.getTime()<MIN_STAGE_MS) enteredAt=prev; else break;
     }
-    var days = countBusinessDays(enteredAt, new Date());
-    var color = days <= 3 ? 'green' : days <= 6 ? 'yellow' : 'red';
+    var days=countBusinessDays(enteredAt,new Date());
     return {
-      title: 'Dias úteis nesta etapa',
-      icon: 'https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/clock.svg',
-      text: days === 1 ? '1d útil' : days + 'd úteis',
-      color: color
+      title:'Dias úteis nesta etapa',
+      icon:'https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/clock.svg',
+      text:days===1?'1d útil':days+'d úteis',
+      color:days<=3?'green':days<=6?'yellow':'red'
     };
   }
+
+  // ═══════════════════════════════════════════════
+  //  ESTILOS XLSX
+  // ═══════════════════════════════════════════════
+
+  var B = {
+    top:{style:'thin',color:{rgb:'CCCCCC'}},
+    bottom:{style:'thin',color:{rgb:'CCCCCC'}},
+    left:{style:'thin',color:{rgb:'CCCCCC'}},
+    right:{style:'thin',color:{rgb:'CCCCCC'}}
+  };
+
+  function sHeader()   { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:11},fill:{fgColor:{rgb:'1E3A5F'}},border:B,alignment:{horizontal:'center',vertical:'center'}}; }
+  function sData(r,num) { return {fill:{fgColor:{rgb:r%2===0?'FFFFFF':'F8F9FA'}},border:B,alignment:{horizontal:num?'right':'left',vertical:'center'}}; }
+  function sMedia(num)  { return {font:{bold:true},fill:{fgColor:{rgb:'FFF9C4'}},border:B,alignment:{horizontal:num?'right':'left'}}; }
+  function sStatus(v) {
+    var bg = v==='🔴 Atrasado'?'FDE8E8' : v==='⚠️ Vence hoje'?'FFF3CD' : v==='✅ No prazo'?'E8F5E9' : 'FFFFFF';
+    return {fill:{fgColor:{rgb:bg}},border:B,alignment:{horizontal:'left'}};
+  }
+  function sKpiTitle()  { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:12},fill:{fgColor:{rgb:'1E3A5F'}},border:B}; }
+  function sKpiSub()    { return {font:{bold:true},fill:{fgColor:{rgb:'E0E0E0'}},border:B}; }
+  function sKpiData(num){ return {border:B,alignment:{horizontal:num?'right':'left'}}; }
+
+  function setS(ws,r,c,style) {
+    var ref=XLSX.utils.encode_cell({r:r,c:c});
+    if (!ws[ref]) ws[ref]={v:'',t:'s'};
+    ws[ref].s=style;
+  }
+
+  function colWidths(data,max) {
+    var w=[];
+    for (var c=0;c<data[0].length;c++) {
+      var m=8;
+      for (var r=0;r<data.length;r++) {
+        var l=String(data[r]&&data[r][c]!=null?data[r][c]:'').length;
+        if (l>m) m=l;
+      }
+      w.push({wch:Math.min(m+3,max||40)});
+    }
+    return w;
+  }
+
+  // ═══════════════════════════════════════════════
+  //  PROCESSAMENTO DE DADOS
+  // ═══════════════════════════════════════════════
+
+  function processCard(card, actions, listNames) {
+    var tl = buildTimeline(actions), now = new Date();
+    var bd={}, hrs={}, visits={}, rwList={}, rework=0, created=null;
+
+    listNames.forEach(function(n){ bd[n]=0; hrs[n]=0; });
+
+    for (var i=0;i<actions.length;i++) {
+      if (actions[i].type==='createCard'||actions[i].type==='copyCard') {
+        var dt=new Date(actions[i].date);
+        if (!created||dt<created) created=dt;
+      }
+    }
+
+    tl.forEach(function(st) {
+      var end=st.leftAt||now;
+      var b=countBusinessDays(st.enteredAt,end);
+      var h=(end.getTime()-st.enteredAt.getTime())/3600000;
+      if (bd.hasOwnProperty(st.name)) { bd[st.name]+=b; hrs[st.name]+=h; }
+      visits[st.name]=(visits[st.name]||0)+1;
+      if (visits[st.name]>1) rework++;
+    });
+
+    for (var ln in visits) rwList[ln]=visits[ln]>1;
+
+    var totalBD=0;
+    listNames.forEach(function(n){ totalBD+=bd[n]; });
+
+    var dud=null;
+    if (card.due) {
+      var td=new Date(); td.setHours(0,0,0,0);
+      var du=new Date(card.due); du.setHours(0,0,0,0);
+      dud=Math.round((du-td)/86400000);
+    }
+
+    var sp = dud===null?'—' : dud<0?'🔴 Atrasado' : dud===0?'⚠️ Vence hoje' : '✅ No prazo';
+    var mem=(card.members||[]).map(function(m){return m.fullName;}).join(' | ');
+    var lab=(card.labels||[]).map(function(l){return l.name||l.color;}).join(' | ');
+
+    return {
+      name:card.name, members:mem, labels:lab,
+      due:card.due?fmtDate(card.due):'', daysUntilDue:dud,
+      lastAct:fmtDate(card.dateLastActivity), createdAt:created?fmtDate(created):'',
+      bd:bd, hrs:hrs, totalBD:totalBD, rework:rework, status:sp, rwList:rwList
+    };
+  }
+
+  // ═══════════════════════════════════════════════
+  //  ABA RELATÓRIO
+  // ═══════════════════════════════════════════════
+
+  function sheetRelatorio(cards, listNames) {
+    var hdr=['Card','Responsável','Labels','Prazo','Dias até Prazo','Última Atividade','Criado em'];
+    var fix=hdr.length;
+    listNames.forEach(function(n){hdr.push(n);});
+    hdr.push('Lead Time Total (d.u.)');
+    var ltCol=hdr.length-1;
+    listNames.forEach(function(n){hdr.push(n+' (h)');});
+    hdr.push('Rework');
+    var rwCol=hdr.length-1;
+    hdr.push('Status Prazo');
+    var stCol=hdr.length-1;
+
+    var numCols={};
+    numCols[4]=true;
+    for (var ci=fix;ci<=rwCol;ci++) numCols[ci]=true;
+
+    var data=[hdr];
+    cards.forEach(function(c) {
+      var row=[c.name,c.members,c.labels,c.due,c.daysUntilDue!=null?c.daysUntilDue:'—',c.lastAct,c.createdAt];
+      listNames.forEach(function(n){row.push(c.bd[n]);});
+      row.push(c.totalBD);
+      listNames.forEach(function(n){row.push(Math.round(c.hrs[n]*10)/10);});
+      row.push(c.rework);
+      row.push(c.status);
+      data.push(row);
+    });
+
+    var mRow=new Array(hdr.length);
+    for (var mi=0;mi<mRow.length;mi++) mRow[mi]='';
+    mRow[0]='MÉDIA';
+    var dueVals=cards.filter(function(c){return c.daysUntilDue!=null;}).map(function(c){return c.daysUntilDue;});
+    mRow[4]=dueVals.length?avg(dueVals,false):'—';
+    listNames.forEach(function(n,i){ mRow[fix+i]=avg(cards.map(function(c){return c.bd[n];}),true); });
+    mRow[ltCol]=avg(cards.map(function(c){return c.totalBD;}),false);
+    listNames.forEach(function(n,i){ mRow[ltCol+1+i]=avg(cards.map(function(c){return c.hrs[n];}),true); });
+    mRow[rwCol]=avg(cards.map(function(c){return c.rework;}),false);
+    data.push(mRow);
+
+    var ws=XLSX.utils.aoa_to_sheet(data);
+    ws['!cols']=colWidths(data,40);
+
+    var totalR=data.length, totalC=hdr.length;
+    for (var r=0;r<totalR;r++) {
+      for (var c=0;c<totalC;c++) {
+        if (r===0) setS(ws,r,c,sHeader());
+        else if (r===totalR-1) setS(ws,r,c,sMedia(!!numCols[c]));
+        else if (c===stCol) setS(ws,r,c,sStatus(data[r][c]));
+        else setS(ws,r,c,sData(r-1,!!numCols[c]));
+      }
+    }
+
+    return ws;
+  }
+
+  // ═══════════════════════════════════════════════
+  //  ABA KPIs
+  // ═══════════════════════════════════════════════
+
+  function sheetKPIs(cards, listNames) {
+    var rows=[], types=[];
+    function addTitle(text,cols) {
+      var r=new Array(cols); for(var i=0;i<cols;i++) r[i]=''; r[0]=text;
+      rows.push(r); types.push('title');
+    }
+    function addSub(arr) { rows.push(arr); types.push('sub'); }
+    function addRow(arr)  { rows.push(arr); types.push('data'); }
+    function addBlank(cols) { var r=new Array(cols); for(var i=0;i<cols;i++) r[i]=''; rows.push(r); types.push('empty'); }
+
+    var total=cards.length;
+    var avgLT=avg(cards.map(function(c){return c.totalBD;}),false);
+    var rwCards=cards.filter(function(c){return c.rework>0;}).length;
+    var dueCards=cards.filter(function(c){return c.daysUntilDue!=null;}).length;
+    var lateCards=cards.filter(function(c){return c.status==='🔴 Atrasado';}).length;
+    function pct(n){ return total?Math.round(n/total*1000)/10:0; }
+
+    addTitle('Visão Geral',2);
+    addSub(['Indicador','Valor']);
+    addRow(['Total de cards em aberto',total]);
+    addRow(['Lead time médio total (d.u.)',avgLT]);
+    addRow(['Cards com rework',rwCards+' ('+pct(rwCards)+'%)']);
+    addRow(['Cards com prazo definido',dueCards+' ('+pct(dueCards)+'%)']);
+    addRow(['Cards atrasados',lateCards+' ('+pct(lateCards)+'%)']);
+    addBlank(2);
+
+    var stageData=listNames.map(function(n) {
+      var bv=cards.map(function(c){return c.bd[n];}).filter(function(v){return v>0;});
+      var hv=cards.map(function(c){return c.hrs[n];}).filter(function(v){return v>0;});
+      var passed=bv.length;
+      var rwInStage=cards.filter(function(c){return c.rwList[n];}).length;
+      return {name:n,avgBd:avg(bv,false),avgH:avg(hv,false),passed:passed,rwPct:passed?Math.round(rwInStage/passed*1000)/10:0};
+    }).sort(function(a,b){return b.avgBd-a.avgBd;});
+
+    addTitle('Gargalos por Etapa',5);
+    addSub(['Etapa','Média d.u.','Média horas','Cards que passaram','% com rework']);
+    stageData.forEach(function(s){ addRow([s.name,s.avgBd,s.avgH,s.passed,s.rwPct+'%']); });
+    addBlank(5);
+
+    var memMap={};
+    cards.forEach(function(c){
+      if (!c.members) return;
+      c.members.split(' | ').forEach(function(m){
+        if (!m) return;
+        if (!memMap[m]) memMap[m]=[];
+        memMap[m].push(c);
+      });
+    });
+    var memData=Object.keys(memMap).map(function(m){
+      var mc=memMap[m];
+      return {name:m,count:mc.length,avgLt:avg(mc.map(function(c){return c.totalBD;}),false),
+        rw:mc.reduce(function(a,c){return a+c.rework;},0),
+        late:mc.filter(function(c){return c.status==='🔴 Atrasado';}).length};
+    }).sort(function(a,b){return b.count-a.count;});
+
+    addTitle('Carga por Responsável',5);
+    addSub(['Responsável','Cards atribuídos','Lead time médio','Reworks','Cards atrasados']);
+    memData.forEach(function(m){ addRow([m.name,m.count,m.avgLt,m.rw,m.late]); });
+    addBlank(5);
+
+    var labMap={};
+    cards.forEach(function(c){
+      if (!c.labels) return;
+      c.labels.split(' | ').forEach(function(l){
+        if (!l) return;
+        if (!labMap[l]) labMap[l]=[];
+        labMap[l].push(c);
+      });
+    });
+    var labData=Object.keys(labMap).map(function(l){
+      var lc=labMap[l];
+      var late=lc.filter(function(c){return c.status==='🔴 Atrasado';}).length;
+      return {name:l,count:lc.length,avgLt:avg(lc.map(function(c){return c.totalBD;}),false),
+        latePct:lc.length?Math.round(late/lc.length*1000)/10:0};
+    }).sort(function(a,b){return b.count-a.count;});
+
+    addTitle('Distribuição por Label',4);
+    addSub(['Label','Quantidade de cards','Lead time médio','% atrasados']);
+    labData.forEach(function(l){ addRow([l.name,l.count,l.avgLt,l.latePct+'%']); });
+
+    var maxCols=5;
+    rows.forEach(function(r){ while(r.length<maxCols) r.push(''); });
+
+    var ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{wch:30},{wch:20},{wch:18},{wch:22},{wch:16}];
+
+    for (var r=0;r<rows.length;r++) {
+      for (var c=0;c<maxCols;c++) {
+        if (types[r]==='title')     setS(ws,r,c,sKpiTitle());
+        else if (types[r]==='sub')  setS(ws,r,c,sKpiSub());
+        else if (types[r]==='data') setS(ws,r,c,sKpiData(c>0));
+      }
+    }
+
+    return ws;
+  }
+
+  // ═══════════════════════════════════════════════
+  //  EXPORTAÇÃO
+  // ═══════════════════════════════════════════════
+
+  function exportReport(t) {
+    if (typeof XLSX==='undefined')
+      return t.alert({message:'Erro: biblioteca de exportação não carregou. Recarregue a página.',display:'error',duration:10});
+
+    var token;
+    return t.getRestApi().getToken()
+      .then(function(tok) {
+        token=tok;
+        return t.board('id');
+      })
+      .then(function(board) {
+        return Promise.all([
+          fetch(api('/boards/'+board.id+'/lists?fields=name',token)).then(function(r){return r.json();}),
+          fetch(api('/boards/'+board.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels&members=true&member_fields=fullName',token)).then(function(r){return r.json();})
+        ]);
+      })
+      .then(function(res) {
+        var lists=res[0], cards=res[1];
+        if (!cards||!cards.length)
+          return t.alert({message:'Nenhum card em aberto encontrado.',display:'warning',duration:6});
+
+        var listNames=lists.map(function(l){return l.name;});
+        var promises=cards.map(function(c){
+          return fetch(api('/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000',token))
+            .then(function(r){return r.json();});
+        });
+
+        return Promise.all(promises).then(function(allActions) {
+          var processed=cards.map(function(c,i){ return processCard(c,allActions[i],listNames); });
+
+          var wb=XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb,sheetRelatorio(processed,listNames),'Relatório');
+          XLSX.utils.book_append_sheet(wb,sheetKPIs(processed,listNames),'KPIs');
+
+          var hoje=new Date();
+          var fn='leadtime_midiatica_'+String(hoje.getDate()).padStart(2,'0')+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+hoje.getFullYear()+'.xlsx';
+          XLSX.writeFile(wb,fn);
+
+          return t.alert({message:'Relatório exportado com sucesso!',display:'success',duration:5});
+        });
+      })
+      .catch(function(err) {
+        return t.alert({message:'Erro ao exportar: '+(err.message||String(err)),display:'error',duration:10});
+      });
+  }
+
+  // ═══════════════════════════════════════════════
+  //  INICIALIZAÇÃO
+  // ═══════════════════════════════════════════════
 
   TrelloPowerUp.initialize({
     'card-badges': function (t) {
@@ -79,13 +413,21 @@
     'card-back-section': function (t) {
       return {
         title: APP_NAME,
-        icon: 'https://vitorbernardesb.github.io/lead-time-trello/icon.svg',
+        icon: ICON,
         content: {
           type: 'iframe',
           url: t.signUrl('./card-section.html'),
           height: 250
         }
       };
+    },
+
+    'board-buttons': function (t) {
+      return [{
+        icon: 'https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/download.svg',
+        text: 'Exportar Lead Time',
+        callback: exportReport
+      }];
     },
 
     'authorization-status': function (t) {
