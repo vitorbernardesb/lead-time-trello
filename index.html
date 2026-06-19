@@ -418,24 +418,45 @@
         boardId = board.id;
         return Promise.all([
           fetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(function(r){return r.json();}),
-          fetch(apiUrl('/boards/'+boardId+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&members=true&member_fields=fullName', token)).then(function(r){return r.json();}),
           fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){return r.json();})
         ]);
       })
       .then(function(res) {
-        var lists = res[0], cards = res[1], customFields = res[2];
-        if (!Array.isArray(cards) || !cards.length)
-          return t.alert({message:'Nenhum card em aberto encontrado.', display:'warning', duration:6});
+        var lists = res[0], customFields = res[1];
 
-        var listNames = FLOW_LISTS.filter(function(fn) {
-          return lists.some(function(l){ return l.name.trim() === fn; });
+        var flowLists = [];
+        if (Array.isArray(lists)) {
+          lists.forEach(function(l) {
+            for (var fi = 0; fi < FLOW_LISTS.length; fi++) {
+              if (l.name.trim() === FLOW_LISTS[fi]) { flowLists.push(l); break; }
+            }
+          });
+        }
+
+        var listNames = flowLists.map(function(l) { return l.name.trim(); });
+        listNames.sort(function(a, b) {
+          return FLOW_LISTS.indexOf(a) - FLOW_LISTS.indexOf(b);
         });
 
-        var flowListIds = {};
-        lists.forEach(function(l) {
-          if (FLOW_LISTS.indexOf(l.name.trim()) >= 0) flowListIds[l.id] = true;
+        if (!flowLists.length)
+          return t.alert({message:'Nenhuma lista do fluxo encontrada.', display:'warning', duration:6});
+
+        return Promise.all(flowLists.map(function(l) {
+          return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&members=true&member_fields=fullName', token))
+            .then(function(r){return r.json();});
+        })).then(function(cardArrays) {
+          var cards = [];
+          cardArrays.forEach(function(arr) {
+            if (Array.isArray(arr)) cards = cards.concat(arr);
+          });
+          if (!cards.length)
+            return t.alert({message:'Nenhum card em aberto encontrado.', display:'warning', duration:6});
+          return { cards: cards, customFields: customFields, listNames: listNames };
         });
-        cards = cards.filter(function(c) { return flowListIds[c.idList]; });
+      })
+      .then(function(data) {
+        if (!data) return;
+        var cards = data.cards, customFields = data.customFields, listNames = data.listNames;
 
         var retrabalhoField = null;
         if (Array.isArray(customFields)) {
