@@ -123,7 +123,7 @@
 
   function sHeader()    { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:11},fill:{fgColor:{rgb:'1E3A5F'}},border:BD,alignment:{horizontal:'center',vertical:'center'}}; }
   function sData(r,num) { return {fill:{fgColor:{rgb:r%2===0?'FFFFFF':'F8F9FA'}},border:BD,alignment:{horizontal:num?'right':'left',vertical:'center'}}; }
-  function sMedia(num)  { return {font:{bold:true},fill:{fgColor:{rgb:'FFF9C4'}},border:BD,alignment:{horizontal:num?'right':'left'}}; }
+  function sMedia(num)  { var o = {font:{bold:true},fill:{fgColor:{rgb:'FFF9C4'}},border:BD,alignment:{horizontal:num?'right':'left'}}; if(num) o.numFmt='0.0'; return o; }
 
   function sStatus(v) {
     var bg = v==='🔴 Atrasado'?'FDE8E8' : v==='⚠️ Vence hoje'?'FFF3CD' : v==='✅ No prazo'?'E8F5E9' : 'FFFFFF';
