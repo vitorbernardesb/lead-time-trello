@@ -32,7 +32,7 @@
       return t.getRestApi().getToken().then(function (token) {
         var url =
           'https://api.trello.com/1/cards/' + card.id +
-          '/actions?filter=updateCard:idList,createCard&limit=1000' +
+          '/actions?filter=updateCard:idList,createCard,copyCard&limit=1000' +
           '&key=' + APP_KEY + '&token=' + token;
         return fetch(url).then(function (r) { return r.json(); });
       });

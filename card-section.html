@@ -91,7 +91,7 @@
     for (var i = 0; i < actions.length; i++) {
       var act = actions[i];
       var date = new Date(act.date);
-      if (act.type === 'createCard' && act.data.list) {
+      if ((act.type === 'createCard' || act.type === 'copyCard') && act.data.list) {
         stages.push({ name: act.data.list.name, enteredAt: date, leftAt: null });
       } else if (act.type === 'updateCard' && act.data.listAfter) {
         if (stages.length === 0 && act.data.listBefore) {
@@ -158,7 +158,7 @@
         return t.getRestApi().getToken().then(function (token) {
           return fetch(
             'https://api.trello.com/1/cards/' + card.id +
-            '/actions?filter=updateCard:idList,createCard&limit=1000' +
+            '/actions?filter=updateCard:idList,createCard,copyCard&limit=1000' +
             '&key=' + APP_KEY + '&token=' + token
           ).then(function (r) { return r.json(); });
         });
