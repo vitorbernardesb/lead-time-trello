@@ -33,6 +33,7 @@
   }
 
   function buildTimeline(actions) {
+    if (!Array.isArray(actions)) actions = [];
     actions.sort(function(a,b){ return new Date(a.date)-new Date(b.date); });
     var stages = [];
     for (var i=0; i<actions.length; i++) {
