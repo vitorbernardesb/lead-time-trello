@@ -80,7 +80,7 @@
   }
 
   function badgeFromActions(actions) {
-    if (!actions||!actions.length) return null;
+    if (!Array.isArray(actions)||!actions.length) return null;
     var sorted=actions.slice().sort(function(a,b){return new Date(b.date)-new Date(a.date);});
     var enteredAt=new Date(sorted[0].date);
     for (var i=1;i<sorted.length;i++) {
@@ -142,6 +142,7 @@
   // ═══════════════════════════════════════════════
 
   function processCard(card, actions, listNames) {
+    if (!Array.isArray(actions)) actions = [];
     var tl = buildTimeline(actions), now = new Date();
     var bd={}, hrs={}, visits={}, rwList={}, rework=0, created=null;
 
