@@ -13,6 +13,19 @@
   var APP_NAME = 'Lead Time Midiática';
   var MIN_STAGE_MS = 60000;
   var ICON = 'https://vitorbernardesb.github.io/lead-time-trello/icon.svg';
+  var FLOW_LISTS = [
+    'Concluído 🏆',
+    '⚠️Atrasos⚠️',
+    'Captação de Imagem 🎥',
+    'Revisões em Atraso ⏰',
+    'A fazer 👇',
+    'Planejamento',
+    'Revisão Interna 🔎',
+    '🛑URGÊNCIAS🛑',
+    'Em andamento 💪',
+    'Alterações ✏️',
+    'Revisão Externa 🧐'
+  ];
 
   // ═══════════════════════════════════════════════
   //  UTILITÁRIOS
@@ -372,7 +385,7 @@
         if (!cards||!cards.length)
           return t.alert({message:'Nenhum card em aberto encontrado.',display:'warning',duration:6});
 
-        var listNames=lists.map(function(l){return l.name;});
+        var listNames=lists.map(function(l){return l.name;}).filter(function(n){return FLOW_LISTS.indexOf(n)>=0;});
         var promises=cards.map(function(c){
           return fetch(api('/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000',token))
             .then(function(r){return r.json();});
