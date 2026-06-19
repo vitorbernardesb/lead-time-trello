@@ -418,7 +418,7 @@
         boardId = board.id;
         return Promise.all([
           fetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(function(r){return r.json();}),
-          fetch(apiUrl('/boards/'+boardId+'/cards?filter=open&fields=name,due,dateLastActivity,labels&members=true&member_fields=fullName', token)).then(function(r){return r.json();}),
+          fetch(apiUrl('/boards/'+boardId+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&members=true&member_fields=fullName', token)).then(function(r){return r.json();}),
           fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){return r.json();})
         ]);
       })
@@ -430,6 +430,12 @@
         var listNames = FLOW_LISTS.filter(function(fn) {
           return lists.some(function(l){ return l.name.trim() === fn; });
         });
+
+        var flowListIds = {};
+        lists.forEach(function(l) {
+          if (FLOW_LISTS.indexOf(l.name.trim()) >= 0) flowListIds[l.id] = true;
+        });
+        cards = cards.filter(function(c) { return flowListIds[c.idList]; });
 
         var retrabalhoField = null;
         if (Array.isArray(customFields)) {
