@@ -85,7 +85,7 @@
     return el.innerHTML;
   }
 
-  var MIN_STAGE_MS = 60000;
+  var MIN_STAGE_MS = 600000;
 
   function buildTimeline(actions) {
     actions.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
