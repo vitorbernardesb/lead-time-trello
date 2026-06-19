@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Lead Time Midiática – Histórico</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      color: #172b4d;
+      padding: 8px 0;
+    }
+    #content { width: 100%; }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      text-align: left;
+      padding: 6px 12px;
+      border-bottom: 2px solid #dfe1e6;
+      font-weight: 600;
+      color: #5e6c84;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    td { padding: 6px 12px; border-bottom: 1px solid #ebecf0; }
+    tr.current td { background-color: #e3fcef; font-weight: 600; }
+    tr.total td {
+      font-weight: 700;
+      border-top: 2px solid #dfe1e6;
+      border-bottom: none;
+      background-color: #f4f5f7;
+    }
+    .msg { text-align: center; padding: 24px 12px; color: #5e6c84; }
+    .msg.error { color: #eb5a46; }
+    .auth-btn {
+      margin-top: 8px;
+      background: #0079bf;
+      color: #fff;
+      border: none;
+      border-radius: 3px;
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .auth-btn:hover { background: #026aa7; }
+  </style>
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+</head>
+<body>
+<div id="content">
+  <p class="msg">Carregando histórico…</p>
+</div>
+<script>
+(function () {
+  // ─── Mesma API Key usada no index.html ────────────────────
+  var APP_KEY = 'YOUR_TRELLO_API_KEY';
+  var t = TrelloPowerUp.iframe({ appKey: APP_KEY, appName: 'Lead Time Midiática' });
+  var content = document.getElementById('content');
+
+  function countBusinessDays(from, to) {
+    var start = new Date(from);
+    start.setHours(0, 0, 0, 0);
+    var end = new Date(to);
+    end.setHours(0, 0, 0, 0);
+    var count = 0;
+    var d = new Date(start);
+    while (d < end) {
+      if (d.getDay() !== 0 && d.getDay() !== 6) count++;
+      d.setDate(d.getDate() + 1);
+    }
+    return count;
+  }
+
+  function formatElapsed(ms) {
+    var totalMin = Math.floor(ms / 60000);
+    var h = Math.floor(totalMin / 60);
+    var m = totalMin % 60;
+    return h > 0 ? h + 'h ' + m + 'min' : m + 'min';
+  }
+
+  function escapeHtml(str) {
+    var el = document.createElement('span');
+    el.appendChild(document.createTextNode(str));
+    return el.innerHTML;
+  }
+
+  function buildTimeline(actions) {
+    actions.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
+    var stages = [];
+    for (var i = 0; i < actions.length; i++) {
+      var act = actions[i];
+      var date = new Date(act.date);
+      if (act.type === 'createCard' && act.data.list) {
+        stages.push({ name: act.data.list.name, enteredAt: date, leftAt: null });
+      } else if (act.type === 'updateCard' && act.data.listAfter) {
+        if (stages.length === 0 && act.data.listBefore) {
+          stages.push({ name: act.data.listBefore.name, enteredAt: date, leftAt: date });
+        }
+        if (stages.length > 0) stages[stages.length - 1].leftAt = date;
+        stages.push({ name: act.data.listAfter.name, enteredAt: date, leftAt: null });
+      }
+    }
+    return stages;
+  }
+
+  function renderTable(stages) {
+    var now = new Date();
+    var totalBD = 0;
+    var totalMs = 0;
+    var html =
+      '<table><thead><tr>' +
+      '<th>Etapa</th><th>Dias Úteis</th><th>Tempo Corrido</th>' +
+      '</tr></thead><tbody>';
+
+    for (var i = 0; i < stages.length; i++) {
+      var s = stages[i];
+      var end = s.leftAt || now;
+      var bd = countBusinessDays(s.enteredAt, end);
+      var ms = end.getTime() - s.enteredAt.getTime();
+      totalBD += bd;
+      totalMs += ms;
+      var cls = s.leftAt ? '' : ' class="current"';
+      html +=
+        '<tr' + cls + '>' +
+        '<td>' + escapeHtml(s.name) + '</td>' +
+        '<td>' + bd + ' d.u.</td>' +
+        '<td>' + formatElapsed(ms) + '</td>' +
+        '</tr>';
+    }
+
+    html +=
+      '<tr class="total">' +
+      '<td>Lead Time Total</td>' +
+      '<td>' + totalBD + ' d.u.</td>' +
+      '<td>' + formatElapsed(totalMs) + '</td>' +
+      '</tr></tbody></table>';
+
+    return html;
+  }
+
+  function render() {
+    t.getRestApi().isAuthorized().then(function (ok) {
+      if (!ok) {
+        content.innerHTML =
+          '<div class="msg">' +
+          '<p>Autorize o Power-Up para ver o lead time.</p>' +
+          '<button class="auth-btn" id="auth-btn">Autorizar</button>' +
+          '</div>';
+        document.getElementById('auth-btn').addEventListener('click', function () {
+          t.getRestApi().authorize({ scope: 'read', expiration: 'never' }).then(render);
+        });
+        t.sizeTo('#content');
+        return;
+      }
+
+      t.card('id').then(function (card) {
+        return t.getRestApi().getToken().then(function (token) {
+          return fetch(
+            'https://api.trello.com/1/cards/' + card.id +
+            '/actions?filter=updateCard:idList,createCard&limit=1000' +
+            '&key=' + APP_KEY + '&token=' + token
+          ).then(function (r) { return r.json(); });
+        });
+      }).then(function (actions) {
+        if (!actions || !actions.length) {
+          content.innerHTML = '<p class="msg">Nenhum histórico encontrado para este card.</p>';
+        } else {
+          var stages = buildTimeline(actions);
+          content.innerHTML = stages.length
+            ? renderTable(stages)
+            : '<p class="msg">Nenhuma movimentação encontrada.</p>';
+        }
+        t.sizeTo('#content');
+      }).catch(function () {
+        content.innerHTML = '<p class="msg error">Erro ao carregar histórico do card.</p>';
+        t.sizeTo('#content');
+      });
+    });
+  }
+
+  t.render(render);
+})();
+</script>
+</body>
+</html>

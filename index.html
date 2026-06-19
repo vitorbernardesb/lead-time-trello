@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Lead Time Midiática</title>
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+</head>
+<body>
+<script>
+(function () {
+  // ─── Configure sua API Key aqui ───────────────────────────
+  // Obtenha em https://trello.com/power-ups/admin
+  var APP_KEY = 'YOUR_TRELLO_API_KEY';
+  var APP_NAME = 'Lead Time Midiática';
+
+  function countBusinessDays(from, to) {
+    var start = new Date(from);
+    start.setHours(0, 0, 0, 0);
+    var end = new Date(to);
+    end.setHours(0, 0, 0, 0);
+    var count = 0;
+    var d = new Date(start);
+    while (d < end) {
+      if (d.getDay() !== 0 && d.getDay() !== 6) count++;
+      d.setDate(d.getDate() + 1);
+    }
+    return count;
+  }
+
+  function fetchActions(t) {
+    return t.card('id').then(function (card) {
+      return t.getRestApi().getToken().then(function (token) {
+        var url =
+          'https://api.trello.com/1/cards/' + card.id +
+          '/actions?filter=updateCard:idList,createCard&limit=1000' +
+          '&key=' + APP_KEY + '&token=' + token;
+        return fetch(url).then(function (r) { return r.json(); });
+      });
+    });
+  }
+
+  function badgeFromActions(actions) {
+    if (!actions || !actions.length) return null;
+    var sorted = actions.slice().sort(function (a, b) {
+      return new Date(b.date) - new Date(a.date);
+    });
+    var enteredAt = new Date(sorted[0].date);
+    var days = countBusinessDays(enteredAt, new Date());
+    return {
+      text: days + ' d.u.',
+      color: days <= 3 ? 'green' : days <= 6 ? 'yellow' : 'red'
+    };
+  }
+
+  TrelloPowerUp.initialize({
+    'card-badges': function (t) {
+      return t.getRestApi().isAuthorized().then(function (ok) {
+        if (!ok) return [];
+        return fetchActions(t).then(function (actions) {
+          var badge = badgeFromActions(actions);
+          return badge ? [badge] : [];
+        }).catch(function () { return []; });
+      });
+    },
+
+    'card-back-section': function (t) {
+      return {
+        title: APP_NAME,
+        content: {
+          type: 'iframe',
+          url: t.signUrl('./card-section.html'),
+          height: 250
+        }
+      };
+    },
+
+    'authorization-status': function (t) {
+      return t.getRestApi().isAuthorized().then(function (ok) {
+        return { authorized: ok };
+      });
+    },
+
+    'show-authorization': function (t) {
+      return t.getRestApi().authorize({ scope: 'read', expiration: 'never' });
+    }
+  }, {
+    appKey: APP_KEY,
+    appName: APP_NAME
+  });
+})();
+</script>
+</body>
+</html>
