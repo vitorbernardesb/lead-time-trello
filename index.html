@@ -39,12 +39,22 @@
     });
   }
 
+  var MIN_STAGE_MS = 60000;
+
   function badgeFromActions(actions) {
     if (!actions || !actions.length) return null;
     var sorted = actions.slice().sort(function (a, b) {
       return new Date(b.date) - new Date(a.date);
     });
     var enteredAt = new Date(sorted[0].date);
+    for (var i = 1; i < sorted.length; i++) {
+      var prev = new Date(sorted[i].date);
+      if (enteredAt.getTime() - prev.getTime() < MIN_STAGE_MS) {
+        enteredAt = prev;
+      } else {
+        break;
+      }
+    }
     var days = countBusinessDays(enteredAt, new Date());
     return {
       text: days + ' d.u.',

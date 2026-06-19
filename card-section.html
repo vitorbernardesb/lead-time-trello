@@ -85,6 +85,8 @@
     return el.innerHTML;
   }
 
+  var MIN_STAGE_MS = 60000;
+
   function buildTimeline(actions) {
     actions.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
     var stages = [];
@@ -101,7 +103,17 @@
         stages.push({ name: act.data.listAfter.name, enteredAt: date, leftAt: null });
       }
     }
-    return stages;
+    var filtered = [];
+    for (var j = 0; j < stages.length; j++) {
+      var s = stages[j];
+      var duration = (s.leftAt ? s.leftAt.getTime() : Date.now()) - s.enteredAt.getTime();
+      if (duration < MIN_STAGE_MS && s.leftAt && filtered.length > 0) {
+        filtered[filtered.length - 1].leftAt = s.leftAt;
+      } else {
+        filtered.push(s);
+      }
+    }
+    return filtered;
   }
 
   function renderTable(stages) {
