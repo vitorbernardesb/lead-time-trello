@@ -13,18 +13,19 @@
   var APP_NAME = 'Lead Time Midiática';
   var MIN_STAGE_MS = 60000;
   var ICON = 'https://vitorbernardesb.github.io/lead-time-trello/icon.svg';
+
   var FLOW_LISTS = [
-    'Concluído 🏆',
-    '⚠️Atrasos⚠️',
-    'Captação de Imagem 🎥',
-    'Revisões em Atraso ⏰',
-    'A fazer 👇',
     'Planejamento',
-    'Revisão Interna 🔎',
+    'Captação de Imagem 🎥',
     '🛑URGÊNCIAS🛑',
+    'A fazer 👇',
     'Em andamento 💪',
     'Alterações ✏️',
-    'Revisão Externa 🧐'
+    '⚠️Atrasos⚠️',
+    'Revisão Interna 🔎',
+    'Revisão Externa 🧐',
+    'Revisões em Atraso ⏰',
+    'Concluído 🏆'
   ];
 
   // ═══════════════════════════════════════════════
@@ -69,7 +70,7 @@
     return out;
   }
 
-  function api(path, token) {
+  function apiUrl(path, token) {
     return 'https://api.trello.com/1'+path+(path.indexOf('?')>=0?'&':'?')+'key='+APP_KEY+'&token='+token;
   }
 
@@ -86,7 +87,7 @@
   function fetchActions(t) {
     return t.card('id').then(function(card) {
       return t.getRestApi().getToken().then(function(token) {
-        return fetch(api('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000',token))
+        return fetch(apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000',token))
           .then(function(r){return r.json();});
       });
     });
@@ -113,23 +114,49 @@
   //  ESTILOS XLSX
   // ═══════════════════════════════════════════════
 
-  var B = {
+  var BD = {
     top:{style:'thin',color:{rgb:'CCCCCC'}},
     bottom:{style:'thin',color:{rgb:'CCCCCC'}},
     left:{style:'thin',color:{rgb:'CCCCCC'}},
     right:{style:'thin',color:{rgb:'CCCCCC'}}
   };
 
-  function sHeader()   { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:11},fill:{fgColor:{rgb:'1E3A5F'}},border:B,alignment:{horizontal:'center',vertical:'center'}}; }
-  function sData(r,num) { return {fill:{fgColor:{rgb:r%2===0?'FFFFFF':'F8F9FA'}},border:B,alignment:{horizontal:num?'right':'left',vertical:'center'}}; }
-  function sMedia(num)  { return {font:{bold:true},fill:{fgColor:{rgb:'FFF9C4'}},border:B,alignment:{horizontal:num?'right':'left'}}; }
+  function sHeader()    { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:11},fill:{fgColor:{rgb:'1E3A5F'}},border:BD,alignment:{horizontal:'center',vertical:'center'}}; }
+  function sData(r,num) { return {fill:{fgColor:{rgb:r%2===0?'FFFFFF':'F8F9FA'}},border:BD,alignment:{horizontal:num?'right':'left',vertical:'center'}}; }
+  function sMedia(num)  { return {font:{bold:true},fill:{fgColor:{rgb:'FFF9C4'}},border:BD,alignment:{horizontal:num?'right':'left'}}; }
+
   function sStatus(v) {
     var bg = v==='🔴 Atrasado'?'FDE8E8' : v==='⚠️ Vence hoje'?'FFF3CD' : v==='✅ No prazo'?'E8F5E9' : 'FFFFFF';
-    return {fill:{fgColor:{rgb:bg}},border:B,alignment:{horizontal:'left'}};
+    return {fill:{fgColor:{rgb:bg}},border:BD,alignment:{horizontal:'left'}};
   }
-  function sKpiTitle()  { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:12},fill:{fgColor:{rgb:'1E3A5F'}},border:B}; }
-  function sKpiSub()    { return {font:{bold:true},fill:{fgColor:{rgb:'E0E0E0'}},border:B}; }
-  function sKpiData(num){ return {border:B,alignment:{horizontal:num?'right':'left'}}; }
+
+  function sDiasAtePrazo(val, rowIdx) {
+    var base = sData(rowIdx, true);
+    if (val === '' || val === null || val === undefined) return base;
+    if (val < 0)  return {fill:{fgColor:{rgb:'FF4C4C'}},font:{color:{rgb:'FFFFFF'}},border:BD,alignment:{horizontal:'right'}};
+    if (val === 0) return {fill:{fgColor:{rgb:'FF8800'}},font:{color:{rgb:'FFFFFF'}},border:BD,alignment:{horizontal:'right'}};
+    return base;
+  }
+
+  function sPrazoDegrade(dud, rowIdx) {
+    var base = sData(rowIdx, false);
+    if (dud === null || dud === undefined) return base;
+    var bg, fg = null;
+    if (dud < 0)       { bg='FF4C4C'; fg='FFFFFF'; }
+    else if (dud <= 2)  bg='FF7043';
+    else if (dud <= 5)  bg='FFA726';
+    else if (dud <= 10) bg='FFCC02';
+    else if (dud <= 20) bg='C6E03B';
+    else if (dud <= 40) bg='66BB6A';
+    else                { bg='2E7D32'; fg='FFFFFF'; }
+    var s = {fill:{fgColor:{rgb:bg}},border:BD,alignment:{horizontal:'left'}};
+    if (fg) s.font = {color:{rgb:fg}};
+    return s;
+  }
+
+  function sKpiTitle()  { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:12},fill:{fgColor:{rgb:'1E3A5F'}},border:BD}; }
+  function sKpiSub()    { return {font:{bold:true},fill:{fgColor:{rgb:'E0E0E0'}},border:BD}; }
+  function sKpiData(num){ return {border:BD,alignment:{horizontal:num?'right':'left'}}; }
 
   function setS(ws,r,c,style) {
     var ref=XLSX.utils.encode_cell({r:r,c:c});
@@ -154,50 +181,53 @@
   //  PROCESSAMENTO DE DADOS
   // ═══════════════════════════════════════════════
 
-  function processCard(card, actions, listNames) {
+  function processCard(card, actions, listNames, retrabalhoVal) {
     if (!Array.isArray(actions)) actions = [];
     var tl = buildTimeline(actions), now = new Date();
-    var bd={}, hrs={}, visits={}, rwList={}, rework=0, created=null;
+    var bd = {}, visited = {};
+    var created = null;
 
-    listNames.forEach(function(n){ bd[n]=0; hrs[n]=0; });
+    listNames.forEach(function(n){ bd[n] = null; });
 
-    for (var i=0;i<actions.length;i++) {
+    for (var i=0; i<actions.length; i++) {
       if (actions[i].type==='createCard'||actions[i].type==='copyCard') {
-        var dt=new Date(actions[i].date);
-        if (!created||dt<created) created=dt;
+        var dt = new Date(actions[i].date);
+        if (!created || dt < created) created = dt;
       }
     }
 
     tl.forEach(function(st) {
-      var end=st.leftAt||now;
-      var b=countBusinessDays(st.enteredAt,end);
-      var h=(end.getTime()-st.enteredAt.getTime())/3600000;
-      if (bd.hasOwnProperty(st.name)) { bd[st.name]+=b; hrs[st.name]+=h; }
-      visits[st.name]=(visits[st.name]||0)+1;
-      if (visits[st.name]>1) rework++;
+      var end = st.leftAt || now;
+      var b = countBusinessDays(st.enteredAt, end);
+      if (bd.hasOwnProperty(st.name)) {
+        bd[st.name] = (bd[st.name] === null ? 0 : bd[st.name]) + b;
+        visited[st.name] = true;
+      }
     });
 
-    for (var ln in visits) rwList[ln]=visits[ln]>1;
+    var totalBD = 0;
+    listNames.forEach(function(n){ if (bd[n] !== null) totalBD += bd[n]; });
 
-    var totalBD=0;
-    listNames.forEach(function(n){ totalBD+=bd[n]; });
-
-    var dud=null;
+    var dud = null;
     if (card.due) {
-      var td=new Date(); td.setHours(0,0,0,0);
-      var du=new Date(card.due); du.setHours(0,0,0,0);
-      dud=Math.round((du-td)/86400000);
+      var td = new Date(); td.setHours(0,0,0,0);
+      var du = new Date(card.due); du.setHours(0,0,0,0);
+      dud = Math.round((du - td) / 86400000);
     }
 
-    var sp = dud===null?'—' : dud<0?'🔴 Atrasado' : dud===0?'⚠️ Vence hoje' : '✅ No prazo';
-    var mem=(card.members||[]).map(function(m){return m.fullName;}).join(' | ');
-    var lab=(card.labels||[]).map(function(l){return l.name||l.color;}).join(' | ');
+    var sp = dud===null ? '—' : dud<0 ? '🔴 Atrasado' : dud===0 ? '⚠️ Vence hoje' : '✅ No prazo';
+    var lab = (card.labels||[]).map(function(l){ return l.name||l.color; }).join(' | ');
 
     return {
-      name:card.name, members:mem, labels:lab,
-      due:card.due?fmtDate(card.due):'', daysUntilDue:dud,
-      lastAct:fmtDate(card.dateLastActivity), createdAt:created?fmtDate(created):'',
-      bd:bd, hrs:hrs, totalBD:totalBD, rework:rework, status:sp, rwList:rwList
+      name: card.name,
+      labels: lab,
+      createdAt: created ? fmtDate(created) : '',
+      due: card.due ? fmtDate(card.due) : '',
+      daysUntilDue: dud,
+      bd: bd,
+      totalBD: totalBD,
+      retrabalho: retrabalhoVal,
+      status: sp
     };
   }
 
@@ -206,53 +236,82 @@
   // ═══════════════════════════════════════════════
 
   function sheetRelatorio(cards, listNames) {
-    var hdr=['Card','Responsável','Labels','Prazo','Dias até Prazo','Última Atividade','Criado em'];
-    var fix=hdr.length;
-    listNames.forEach(function(n){hdr.push(n);});
+    var hdr = ['Card','Labels','Criado em','Prazo','Dias até o Prazo'];
+    var prazoCol = 3;
+    var diasCol = 4;
+    var stageStart = hdr.length;
+    listNames.forEach(function(n){ hdr.push(n); });
     hdr.push('Lead Time Total (d.u.)');
-    var ltCol=hdr.length-1;
-    listNames.forEach(function(n){hdr.push(n+' (h)');});
-    hdr.push('Rework');
-    var rwCol=hdr.length-1;
+    var ltCol = hdr.length - 1;
+    hdr.push('Retrabalho');
+    var rwCol = hdr.length - 1;
     hdr.push('Status Prazo');
-    var stCol=hdr.length-1;
+    var stCol = hdr.length - 1;
 
-    var numCols={};
-    numCols[4]=true;
-    for (var ci=fix;ci<=rwCol;ci++) numCols[ci]=true;
+    var numCols = {};
+    numCols[diasCol] = true;
+    for (var ci = stageStart; ci <= rwCol; ci++) numCols[ci] = true;
 
-    var data=[hdr];
+    var data = [hdr];
     cards.forEach(function(c) {
-      var row=[c.name,c.members,c.labels,c.due,c.daysUntilDue!=null?c.daysUntilDue:'—',c.lastAct,c.createdAt];
-      listNames.forEach(function(n){row.push(c.bd[n]);});
+      var row = [c.name, c.labels, c.createdAt, c.due, c.daysUntilDue !== null ? c.daysUntilDue : ''];
+      listNames.forEach(function(n){ row.push(c.bd[n] !== null ? c.bd[n] : '-'); });
       row.push(c.totalBD);
-      listNames.forEach(function(n){row.push(Math.round(c.hrs[n]*10)/10);});
-      row.push(c.rework);
+      row.push(c.retrabalho);
       row.push(c.status);
       data.push(row);
     });
 
-    var mRow=new Array(hdr.length);
-    for (var mi=0;mi<mRow.length;mi++) mRow[mi]='';
-    mRow[0]='MÉDIA';
-    var dueVals=cards.filter(function(c){return c.daysUntilDue!=null;}).map(function(c){return c.daysUntilDue;});
-    mRow[4]=dueVals.length?avg(dueVals,false):'—';
-    listNames.forEach(function(n,i){ mRow[fix+i]=avg(cards.map(function(c){return c.bd[n];}),true); });
-    mRow[ltCol]=avg(cards.map(function(c){return c.totalBD;}),false);
-    listNames.forEach(function(n,i){ mRow[ltCol+1+i]=avg(cards.map(function(c){return c.hrs[n];}),true); });
-    mRow[rwCol]=avg(cards.map(function(c){return c.rework;}),false);
+    var lastDataRow = cards.length + 1;
+    var mRow = new Array(hdr.length);
+    for (var mi = 0; mi < mRow.length; mi++) mRow[mi] = '';
+    mRow[0] = 'MÉDIA';
     data.push(mRow);
 
-    var ws=XLSX.utils.aoa_to_sheet(data);
-    ws['!cols']=colWidths(data,40);
+    var ws = XLSX.utils.aoa_to_sheet(data);
 
-    var totalR=data.length, totalC=hdr.length;
-    for (var r=0;r<totalR;r++) {
-      for (var c=0;c<totalC;c++) {
-        if (r===0) setS(ws,r,c,sHeader());
-        else if (r===totalR-1) setS(ws,r,c,sMedia(!!numCols[c]));
-        else if (c===stCol) setS(ws,r,c,sStatus(data[r][c]));
-        else setS(ws,r,c,sData(r-1,!!numCols[c]));
+    function colLetter(idx) { return XLSX.utils.encode_col(idx); }
+
+    if (lastDataRow >= 2) {
+      var diasLetter = colLetter(diasCol);
+      var ref = XLSX.utils.encode_cell({r: lastDataRow, c: diasCol});
+      ws[ref] = {t:'n', f:'AVERAGE('+diasLetter+'2:'+diasLetter+lastDataRow+')', s: sMedia(true)};
+
+      for (var si = 0; si < listNames.length; si++) {
+        var col = stageStart + si;
+        var cl = colLetter(col);
+        var sr = XLSX.utils.encode_cell({r: lastDataRow, c: col});
+        ws[sr] = {t:'n', f:'AVERAGE('+cl+'2:'+cl+lastDataRow+')', s: sMedia(true)};
+      }
+
+      var ltLetter = colLetter(ltCol);
+      var ltRef = XLSX.utils.encode_cell({r: lastDataRow, c: ltCol});
+      ws[ltRef] = {t:'n', f:'AVERAGE('+ltLetter+'2:'+ltLetter+lastDataRow+')', s: sMedia(true)};
+
+      var rwLetter = colLetter(rwCol);
+      var rwRef = XLSX.utils.encode_cell({r: lastDataRow, c: rwCol});
+      ws[rwRef] = {t:'n', f:'AVERAGE('+rwLetter+'2:'+rwLetter+lastDataRow+')', s: sMedia(true)};
+    }
+
+    ws['!cols'] = colWidths(data, 40);
+
+    var totalR = data.length, totalC = hdr.length;
+    for (var r = 0; r < totalR; r++) {
+      for (var c = 0; c < totalC; c++) {
+        var cellRef = XLSX.utils.encode_cell({r:r, c:c});
+        if (r === 0) {
+          setS(ws, r, c, sHeader());
+        } else if (r === totalR - 1) {
+          if (!ws[cellRef] || !ws[cellRef].f) setS(ws, r, c, sMedia(!!numCols[c]));
+        } else if (c === stCol) {
+          setS(ws, r, c, sStatus(data[r][c]));
+        } else if (c === diasCol) {
+          setS(ws, r, c, sDiasAtePrazo(data[r][c], r-1));
+        } else if (c === prazoCol) {
+          setS(ws, r, c, sPrazoDegrade(cards[r-1].daysUntilDue, r-1));
+        } else {
+          setS(ws, r, c, sData(r-1, !!numCols[c]));
+        }
       }
     }
 
@@ -264,96 +323,77 @@
   // ═══════════════════════════════════════════════
 
   function sheetKPIs(cards, listNames) {
-    var rows=[], types=[];
-    function addTitle(text,cols) {
-      var r=new Array(cols); for(var i=0;i<cols;i++) r[i]=''; r[0]=text;
+    var rows = [], types = [];
+    function addTitle(text, cols) {
+      var r = new Array(cols); for (var i=0;i<cols;i++) r[i]=''; r[0]=text;
       rows.push(r); types.push('title');
     }
     function addSub(arr) { rows.push(arr); types.push('sub'); }
-    function addRow(arr)  { rows.push(arr); types.push('data'); }
+    function addRow(arr) { rows.push(arr); types.push('data'); }
     function addBlank(cols) { var r=new Array(cols); for(var i=0;i<cols;i++) r[i]=''; rows.push(r); types.push('empty'); }
 
-    var total=cards.length;
-    var avgLT=avg(cards.map(function(c){return c.totalBD;}),false);
-    var rwCards=cards.filter(function(c){return c.rework>0;}).length;
-    var dueCards=cards.filter(function(c){return c.daysUntilDue!=null;}).length;
-    var lateCards=cards.filter(function(c){return c.status==='🔴 Atrasado';}).length;
-    function pct(n){ return total?Math.round(n/total*1000)/10:0; }
+    var total = cards.length;
+    var avgLT = avg(cards.map(function(c){return c.totalBD;}), false);
+    var rwCards = cards.filter(function(c){return c.retrabalho > 0;}).length;
+    var dueCards = cards.filter(function(c){return c.daysUntilDue !== null;}).length;
+    var lateCards = cards.filter(function(c){return c.status==='🔴 Atrasado';}).length;
+    function pct(n){ return total ? Math.round(n/total*1000)/10 : 0; }
 
-    addTitle('Visão Geral',2);
+    addTitle('Visão Geral', 2);
     addSub(['Indicador','Valor']);
-    addRow(['Total de cards em aberto',total]);
-    addRow(['Lead time médio total (d.u.)',avgLT]);
-    addRow(['Cards com rework',rwCards+' ('+pct(rwCards)+'%)']);
-    addRow(['Cards com prazo definido',dueCards+' ('+pct(dueCards)+'%)']);
-    addRow(['Cards atrasados',lateCards+' ('+pct(lateCards)+'%)']);
+    addRow(['Total de cards em aberto', total]);
+    addRow(['Lead time médio total (d.u.)', avgLT]);
+    addRow(['Cards com retrabalho', rwCards+' ('+pct(rwCards)+'%)']);
+    addRow(['Cards com prazo definido', dueCards+' ('+pct(dueCards)+'%)']);
+    addRow(['Cards atrasados', lateCards+' ('+pct(lateCards)+'%)']);
     addBlank(2);
 
-    var stageData=listNames.map(function(n) {
-      var bv=cards.map(function(c){return c.bd[n];}).filter(function(v){return v>0;});
-      var hv=cards.map(function(c){return c.hrs[n];}).filter(function(v){return v>0;});
-      var passed=bv.length;
-      var rwInStage=cards.filter(function(c){return c.rwList[n];}).length;
-      return {name:n,avgBd:avg(bv,false),avgH:avg(hv,false),passed:passed,rwPct:passed?Math.round(rwInStage/passed*1000)/10:0};
-    }).sort(function(a,b){return b.avgBd-a.avgBd;});
-
-    addTitle('Gargalos por Etapa',5);
-    addSub(['Etapa','Média d.u.','Média horas','Cards que passaram','% com rework']);
-    stageData.forEach(function(s){ addRow([s.name,s.avgBd,s.avgH,s.passed,s.rwPct+'%']); });
-    addBlank(5);
-
-    var memMap={};
-    cards.forEach(function(c){
-      if (!c.members) return;
-      c.members.split(' | ').forEach(function(m){
-        if (!m) return;
-        if (!memMap[m]) memMap[m]=[];
-        memMap[m].push(c);
-      });
+    addTitle('Gargalos por Etapa', 4);
+    addSub(['Etapa','Média d.u.','Cards que passaram','Retrabalho médio']);
+    listNames.forEach(function(n) {
+      var bv = cards.map(function(c){return c.bd[n];}).filter(function(v){return v!==null && v>0;});
+      var passed = bv.length;
+      var rwVals = cards.filter(function(c){return c.bd[n]!==null;}).map(function(c){return c.retrabalho;});
+      var avgRw = avg(rwVals, false);
+      addRow([n, avg(bv, false), passed, avgRw]);
     });
-    var memData=Object.keys(memMap).map(function(m){
-      var mc=memMap[m];
-      return {name:m,count:mc.length,avgLt:avg(mc.map(function(c){return c.totalBD;}),false),
-        rw:mc.reduce(function(a,c){return a+c.rework;},0),
-        late:mc.filter(function(c){return c.status==='🔴 Atrasado';}).length};
-    }).sort(function(a,b){return b.count-a.count;});
+    addBlank(4);
 
-    addTitle('Carga por Responsável',5);
-    addSub(['Responsável','Cards atribuídos','Lead time médio','Reworks','Cards atrasados']);
-    memData.forEach(function(m){ addRow([m.name,m.count,m.avgLt,m.rw,m.late]); });
-    addBlank(5);
-
-    var labMap={};
+    var labMap = {};
     cards.forEach(function(c){
       if (!c.labels) return;
       c.labels.split(' | ').forEach(function(l){
         if (!l) return;
-        if (!labMap[l]) labMap[l]=[];
+        if (!labMap[l]) labMap[l] = [];
         labMap[l].push(c);
       });
     });
-    var labData=Object.keys(labMap).map(function(l){
-      var lc=labMap[l];
-      var late=lc.filter(function(c){return c.status==='🔴 Atrasado';}).length;
-      return {name:l,count:lc.length,avgLt:avg(lc.map(function(c){return c.totalBD;}),false),
-        latePct:lc.length?Math.round(late/lc.length*1000)/10:0};
-    }).sort(function(a,b){return b.count-a.count;});
+    var labData = Object.keys(labMap).map(function(l){
+      var lc = labMap[l];
+      var late = lc.filter(function(c){return c.status==='🔴 Atrasado';}).length;
+      return {
+        name: l,
+        count: lc.length,
+        avgLt: avg(lc.map(function(c){return c.totalBD;}), false),
+        latePct: lc.length ? Math.round(late/lc.length*1000)/10 : 0
+      };
+    }).sort(function(a,b){return b.count - a.count;});
 
-    addTitle('Distribuição por Label',4);
+    addTitle('Distribuição por Label', 4);
     addSub(['Label','Quantidade de cards','Lead time médio','% atrasados']);
-    labData.forEach(function(l){ addRow([l.name,l.count,l.avgLt,l.latePct+'%']); });
+    labData.forEach(function(l){ addRow([l.name, l.count, l.avgLt, l.latePct+'%']); });
 
-    var maxCols=5;
-    rows.forEach(function(r){ while(r.length<maxCols) r.push(''); });
+    var maxCols = 4;
+    rows.forEach(function(r){ while(r.length < maxCols) r.push(''); });
 
-    var ws=XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols']=[{wch:30},{wch:20},{wch:18},{wch:22},{wch:16}];
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:30},{wch:22},{wch:20},{wch:18}];
 
-    for (var r=0;r<rows.length;r++) {
-      for (var c=0;c<maxCols;c++) {
-        if (types[r]==='title')     setS(ws,r,c,sKpiTitle());
-        else if (types[r]==='sub')  setS(ws,r,c,sKpiSub());
-        else if (types[r]==='data') setS(ws,r,c,sKpiData(c>0));
+    for (var r = 0; r < rows.length; r++) {
+      for (var c = 0; c < maxCols; c++) {
+        if (types[r]==='title')     setS(ws, r, c, sKpiTitle());
+        else if (types[r]==='sub')  setS(ws, r, c, sKpiSub());
+        else if (types[r]==='data') setS(ws, r, c, sKpiData(c > 0));
       }
     }
 
@@ -365,48 +405,81 @@
   // ═══════════════════════════════════════════════
 
   function exportReport(t) {
-    if (typeof XLSX==='undefined')
-      return t.alert({message:'Erro: biblioteca de exportação não carregou. Recarregue a página.',display:'error',duration:10});
+    if (typeof XLSX === 'undefined')
+      return t.alert({message:'Erro: biblioteca de exportação não carregou. Recarregue a página.', display:'error', duration:10});
 
-    var token;
+    var token, boardId;
     return t.getRestApi().getToken()
       .then(function(tok) {
-        token=tok;
+        token = tok;
         return t.board('id');
       })
       .then(function(board) {
+        boardId = board.id;
         return Promise.all([
-          fetch(api('/boards/'+board.id+'/lists?fields=name',token)).then(function(r){return r.json();}),
-          fetch(api('/boards/'+board.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels&members=true&member_fields=fullName',token)).then(function(r){return r.json();})
+          fetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(function(r){return r.json();}),
+          fetch(apiUrl('/boards/'+boardId+'/cards?filter=open&fields=name,due,dateLastActivity,labels&members=true&member_fields=fullName', token)).then(function(r){return r.json();}),
+          fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){return r.json();})
         ]);
       })
       .then(function(res) {
-        var lists=res[0], cards=res[1];
-        if (!cards||!cards.length)
-          return t.alert({message:'Nenhum card em aberto encontrado.',display:'warning',duration:6});
+        var lists = res[0], cards = res[1], customFields = res[2];
+        if (!Array.isArray(cards) || !cards.length)
+          return t.alert({message:'Nenhum card em aberto encontrado.', display:'warning', duration:6});
 
-        var listNames=lists.map(function(l){return l.name;}).filter(function(n){return FLOW_LISTS.indexOf(n)>=0;});
-        var promises=cards.map(function(c){
-          return fetch(api('/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000',token))
+        var listNames = FLOW_LISTS.filter(function(fn) {
+          return lists.some(function(l){ return l.name.trim() === fn; });
+        });
+
+        var retrabalhoField = null;
+        if (Array.isArray(customFields)) {
+          for (var fi = 0; fi < customFields.length; fi++) {
+            if (customFields[fi].name === 'Retrabalho') { retrabalhoField = customFields[fi].id; break; }
+          }
+        }
+
+        var actionPromises = cards.map(function(c){
+          return fetch(apiUrl('/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
             .then(function(r){return r.json();});
         });
 
-        return Promise.all(promises).then(function(allActions) {
-          var processed=cards.map(function(c,i){ return processCard(c,allActions[i],listNames); });
-
-          var wb=XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb,sheetRelatorio(processed,listNames),'Relatório');
-          XLSX.utils.book_append_sheet(wb,sheetKPIs(processed,listNames),'KPIs');
-
-          var hoje=new Date();
-          var fn='leadtime_midiatica_'+String(hoje.getDate()).padStart(2,'0')+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+hoje.getFullYear()+'.xlsx';
-          XLSX.writeFile(wb,fn);
-
-          return t.alert({message:'Relatório exportado com sucesso!',display:'success',duration:5});
+        var cfPromises = cards.map(function(c){
+          if (!retrabalhoField) return Promise.resolve([]);
+          return fetch(apiUrl('/cards/'+c.id+'/customFieldItems', token))
+            .then(function(r){return r.json();});
         });
+
+        return Promise.all([Promise.all(actionPromises), Promise.all(cfPromises)])
+          .then(function(results) {
+            var allActions = results[0], allCF = results[1];
+
+            var processed = cards.map(function(c, i) {
+              var rwVal = 0;
+              if (retrabalhoField && Array.isArray(allCF[i])) {
+                for (var cfi = 0; cfi < allCF[i].length; cfi++) {
+                  if (allCF[i][cfi].idCustomField === retrabalhoField) {
+                    var v = allCF[i][cfi].value;
+                    rwVal = v ? (Number(v.number) || Number(v.text) || 0) : 0;
+                    break;
+                  }
+                }
+              }
+              return processCard(c, allActions[i], listNames, rwVal);
+            });
+
+            var wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, sheetRelatorio(processed, listNames), 'Relatório');
+            XLSX.utils.book_append_sheet(wb, sheetKPIs(processed, listNames), 'KPIs');
+
+            var hoje = new Date();
+            var fn = 'leadtime_midiatica_'+String(hoje.getDate()).padStart(2,'0')+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+hoje.getFullYear()+'.xlsx';
+            XLSX.writeFile(wb, fn);
+
+            return t.alert({message:'Relatório exportado com sucesso!', display:'success', duration:5});
+          });
       })
       .catch(function(err) {
-        return t.alert({message:'Erro ao exportar: '+(err.message||String(err)),display:'error',duration:10});
+        return t.alert({message:'Erro ao exportar: '+(err.message||String(err)), display:'error', duration:10});
       });
   }
 
