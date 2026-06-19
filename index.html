@@ -56,9 +56,12 @@
       }
     }
     var days = countBusinessDays(enteredAt, new Date());
+    var color = days <= 3 ? 'green' : days <= 6 ? 'yellow' : 'red';
     return {
-      text: days + ' d.u.',
-      color: days <= 3 ? 'green' : days <= 6 ? 'yellow' : 'red'
+      title: 'Dias úteis nesta etapa',
+      icon: 'https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/clock.svg',
+      text: days === 1 ? '1d útil' : days + 'd úteis',
+      color: color
     };
   }
 
