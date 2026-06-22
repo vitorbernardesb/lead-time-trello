@@ -4,46 +4,62 @@
   <meta charset="utf-8">
   <title>Lead Time Midiática – Histórico</title>
   <style>
+    @font-face {
+      font-family: 'BW Modelica';
+      src: url('./fonts/BWModelica-Regular.woff2') format('woff2'),
+           url('./fonts/BWModelica-Regular.woff') format('woff');
+      font-weight: 400;
+    }
+    @font-face {
+      font-family: 'BW Modelica';
+      src: url('./fonts/BWModelica-Bold.woff2') format('woff2'),
+           url('./fonts/BWModelica-Bold.woff') format('woff');
+      font-weight: 700;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-family: 'BW Modelica', 'Inter', 'Helvetica Neue', sans-serif;
       font-size: 14px;
-      color: #172b4d;
+      color: #0A0A0A;
       padding: 8px 0;
     }
     #content { width: 100%; }
-    table { width: 100%; border-collapse: collapse; }
+    table { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: 8px; border: 1px solid rgba(171,171,176,0.40); }
     th {
       text-align: left;
       padding: 6px 12px;
-      border-bottom: 2px solid #dfe1e6;
-      font-weight: 600;
-      color: #5e6c84;
+      background: #0A0A0A;
+      font-weight: 700;
+      color: #FFCF06;
       font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
+      border-bottom: none;
     }
-    td { padding: 6px 12px; border-bottom: 1px solid #ebecf0; }
-    tr.current td { background-color: #e3fcef; font-weight: 600; }
+    td { padding: 6px 12px; border-bottom: 1px solid rgba(171,171,176,0.20); }
+    tr:nth-child(even) td { background: rgba(171,171,176,0.08); }
+    tr.current td { background-color: rgba(255,207,6,0.12); border-left: 3px solid #FFCF06; font-weight: 600; }
     tr.total td {
       font-weight: 700;
-      border-top: 2px solid #dfe1e6;
+      border-top: none;
       border-bottom: none;
-      background-color: #f4f5f7;
+      background-color: #0A0A0A;
+      color: #FFCF06;
     }
-    .msg { text-align: center; padding: 24px 12px; color: #5e6c84; }
-    .msg.error { color: #eb5a46; }
+    .msg { text-align: center; padding: 24px 12px; color: #ABABB0; }
+    .msg.error { color: #0A0A0A; }
     .auth-btn {
       margin-top: 8px;
-      background: #0079bf;
-      color: #fff;
+      background: #FFCF06;
+      color: #0A0A0A;
       border: none;
-      border-radius: 3px;
+      border-radius: 6px;
       padding: 8px 16px;
       font-size: 14px;
+      font-weight: 700;
       cursor: pointer;
     }
-    .auth-btn:hover { background: #026aa7; }
+    .auth-btn:hover { background: rgba(255,207,6,0.85); }
   </style>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
 </head>
