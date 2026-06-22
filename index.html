@@ -94,19 +94,16 @@
   }
 
   function badgeFromActions(actions) {
-    if (!Array.isArray(actions)||!actions.length) return null;
-    var sorted=actions.slice().sort(function(a,b){return new Date(b.date)-new Date(a.date);});
-    var enteredAt=new Date(sorted[0].date);
-    for (var i=1;i<sorted.length;i++) {
-      var prev=new Date(sorted[i].date);
-      if (enteredAt.getTime()-prev.getTime()<MIN_STAGE_MS) enteredAt=prev; else break;
-    }
-    var days=countBusinessDays(enteredAt,new Date());
+    if (!Array.isArray(actions) || !actions.length) return null;
+    var tl = buildTimeline(actions);
+    if (!tl.length) return null;
+    var current = tl[tl.length - 1];
+    var days = countBusinessDays(current.enteredAt, new Date());
     return {
-      title:'Dias úteis nesta etapa',
-      icon:'https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/clock.svg',
-      text:days===1?'1d útil':days+'d úteis',
-      color:days<=3?'green':days<=6?'yellow':'red'
+      title: 'Dias úteis nesta etapa',
+      icon: 'https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/clock.svg',
+      text: days === 1 ? '1d útil' : days + 'd úteis',
+      color: days <= 3 ? 'green' : days <= 6 ? 'yellow' : 'red'
     };
   }
 
@@ -294,6 +291,7 @@
     }
 
     ws['!cols'] = colWidths(data, 40);
+    ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activeCell: 'A2', sqref: 'A2' };
 
     var totalR = data.length, totalC = hdr.length;
     for (var r = 0; r < totalR; r++) {
@@ -442,7 +440,7 @@
           return t.alert({message:'Nenhuma lista do fluxo encontrada.', display:'warning', duration:6});
 
         return Promise.all(flowLists.map(function(l) {
-          return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&members=true&member_fields=fullName', token))
+          return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList', token))
             .then(function(r){return r.json();});
         })).then(function(cardArrays) {
           var cards = [];
