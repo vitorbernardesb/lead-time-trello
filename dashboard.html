@@ -12,7 +12,6 @@
       background: #f4f5f7;
       min-height: 100vh;
     }
-
     .header {
       background: #1E3A5F;
       color: #fff;
@@ -37,9 +36,16 @@
     }
     .tab:hover { background: rgba(255,255,255,0.1); color: #fff; }
     .tab.active { background: rgba(255,255,255,0.2); color: #fff; font-weight: 600; }
-
-    .body { padding: 24px; max-width: 900px; margin: 0 auto; }
-
+    .alert-banner {
+      padding: 12px 24px;
+      border-left: 4px solid;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .alert-banner.danger { background: #FCEBEB; border-color: #A32D2D; color: #A32D2D; }
+    .alert-banner.success { background: #E8F5E9; border-color: #3B6D11; color: #3B6D11; }
+    .body { padding: 24px; max-width: 960px; margin: 0 auto; }
     .spinner-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 0; }
     .spinner {
       width: 40px; height: 40px;
@@ -50,80 +56,100 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner-wrap p { margin-top: 12px; color: #5e6c84; }
-
     .error-box { text-align: center; padding: 60px 20px; color: #eb5a46; }
     .error-box button { margin-top: 12px; }
-
     .auth-wrap { text-align: center; padding: 80px 20px; }
     .auth-wrap p { color: #5e6c84; margin-bottom: 16px; font-size: 16px; }
-
     .btn {
-      background: #0079bf;
-      color: #fff;
-      border: none;
-      border-radius: 4px;
-      padding: 10px 20px;
-      font-size: 14px;
-      font-family: inherit;
-      cursor: pointer;
+      background: #0079bf; color: #fff; border: none; border-radius: 4px;
+      padding: 10px 20px; font-size: 14px; font-family: inherit; cursor: pointer;
       transition: background 0.15s;
     }
     .btn:hover { background: #026aa7; }
     .btn:disabled { background: #a0a0a0; cursor: not-allowed; }
-    .btn-secondary {
-      background: #f4f5f7;
-      color: #172b4d;
-      border: 1px solid #dfe1e6;
-    }
+    .btn-secondary { background: #f4f5f7; color: #172b4d; border: 1px solid #dfe1e6; }
     .btn-secondary:hover { background: #ebecf0; }
-
     .score-circle-wrap { text-align: center; margin-bottom: 28px; }
     .score-circle {
-      width: 160px; height: 160px;
-      border-radius: 50%;
-      border: 6px solid;
-      display: inline-flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 8px;
+      width: 160px; height: 160px; border-radius: 50%; border: 6px solid;
+      display: inline-flex; flex-direction: column; align-items: center;
+      justify-content: center; margin-bottom: 8px;
     }
     .score-circle .number { font-size: 48px; font-weight: 700; line-height: 1; }
     .score-circle .label { font-size: 13px; font-weight: 500; margin-top: 2px; }
     .score-status { font-size: 16px; font-weight: 600; }
-
-    .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
     .kpi-card {
-      background: #fff;
-      border-radius: 8px;
-      padding: 16px;
-      border: 1px solid #dfe1e6;
+      background: #fff; border-radius: 8px; padding: 16px; border: 1px solid #dfe1e6;
     }
     .kpi-card .kpi-name { font-size: 13px; color: #5e6c84; font-weight: 500; margin-bottom: 6px; }
     .kpi-card .kpi-value { font-size: 28px; font-weight: 700; color: #172b4d; }
     .kpi-card .kpi-meta { font-size: 12px; color: #97a0af; margin-top: 4px; }
-    .kpi-bar-bg {
-      height: 8px;
-      background: #ebecf0;
-      border-radius: 4px;
-      margin-top: 10px;
-      overflow: hidden;
-    }
+    .kpi-bar-bg { height: 8px; background: #ebecf0; border-radius: 4px; margin-top: 10px; overflow: hidden; }
     .kpi-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
-
     .footer-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
     .footer-bar .info { font-size: 12px; color: #97a0af; margin-left: auto; }
-
+    .collapsible { margin-bottom: 20px; }
+    .collapse-toggle {
+      width: 100%; text-align: left; padding: 12px 16px;
+      background: #fff; border: 1px solid #dfe1e6; border-radius: 8px;
+      cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 500; color: #172b4d;
+    }
+    .collapse-toggle.open { border-radius: 8px 8px 0 0; }
+    .collapse-body {
+      display: none; background: #fff; border: 1px solid #dfe1e6;
+      border-top: none; border-radius: 0 0 8px 8px; padding: 0;
+    }
+    .collapse-body.open { display: block; }
+    .collapse-body table { width: 100%; border-collapse: collapse; }
+    .collapse-body th {
+      text-align: left; padding: 8px 14px; background: #f4f5f7;
+      font-size: 11px; text-transform: uppercase; color: #5e6c84; font-weight: 600;
+      border-bottom: 1px solid #dfe1e6;
+    }
+    .collapse-body td { padding: 8px 14px; border-bottom: 1px solid #ebecf0; font-size: 13px; }
+    .collapse-body tr.warn td { background: #FFF8E1; }
+    .missing-tag {
+      display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px;
+      margin: 1px 3px; background: #FCEBEB; color: #A32D2D;
+    }
+    .summary-cards { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+    .summary-card {
+      flex: 1; min-width: 180px; background: #fff; border-radius: 8px;
+      padding: 16px; border: 1px solid #dfe1e6; text-align: center;
+    }
+    .summary-card .sc-value { font-size: 28px; font-weight: 700; color: #1E3A5F; }
+    .summary-card .sc-label { font-size: 12px; color: #5e6c84; margin-top: 4px; }
+    .funnel-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; border: 1px solid #dfe1e6; margin-bottom: 24px; }
+    .funnel-table th {
+      text-align: left; padding: 10px 14px; background: #f4f5f7;
+      font-size: 12px; text-transform: uppercase; color: #5e6c84; font-weight: 600;
+      border-bottom: 2px solid #dfe1e6;
+    }
+    .funnel-table td { padding: 10px 14px; border-bottom: 1px solid #ebecf0; font-size: 13px; }
+    .funnel-bar { height: 10px; background: #0079bf; border-radius: 5px; min-width: 4px; }
+    .funnel-table .status-ok { color: #36b37e; }
+    .funnel-table .status-warn { color: #ff8b00; }
+    .funnel-table .status-danger { color: #eb5a46; }
+    .funnel-table tr.concluded td { background: #E8F5E9; }
+    .alerts-section { margin-top: 24px; }
+    .alerts-section h3 { font-size: 15px; margin-bottom: 12px; color: #A32D2D; }
+    .alert-row { background: #fff; border: 1px solid #dfe1e6; border-radius: 6px; padding: 12px 16px; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .alert-row .ar-name { font-weight: 600; flex: 1; min-width: 200px; }
+    .alert-row .ar-stage { color: #5e6c84; font-size: 13px; }
+    .alert-row .ar-days { color: #eb5a46; font-weight: 600; }
+    .alert-row .ar-excess { background: #FCEBEB; color: #A32D2D; padding: 2px 8px; border-radius: 3px; font-size: 12px; font-weight: 600; }
+    .alert-row .ar-member { color: #5e6c84; font-size: 12px; }
+    .alert-row .ar-member.none { color: #ff8b00; }
     .history-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; border: 1px solid #dfe1e6; }
     .history-table th {
       text-align: left; padding: 10px 14px; background: #f4f5f7;
-      font-size: 12px; text-transform: uppercase; color: #5e6c84; font-weight: 600; letter-spacing: 0.03em;
+      font-size: 12px; text-transform: uppercase; color: #5e6c84; font-weight: 600;
       border-bottom: 2px solid #dfe1e6;
     }
     .history-table td { padding: 10px 14px; border-bottom: 1px solid #ebecf0; font-size: 13px; }
     .history-table tr.current-month td { background: #e4f0f6; font-weight: 600; }
     .history-empty { text-align: center; padding: 40px; color: #5e6c84; }
-
     .config-section { background: #fff; border-radius: 8px; padding: 20px; border: 1px solid #dfe1e6; margin-bottom: 20px; }
     .config-section h3 { font-size: 15px; margin-bottom: 16px; color: #1E3A5F; }
     .config-row { margin-bottom: 16px; }
@@ -131,18 +157,24 @@
     .config-row .slider-row { display: flex; align-items: center; gap: 12px; }
     .config-row input[type=range] { flex: 1; accent-color: #0079bf; }
     .config-row .slider-val { min-width: 50px; text-align: right; font-weight: 600; font-size: 14px; }
+    .sla-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .sla-row { display: flex; align-items: center; gap: 8px; }
+    .sla-row label { flex: 1; font-size: 13px; margin-bottom: 0; }
+    .sla-row input[type=number] { width: 60px; padding: 6px 8px; border: 1px solid #dfe1e6; border-radius: 4px; font-size: 14px; text-align: center; }
+    .sla-row .sla-unit { font-size: 12px; color: #5e6c84; }
     .peso-sum { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
     .peso-sum.invalid { color: #eb5a46; }
     .peso-sum.valid { color: #36b37e; }
     .config-footer { display: flex; gap: 12px; align-items: center; }
     .config-msg { font-size: 13px; color: #36b37e; font-weight: 500; }
-
     .tab-content { display: none; }
     .tab-content.active { display: block; }
-
-    @media (max-width: 600px) {
+    .no-data { text-align: center; padding: 60px 20px; color: #5e6c84; }
+    @media (max-width: 700px) {
       .kpi-grid { grid-template-columns: 1fr; }
+      .sla-grid { grid-template-columns: 1fr; }
       .body { padding: 16px; }
+      .summary-cards { flex-direction: column; }
     }
   </style>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
@@ -152,10 +184,13 @@
   <h1>Dashboard de produção — Midiática</h1>
   <div class="tabs">
     <button class="tab active" data-tab="realtime">Tempo real</button>
+    <button class="tab" data-tab="funnel">Funil</button>
     <button class="tab" data-tab="history">Histórico</button>
     <button class="tab" data-tab="config">Configurar metas</button>
   </div>
 </div>
+
+<div id="alert-banner" style="display:none;"></div>
 
 <div class="body">
   <div id="auth-screen" class="auth-wrap" style="display:none;">
@@ -167,6 +202,10 @@
     <div class="spinner-wrap" id="rt-loading"><div class="spinner"></div><p>Carregando dados…</p></div>
     <div id="rt-error" class="error-box" style="display:none;"><p></p><button class="btn" id="rt-retry">Tentar novamente</button></div>
     <div id="rt-content" style="display:none;"></div>
+  </div>
+
+  <div id="tab-funnel" class="tab-content">
+    <div id="funnel-content"></div>
   </div>
 
   <div id="tab-history" class="tab-content">
@@ -199,9 +238,14 @@
     'Concluído 🏆'
   ];
 
+  var DEFAULT_SLA = {};
+  var slaDefaults = [2, 5, 1, 3, 5, 2, 2, 2, 3, 2, 999];
+  FLOW_LISTS.forEach(function(n, i) { DEFAULT_SLA[n] = slaDefaults[i]; });
+
   var DEFAULTS = {
-    meta_prazo: 80, meta_rework: 30, meta_leadtime: 7, meta_through: 12,
-    peso1: 35, peso2: 25, peso3: 25, peso4: 15
+    meta_prazo: 80, meta_rework: 30, meta_leadtime: 7, meta_through: 12, meta_conformidade: 85,
+    peso1: 30, peso2: 20, peso3: 20, peso4: 10, peso5: 20,
+    sla: DEFAULT_SLA
   };
 
   var t = TrelloPowerUp.iframe({ appKey: APP_KEY, appName: APP_NAME });
@@ -243,33 +287,48 @@
     return 'https://api.trello.com/1'+path+(path.indexOf('?')>=0?'&':'?')+'key='+APP_KEY+'&token='+token;
   }
 
+  function escHtml(s) { var el = document.createElement('span'); el.appendChild(document.createTextNode(s)); return el.innerHTML; }
+
+  function mergeConfig(cfg) {
+    var config = {};
+    Object.keys(DEFAULTS).forEach(function(k) { config[k] = DEFAULTS[k]; });
+    if (cfg) {
+      Object.keys(cfg).forEach(function(k) { config[k] = cfg[k]; });
+      if (cfg.peso5 === undefined) {
+        config.peso1 = DEFAULTS.peso1; config.peso2 = DEFAULTS.peso2;
+        config.peso3 = DEFAULTS.peso3; config.peso4 = DEFAULTS.peso4;
+        config.peso5 = DEFAULTS.peso5;
+      }
+      if (!cfg.sla) config.sla = DEFAULT_SLA;
+    }
+    return config;
+  }
+
   // ─── TABS ───────────────────────────────────────
   var tabs = document.querySelectorAll('.tab');
   var tabContents = document.querySelectorAll('.tab-content');
+  function switchTab(name) {
+    tabs.forEach(function(t){ t.classList.remove('active'); });
+    tabContents.forEach(function(tc){ tc.classList.remove('active'); });
+    for (var i=0; i<tabs.length; i++) {
+      if (tabs[i].getAttribute('data-tab') === name) tabs[i].classList.add('active');
+    }
+    document.getElementById('tab-'+name).classList.add('active');
+    if (name === 'history') loadHistory();
+    if (name === 'config') renderConfig();
+    if (name === 'funnel') renderFunnel();
+  }
   tabs.forEach(function(tab) {
-    tab.addEventListener('click', function() {
-      tabs.forEach(function(t){ t.classList.remove('active'); });
-      tabContents.forEach(function(tc){ tc.classList.remove('active'); });
-      tab.classList.add('active');
-      document.getElementById('tab-'+tab.getAttribute('data-tab')).classList.add('active');
-      if (tab.getAttribute('data-tab') === 'history') loadHistory();
-      if (tab.getAttribute('data-tab') === 'config') renderConfig();
-    });
+    tab.addEventListener('click', function() { switchTab(tab.getAttribute('data-tab')); });
   });
 
   // ─── AUTH ───────────────────────────────────────
   function checkAuth(cb) {
     t.getRestApi().isAuthorized().then(function(ok) {
-      if (ok) {
-        document.getElementById('auth-screen').style.display = 'none';
-        cb();
-      } else {
-        document.getElementById('auth-screen').style.display = '';
-        document.getElementById('rt-loading').style.display = 'none';
-      }
+      if (ok) { document.getElementById('auth-screen').style.display = 'none'; cb(); }
+      else { document.getElementById('auth-screen').style.display = ''; document.getElementById('rt-loading').style.display = 'none'; }
     });
   }
-
   document.getElementById('auth-btn').addEventListener('click', function() {
     t.getRestApi().authorize({ scope: 'read', expiration: 'never' }).then(function() {
       document.getElementById('auth-screen').style.display = 'none';
@@ -292,9 +351,12 @@
         }
         if (!flowLists.length) throw new Error('Nenhuma lista do fluxo encontrada.');
 
+        var listIdToName = {};
+        flowLists.forEach(function(l) { listIdToName[l.id] = l.name.trim(); });
+
         return Promise.all([
           Promise.all(flowLists.map(function(l) {
-            return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList', token))
+            return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&members=true&member_fields=fullName,username', token))
               .then(function(r){ return r.json(); });
           })),
           fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); })
@@ -322,23 +384,48 @@
             }))
           ]).then(function(results) {
             var allActions = results[0], allCF = results[1];
+            var now = new Date();
+            var curMonth = now.getMonth(), curYear = now.getFullYear();
+
+            var throughput = {};
+            FLOW_LISTS.forEach(function(n) { throughput[n] = 0; });
+
             var processed = [];
             for (var i=0; i<cards.length; i++) {
               var card = cards[i];
               var actions = allActions[i];
+              if (!Array.isArray(actions)) actions = [];
+
+              // Throughput: count exits from each list this month
+              actions.forEach(function(act) {
+                if (act.type === 'updateCard' && act.data.listBefore) {
+                  var d = new Date(act.date);
+                  if (d.getMonth() === curMonth && d.getFullYear() === curYear) {
+                    var fromList = act.data.listBefore.name;
+                    if (throughput.hasOwnProperty(fromList)) throughput[fromList]++;
+                  }
+                }
+              });
+
               var rwVal = 0;
+              var hasRetrabalho = false;
               if (retrabalhoFieldId && Array.isArray(allCF[i])) {
                 for (var cfi=0; cfi<allCF[i].length; cfi++) {
                   if (allCF[i][cfi].idCustomField === retrabalhoFieldId) {
                     var v = allCF[i][cfi].value;
-                    rwVal = v ? (Number(v.number) || Number(v.text) || 0) : 0;
+                    if (v && (v.number !== undefined || v.text !== undefined)) {
+                      rwVal = Number(v.number) || Number(v.text) || 0;
+                      hasRetrabalho = true;
+                    }
                     break;
                   }
                 }
               }
-              var tl = buildTimeline(Array.isArray(actions) ? actions : []);
+
+              var tl = buildTimeline(actions);
               var currentStage = tl.length ? tl[tl.length-1] : null;
-              var daysInCurrent = currentStage ? countBusinessDays(currentStage.enteredAt, new Date()) : 0;
+              var currentListName = currentStage ? currentStage.name : (listIdToName[card.idList] || '');
+              var daysInCurrent = currentStage ? countBusinessDays(currentStage.enteredAt, now) : 0;
 
               var isLate = false;
               var hasDue = !!card.due;
@@ -348,25 +435,40 @@
                 isLate = du < td;
               }
 
+              var hasLabels = card.labels && card.labels.length > 0;
+              var members = (card.members || []);
+              var hasMembers = members.length > 0;
+              var memberNames = members.map(function(m){ return m.fullName || m.username; });
+
               var inConcluido = false;
-              if (currentStage && currentStage.name === 'Concluído 🏆') {
-                var now = new Date();
+              if (currentListName === 'Concluído 🏆') {
                 var dla = new Date(card.dateLastActivity);
-                if (dla.getMonth() === now.getMonth() && dla.getFullYear() === now.getFullYear()) {
-                  inConcluido = true;
-                }
+                if (dla.getMonth() === curMonth && dla.getFullYear() === curYear) inConcluido = true;
               }
+
+              var missing = [];
+              if (!hasDue) missing.push('Prazo');
+              if (!hasLabels) missing.push('Label');
+              if (!hasRetrabalho) missing.push('Retrabalho');
+              if (!hasMembers) missing.push('Responsável');
 
               processed.push({
                 name: card.name,
                 retrabalho: rwVal,
+                hasRetrabalho: hasRetrabalho,
                 daysInCurrent: daysInCurrent,
                 hasDue: hasDue,
                 isLate: isLate,
-                inConcluidoThisMonth: inConcluido
+                hasLabels: hasLabels,
+                hasMembers: hasMembers,
+                memberNames: memberNames,
+                currentListName: currentListName,
+                inConcluidoThisMonth: inConcluido,
+                missing: missing,
+                isConforme: missing.length === 0
               });
             }
-            return processed;
+            return { cards: processed, throughput: throughput };
           });
         });
       });
@@ -389,23 +491,69 @@
 
     var kpi4 = cards.filter(function(c){ return c.inConcluidoThisMonth; }).length;
 
+    var conformes = cards.filter(function(c){ return c.isConforme; }).length;
+    var kpi5 = cards.length ? Math.round(conformes / cards.length * 1000) / 10 : 100;
+
     var score_prazo = Math.min(100, (kpi1 / config.meta_prazo) * 100);
     var score_rework = Math.max(0, Math.min(100, ((config.meta_rework - kpi2) / config.meta_rework) * 100 + 50));
     var score_leadtime = kpi3 > 0 ? Math.max(0, Math.min(100, (config.meta_leadtime / kpi3) * 100)) : 100;
     var score_through = Math.min(100, (kpi4 / config.meta_through) * 100);
+    var score_conformidade = Math.min(100, (kpi5 / config.meta_conformidade) * 100);
 
     var healthScore = Math.round(
       (score_prazo * config.peso1 + score_rework * config.peso2 +
-       score_leadtime * config.peso3 + score_through * config.peso4) / 100
+       score_leadtime * config.peso3 + score_through * config.peso4 +
+       score_conformidade * config.peso5) / 100
     );
 
     return {
-      kpi1: kpi1, kpi2: kpi2, kpi3: kpi3, kpi4: kpi4,
+      kpi1: kpi1, kpi2: kpi2, kpi3: kpi3, kpi4: kpi4, kpi5: kpi5,
       score_prazo: score_prazo, score_rework: score_rework,
       score_leadtime: score_leadtime, score_through: score_through,
+      score_conformidade: score_conformidade,
       healthScore: healthScore,
       totalCards: cards.length
     };
+  }
+
+  // ─── SLA ALERTS ─────────────────────────────────
+  function computeSLAAlerts(cards, config) {
+    var sla = config.sla || DEFAULT_SLA;
+    var alerts = [];
+    cards.forEach(function(c) {
+      if (!c.currentListName) return;
+      var limit = sla[c.currentListName];
+      if (limit === undefined || limit >= 999) return;
+      if (c.daysInCurrent > limit) {
+        alerts.push({
+          name: c.name,
+          list: c.currentListName,
+          days: c.daysInCurrent,
+          slaLimit: limit,
+          excess: c.daysInCurrent - limit,
+          members: c.memberNames.length ? c.memberNames.join(', ') : null
+        });
+      }
+    });
+    alerts.sort(function(a,b) { return b.excess - a.excess; });
+    return alerts;
+  }
+
+  // ─── RENDER ALERT BANNER ────────────────────────
+  function renderAlertBanner(slaAlerts) {
+    var banner = document.getElementById('alert-banner');
+    if (slaAlerts.length > 0) {
+      banner.className = 'alert-banner danger';
+      banner.innerHTML = '🔴 ' + slaAlerts.length + ' card' + (slaAlerts.length > 1 ? 's estão' : ' está') + ' acima do SLA — ver no Funil';
+      banner.style.display = '';
+      banner.onclick = function() { switchTab('funnel'); };
+    } else {
+      banner.className = 'alert-banner success';
+      banner.innerHTML = '✅ Todos os cards estão dentro do SLA';
+      banner.style.display = '';
+      banner.onclick = null;
+      banner.style.cursor = 'default';
+    }
   }
 
   // ─── RENDER REALTIME ────────────────────────────
@@ -415,21 +563,19 @@
     if (score >= 40) return { border: '#D85A30', bg: '#FAECE7', text: '#993C1D' };
     return { border: '#A32D2D', bg: '#FCEBEB', text: '#A32D2D' };
   }
-
   function scoreStatus(score) {
     if (score >= 80) return 'Produção excelente';
     if (score >= 60) return 'Produção em dia';
     if (score >= 40) return 'Atenção necessária';
     return 'Situação crítica';
   }
-
   function barColor(pct) {
     if (pct >= 75) return '#36b37e';
     if (pct >= 50) return '#ffab00';
     return '#eb5a46';
   }
 
-  function renderRealtime(kpis, config) {
+  function renderRealtime(kpis, config, cards) {
     var sc = scoreColor(kpis.healthScore);
     var html = '';
 
@@ -445,7 +591,8 @@
       { name: 'Entrega no prazo', value: kpis.kpi1+'%', meta: 'meta: '+config.meta_prazo+'%', pct: kpis.score_prazo },
       { name: 'Taxa de rework', value: kpis.kpi2+'%', meta: 'meta: ≤'+config.meta_rework+'%', pct: kpis.score_rework },
       { name: 'Lead time médio', value: kpis.kpi3+' d.u.', meta: 'meta: ≤'+config.meta_leadtime+' d.u.', pct: kpis.score_leadtime },
-      { name: 'Throughput mensal', value: kpis.kpi4+' cards', meta: 'meta: '+config.meta_through+' cards', pct: kpis.score_through }
+      { name: 'Throughput mensal', value: kpis.kpi4+' cards', meta: 'meta: '+config.meta_through+' cards', pct: kpis.score_through },
+      { name: 'Conformidade', value: kpis.kpi5+'%', meta: 'meta: '+config.meta_conformidade+'%', pct: kpis.score_conformidade }
     ];
 
     html += '<div class="kpi-grid">';
@@ -459,6 +606,59 @@
       html += '</div>';
     });
     html += '</div>';
+
+    // Non-conforming cards
+    var nonConforming = cards.filter(function(c) { return !c.isConforme; });
+    if (nonConforming.length > 0) {
+      var expanded = nonConforming.length > 3;
+      html += '<div class="collapsible">';
+      html += '<button class="collapse-toggle'+(expanded?' open':'')+'" data-collapse="nc">Cards com campos incompletos ('+nonConforming.length+') '+(expanded?'▲':'▼')+'</button>';
+      html += '<div class="collapse-body'+(expanded?' open':'')+'" id="nc-body">';
+      html += '<table><thead><tr><th>Card</th><th>Campos faltantes</th></tr></thead><tbody>';
+      nonConforming.forEach(function(c) {
+        html += '<tr><td>'+escHtml(c.name)+'</td><td>';
+        c.missing.forEach(function(m) { html += '<span class="missing-tag">'+m+'</span>'; });
+        html += '</td></tr>';
+      });
+      html += '</tbody></table></div></div>';
+    }
+
+    // Member distribution
+    var memberMap = {};
+    var sla = config.sla || DEFAULT_SLA;
+    cards.forEach(function(c) {
+      var names = c.memberNames.length ? c.memberNames : ['Sem responsável'];
+      names.forEach(function(name) {
+        if (!memberMap[name]) memberMap[name] = { cards: 0, totalDays: 0, totalRw: 0, aboveSLA: 0 };
+        memberMap[name].cards++;
+        memberMap[name].totalDays += c.daysInCurrent;
+        memberMap[name].totalRw += c.retrabalho;
+        var limit = sla[c.currentListName];
+        if (limit !== undefined && limit < 999 && c.daysInCurrent > limit) memberMap[name].aboveSLA++;
+      });
+    });
+    var memberRows = Object.keys(memberMap).map(function(name) {
+      var m = memberMap[name];
+      return { name: name, cards: m.cards, avgLT: m.cards ? Math.round(m.totalDays/m.cards*10)/10 : 0, totalRw: m.totalRw, aboveSLA: m.aboveSLA };
+    }).sort(function(a,b) { return b.cards - a.cards; });
+
+    if (memberRows.length > 0) {
+      html += '<div class="collapsible">';
+      html += '<button class="collapse-toggle" data-collapse="members">Distribuição por membro ('+memberRows.length+') ▼</button>';
+      html += '<div class="collapse-body" id="members-body">';
+      html += '<table><thead><tr><th>Membro</th><th>Cards</th><th>Lead time médio</th><th>Reworks totais</th><th>Acima do SLA</th></tr></thead><tbody>';
+      memberRows.forEach(function(m) {
+        var cls = m.name === 'Sem responsável' ? ' class="warn"' : '';
+        html += '<tr'+cls+'>';
+        html += '<td>'+escHtml(m.name)+'</td>';
+        html += '<td>'+m.cards+'</td>';
+        html += '<td>'+m.avgLT+' d.u.</td>';
+        html += '<td>'+m.totalRw+'</td>';
+        html += '<td>'+(m.aboveSLA > 0 ? '<span style="color:#eb5a46;font-weight:600;">'+m.aboveSLA+'</span>' : '0')+'</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div></div>';
+    }
 
     html += '<div class="footer-bar">';
     html += '<button class="btn btn-secondary" id="btn-refresh">Atualizar dados</button>';
@@ -474,10 +674,123 @@
 
     document.getElementById('btn-refresh').addEventListener('click', function() { loadRealtime(); });
     document.getElementById('btn-export').addEventListener('click', function() {
-      t.getContext().then(function(ctx) {
-        window.open('https://vitorbernardesb.github.io/lead-time-trello/index.html', '_blank');
+      t.alert({message: 'Use o botão "Exportar Lead Time" no board para gerar o relatório XLSX.', display: 'info', duration: 5});
+    });
+
+    // Collapse toggles
+    document.querySelectorAll('.collapse-toggle').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var bodyId = btn.getAttribute('data-collapse') + '-body';
+        var body = document.getElementById(bodyId);
+        if (body) {
+          btn.classList.toggle('open');
+          body.classList.toggle('open');
+          var arrow = btn.textContent.trim();
+          if (btn.classList.contains('open')) {
+            btn.textContent = btn.textContent.replace('▼', '▲');
+          } else {
+            btn.textContent = btn.textContent.replace('▲', '▼');
+          }
+        }
       });
     });
+  }
+
+  // ─── RENDER FUNNEL ──────────────────────────────
+  function renderFunnel() {
+    var el = document.getElementById('funnel-content');
+    if (!cachedData) {
+      el.innerHTML = '<div class="no-data"><p>Carregue os dados na aba "Tempo real" primeiro.</p></div>';
+      return;
+    }
+    var cards = cachedData.cards, config = cachedData.config, throughput = cachedData.throughput;
+    var sla = config.sla || DEFAULT_SLA;
+    var slaAlerts = computeSLAAlerts(cards, config);
+
+    var perList = {};
+    FLOW_LISTS.forEach(function(n) { perList[n] = { cards: [], aboveSLA: 0 }; });
+    cards.forEach(function(c) {
+      if (perList[c.currentListName]) {
+        perList[c.currentListName].cards.push(c);
+        var limit = sla[c.currentListName];
+        if (limit !== undefined && limit < 999 && c.daysInCurrent > limit) {
+          perList[c.currentListName].aboveSLA++;
+        }
+      }
+    });
+
+    var maxCards = 1;
+    var totalInProgress = 0;
+    var bottleneckName = '', bottleneckCount = 0;
+    var totalAboveSLA = 0;
+    FLOW_LISTS.forEach(function(n) {
+      var cnt = perList[n].cards.length;
+      if (cnt > maxCards) maxCards = cnt;
+      if (n !== 'Concluído 🏆') {
+        totalInProgress += cnt;
+        if (cnt > bottleneckCount) { bottleneckCount = cnt; bottleneckName = n; }
+      }
+      totalAboveSLA += perList[n].aboveSLA;
+    });
+
+    var html = '';
+    html += '<div class="summary-cards">';
+    html += '<div class="summary-card"><div class="sc-value">'+totalInProgress+'</div><div class="sc-label">Cards em andamento</div></div>';
+    html += '<div class="summary-card"><div class="sc-value">'+bottleneckCount+'</div><div class="sc-label">'+escHtml(bottleneckName)+'</div></div>';
+    html += '<div class="summary-card"><div class="sc-value" style="color:'+(totalAboveSLA>0?'#eb5a46':'#36b37e')+'">'+totalAboveSLA+'</div><div class="sc-label">Cards acima do SLA</div></div>';
+    html += '</div>';
+
+    html += '<table class="funnel-table"><thead><tr>';
+    html += '<th>Etapa</th><th>Cards agora</th><th>Acima do SLA</th><th>SLA</th><th>Saídas no mês</th><th>Status</th>';
+    html += '</tr></thead><tbody>';
+
+    FLOW_LISTS.forEach(function(n) {
+      var p = perList[n];
+      var cnt = p.cards.length;
+      var abv = p.aboveSLA;
+      var limit = sla[n];
+      var tp = throughput[n] || 0;
+      var isConcluido = n === 'Concluído 🏆';
+
+      var status, statusClass;
+      if (isConcluido) {
+        status = '✅ Concluído'; statusClass = 'status-ok';
+      } else if (cnt >= 3 && abv >= 1) {
+        status = '🔴 Gargalo'; statusClass = 'status-danger';
+      } else if (abv >= 1) {
+        status = '⚠️ Atenção'; statusClass = 'status-warn';
+      } else {
+        status = '✅ Fluindo'; statusClass = 'status-ok';
+      }
+
+      var barW = maxCards > 0 ? Math.round(cnt / maxCards * 100) : 0;
+      html += '<tr'+(isConcluido ? ' class="concluded"' : '')+'>';
+      html += '<td>'+escHtml(n)+'</td>';
+      html += '<td><div style="display:flex;align-items:center;gap:8px;"><span>'+cnt+'</span><div class="funnel-bar" style="width:'+barW+'%;"></div></div></td>';
+      html += '<td style="color:'+(abv>0?'#eb5a46':'#36b37e')+';font-weight:600;">'+abv+'</td>';
+      html += '<td>'+(limit >= 999 ? '—' : limit+'d úteis')+'</td>';
+      html += '<td>'+tp+'</td>';
+      html += '<td class="'+statusClass+'">'+status+'</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+
+    if (slaAlerts.length > 0) {
+      html += '<div class="alerts-section">';
+      html += '<h3>Alertas ativos ('+slaAlerts.length+')</h3>';
+      slaAlerts.forEach(function(a) {
+        html += '<div class="alert-row">';
+        html += '<span class="ar-name">'+escHtml(a.name)+'</span>';
+        html += '<span class="ar-stage">'+escHtml(a.list)+'</span>';
+        html += '<span class="ar-days">'+a.days+' d.u.</span>';
+        html += '<span class="ar-excess">+'+a.excess+' dias acima do limite</span>';
+        html += '<span class="ar-member '+(a.members ? '' : 'none')+'">'+(a.members || 'sem responsável')+'</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    el.innerHTML = html;
   }
 
   // ─── SNAPSHOT ───────────────────────────────────
@@ -488,9 +801,10 @@
       if (!existing) {
         var snap = {
           score: kpis.healthScore,
-          kpi1: kpis.kpi1, kpi2: kpis.kpi2, kpi3: kpis.kpi3, kpi4: kpis.kpi4,
+          kpi1: kpis.kpi1, kpi2: kpis.kpi2, kpi3: kpis.kpi3, kpi4: kpis.kpi4, kpi5: kpis.kpi5,
           meta_prazo: config.meta_prazo, meta_rework: config.meta_rework,
           meta_leadtime: config.meta_leadtime, meta_through: config.meta_through,
+          meta_conformidade: config.meta_conformidade,
           totalCards: kpis.totalCards,
           savedAt: now.toISOString()
         };
@@ -504,9 +818,10 @@
     var key = 'snapshot_'+now.getFullYear()+'_'+String(now.getMonth()+1).padStart(2,'0');
     var snap = {
       score: kpis.healthScore,
-      kpi1: kpis.kpi1, kpi2: kpis.kpi2, kpi3: kpis.kpi3, kpi4: kpis.kpi4,
+      kpi1: kpis.kpi1, kpi2: kpis.kpi2, kpi3: kpis.kpi3, kpi4: kpis.kpi4, kpi5: kpis.kpi5,
       meta_prazo: config.meta_prazo, meta_rework: config.meta_rework,
       meta_leadtime: config.meta_leadtime, meta_through: config.meta_through,
+      meta_conformidade: config.meta_conformidade,
       totalCards: kpis.totalCards,
       savedAt: now.toISOString()
     };
@@ -524,11 +839,13 @@
       .then(function(tok) { token = tok; return t.board('id'); })
       .then(function(board) { boardId = board.id; return t.get('board', 'shared', 'healthConfig'); })
       .then(function(cfg) {
-        var config = cfg || DEFAULTS;
-        return fetchData(token, boardId).then(function(cards) {
-          cachedData = { cards: cards, config: config };
-          var kpis = calcKPIs(cards, config);
-          renderRealtime(kpis, config);
+        var config = mergeConfig(cfg);
+        return fetchData(token, boardId).then(function(data) {
+          cachedData = { cards: data.cards, config: config, throughput: data.throughput };
+          var kpis = calcKPIs(data.cards, config);
+          var slaAlerts = computeSLAAlerts(data.cards, config);
+          renderRealtime(kpis, config, data.cards);
+          renderAlertBanner(slaAlerts);
           saveSnapshotIfNeeded(kpis, config);
         });
       })
@@ -568,7 +885,7 @@
         html = '<div class="history-empty"><p>O histórico será gerado automaticamente a partir do próximo acesso mensal.</p></div>';
       } else {
         html += '<table class="history-table"><thead><tr>';
-        html += '<th>Mês</th><th>Health Score</th><th>No prazo</th><th>Rework</th><th>Lead time</th><th>Throughput</th><th>Cards</th>';
+        html += '<th>Mês</th><th>Health Score</th><th>No prazo</th><th>Rework</th><th>Lead time</th><th>Throughput</th><th>Conformidade</th><th>Cards</th>';
         html += '</tr></thead><tbody>';
         snapshots.forEach(function(s) {
           var isCurrent = s.month === curMonth && s.year === curYear;
@@ -579,6 +896,7 @@
           html += '<td>'+s.data.kpi2+'%</td>';
           html += '<td>'+s.data.kpi3+' d.u.</td>';
           html += '<td>'+s.data.kpi4+'</td>';
+          html += '<td>'+(s.data.kpi5 !== undefined ? s.data.kpi5+'%' : '—')+'</td>';
           html += '<td>'+s.data.totalCards+'</td>';
           html += '</tr>';
         });
@@ -600,9 +918,7 @@
           return;
         }
         var kpis = calcKPIs(cachedData.cards, cachedData.config);
-        forceSnapshot(kpis, cachedData.config).then(function() {
-          loadHistory();
-        });
+        forceSnapshot(kpis, cachedData.config).then(function() { loadHistory(); });
       });
     });
   }
@@ -610,7 +926,7 @@
   // ─── CONFIG ─────────────────────────────────────
   function renderConfig() {
     t.get('board', 'shared', 'healthConfig').then(function(cfg) {
-      var config = cfg || DEFAULTS;
+      var config = mergeConfig(cfg);
       var html = '';
 
       html += '<div class="config-section"><h3>Metas</h3>';
@@ -618,15 +934,30 @@
       html += sliderRow('meta_rework', 'Meta rework máximo', config.meta_rework, 5, 60, 5, '%');
       html += sliderRow('meta_leadtime', 'Meta lead time máximo', config.meta_leadtime, 2, 20, 1, ' d.u.');
       html += sliderRow('meta_through', 'Meta throughput mensal', config.meta_through, 5, 50, 1, ' cards');
+      html += sliderRow('meta_conformidade', 'Meta conformidade de processo', config.meta_conformidade, 50, 100, 5, '%');
       html += '</div>';
 
       html += '<div class="config-section"><h3>Pesos do Health Score</h3>';
       html += '<div class="peso-sum valid" id="peso-sum">Soma dos pesos: 100</div>';
       html += sliderRow('peso1', 'Peso entrega no prazo', config.peso1, 10, 60, 5, '');
-      html += sliderRow('peso2', 'Peso rework', config.peso2, 10, 40, 5, '');
-      html += sliderRow('peso3', 'Peso lead time', config.peso3, 10, 40, 5, '');
+      html += sliderRow('peso2', 'Peso rework', config.peso2, 5, 40, 5, '');
+      html += sliderRow('peso3', 'Peso lead time', config.peso3, 5, 40, 5, '');
       html += sliderRow('peso4', 'Peso throughput', config.peso4, 5, 30, 5, '');
+      html += sliderRow('peso5', 'Peso conformidade', config.peso5, 5, 40, 5, '');
       html += '</div>';
+
+      html += '<div class="config-section"><h3>SLA por etapa (dias úteis)</h3>';
+      html += '<div class="sla-grid">';
+      FLOW_LISTS.forEach(function(n, i) {
+        if (n === 'Concluído 🏆') return;
+        var val = config.sla && config.sla[n] !== undefined ? config.sla[n] : DEFAULT_SLA[n];
+        html += '<div class="sla-row">';
+        html += '<label>'+escHtml(n)+'</label>';
+        html += '<input type="number" id="sla_'+i+'" min="1" max="30" value="'+val+'" data-list="'+escHtml(n)+'">';
+        html += '<span class="sla-unit">d.u.</span>';
+        html += '</div>';
+      });
+      html += '</div></div>';
 
       html += '<div class="config-footer">';
       html += '<button class="btn" id="btn-save-config">Salvar configurações</button>';
@@ -642,7 +973,6 @@
           updatePesoSum();
         });
       });
-
       updatePesoSum();
 
       document.getElementById('btn-save-config').addEventListener('click', function() {
@@ -651,53 +981,49 @@
           meta_rework: parseInt(document.getElementById('meta_rework').value),
           meta_leadtime: parseInt(document.getElementById('meta_leadtime').value),
           meta_through: parseInt(document.getElementById('meta_through').value),
+          meta_conformidade: parseInt(document.getElementById('meta_conformidade').value),
           peso1: parseInt(document.getElementById('peso1').value),
           peso2: parseInt(document.getElementById('peso2').value),
           peso3: parseInt(document.getElementById('peso3').value),
-          peso4: parseInt(document.getElementById('peso4').value)
+          peso4: parseInt(document.getElementById('peso4').value),
+          peso5: parseInt(document.getElementById('peso5').value),
+          sla: {}
         };
-        var sum = newConfig.peso1 + newConfig.peso2 + newConfig.peso3 + newConfig.peso4;
+        var sum = newConfig.peso1 + newConfig.peso2 + newConfig.peso3 + newConfig.peso4 + newConfig.peso5;
         if (sum !== 100) return;
+
+        FLOW_LISTS.forEach(function(n, i) {
+          if (n === 'Concluído 🏆') { newConfig.sla[n] = 999; return; }
+          var input = document.getElementById('sla_'+i);
+          newConfig.sla[n] = input ? parseInt(input.value) || DEFAULT_SLA[n] : DEFAULT_SLA[n];
+        });
 
         t.set('board', 'shared', 'healthConfig', newConfig).then(function() {
           var msg = document.getElementById('cfg-msg');
           msg.textContent = 'Configurações salvas!';
           msg.style.display = '';
           if (cachedData) cachedData.config = newConfig;
-          setTimeout(function() {
-            tabs[0].click();
-          }, 1000);
+          setTimeout(function() { switchTab('realtime'); loadRealtime(); }, 1000);
         });
       });
     });
   }
 
   function sliderRow(id, label, value, min, max, step, unit) {
-    return '<div class="config-row">' +
-      '<label for="'+id+'">'+label+'</label>' +
-      '<div class="slider-row">' +
-      '<input type="range" id="'+id+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+value+'" data-unit="'+unit+'">' +
-      '<span class="slider-val" id="val-'+id+'">'+value+unit+'</span>' +
-      '</div></div>';
+    return '<div class="config-row"><label for="'+id+'">'+label+'</label>' +
+      '<div class="slider-row"><input type="range" id="'+id+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+value+'" data-unit="'+unit+'">' +
+      '<span class="slider-val" id="val-'+id+'">'+value+unit+'</span></div></div>';
   }
 
   function updatePesoSum() {
-    var p1 = parseInt(document.getElementById('peso1').value) || 0;
-    var p2 = parseInt(document.getElementById('peso2').value) || 0;
-    var p3 = parseInt(document.getElementById('peso3').value) || 0;
-    var p4 = parseInt(document.getElementById('peso4').value) || 0;
-    var sum = p1+p2+p3+p4;
+    var ids = ['peso1','peso2','peso3','peso4','peso5'];
+    var sum = 0;
+    ids.forEach(function(id) { sum += parseInt(document.getElementById(id).value) || 0; });
     var el = document.getElementById('peso-sum');
     var btn = document.getElementById('btn-save-config');
     el.textContent = 'Soma dos pesos: '+sum;
-    if (sum === 100) {
-      el.className = 'peso-sum valid';
-      btn.disabled = false;
-    } else {
-      el.className = 'peso-sum invalid';
-      el.textContent += ' (deve ser 100)';
-      btn.disabled = true;
-    }
+    if (sum === 100) { el.className = 'peso-sum valid'; btn.disabled = false; }
+    else { el.className = 'peso-sum invalid'; el.textContent += ' (deve ser 100)'; btn.disabled = true; }
   }
 
   // ─── INIT ───────────────────────────────────────
