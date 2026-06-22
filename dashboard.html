@@ -414,7 +414,7 @@
 
         return Promise.all([
           Promise.all(flowLists.map(function(l) {
-            return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&customFieldItems=true', token))
+            return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList', token))
               .then(function(r){ return r.json(); });
           })),
           fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); })
@@ -439,11 +439,12 @@
             }
           }
 
-          function fetchActionsThrottled(cardList, batchSize, delayMs) {
-            var results = new Array(cardList.length);
+          function fetchCardDataThrottled(cardList, batchSize, delayMs) {
+            var actionsResults = new Array(cardList.length);
+            var cfResults = new Array(cardList.length);
             var idx = 0;
             function nextBatch() {
-              if (idx >= cardList.length) return Promise.resolve(results);
+              if (idx >= cardList.length) return Promise.resolve({ actions: actionsResults, cf: cfResults });
               var end = Math.min(idx + batchSize, cardList.length);
               var batch = [];
               for (var b = idx; b < end; b++) {
@@ -451,25 +452,29 @@
                   batch.push(
                     fetch(apiUrl('/cards/'+cardList[i].id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
                       .then(function(r){ return r.json(); })
-                      .then(function(data){ results[i] = data; })
+                      .then(function(data){ actionsResults[i] = data; })
                   );
+                  if (retrabalhoFieldId) {
+                    batch.push(
+                      fetch(apiUrl('/cards/'+cardList[i].id+'/customFieldItems', token))
+                        .then(function(r){ return r.json(); })
+                        .then(function(data){ cfResults[i] = Array.isArray(data) ? data : []; })
+                    );
+                  }
                 })(b);
               }
               idx = end;
               return Promise.all(batch).then(function() {
-                if (idx >= cardList.length) return results;
+                if (idx >= cardList.length) return { actions: actionsResults, cf: cfResults };
                 return new Promise(function(resolve) { setTimeout(resolve, delayMs); }).then(nextBatch);
               });
             }
             return nextBatch();
           }
 
-          var cardsComCF = cards.filter(function(c){ return c.customFieldItems && c.customFieldItems.length > 0; });
-          console.log('[DEBUG] Cards com customFieldItems preenchidos: ' + cardsComCF.length + '/' + cards.length);
-          console.log('[DEBUG] Detalhes:', JSON.stringify(cardsComCF.slice(0,10).map(function(c){return{name:c.name,cfi:c.customFieldItems};})));
-
-          return fetchActionsThrottled(cards, 8, 1200).then(function(allActions) {
-            var allCF = cards.map(function(c) { return c.customFieldItems || []; });
+          return fetchCardDataThrottled(cards, 4, 1500).then(function(results) {
+            var allActions = results.actions;
+            var allCF = results.cf;
             var now = new Date();
             var curMonth = now.getMonth(), curYear = now.getFullYear();
 
