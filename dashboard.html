@@ -301,7 +301,7 @@
   FLOW_LISTS.forEach(function(n, i) { DEFAULT_SLA[n] = slaDefaults[i]; });
 
   var DEFAULTS = {
-    meta_prazo: 80, meta_rework: 30, meta_leadtime: 7, meta_through: 12, meta_conformidade: 85,
+    meta_prazo: 80, meta_rework: 120, meta_leadtime: 7, meta_through: 12, meta_conformidade: 85,
     peso1: 30, peso2: 20, peso3: 20, peso4: 10, peso5: 20,
     sla: DEFAULT_SLA
   };
@@ -618,8 +618,7 @@
 
     var totalRw = 0;
     cards.forEach(function(c){ totalRw += c.retrabalho; });
-    var avgRw = cards.length ? totalRw / cards.length : 0;
-    var kpi2 = Math.min(100, Math.round(avgRw * 10 * 10) / 10);
+    var kpi2 = totalRw;
 
     var totalDays = 0, countDays = 0;
     cards.forEach(function(c){ totalDays += c.totalBD; countDays++; });
@@ -631,7 +630,7 @@
     var kpi5 = cards.length ? Math.round(conformes / cards.length * 1000) / 10 : 100;
 
     var score_prazo = Math.min(100, (kpi1 / config.meta_prazo) * 100);
-    var score_rework = Math.max(0, Math.min(100, ((config.meta_rework - kpi2) / config.meta_rework) * 100 + 50));
+    var score_rework = Math.max(0, Math.min(100, ((config.meta_rework - kpi2) / config.meta_rework) * 100));
     var score_leadtime = kpi3 > 0 ? Math.max(0, Math.min(100, (config.meta_leadtime / kpi3) * 100)) : 100;
     var score_through = Math.min(100, (kpi4 / config.meta_through) * 100);
     var score_conformidade = Math.min(100, (kpi5 / config.meta_conformidade) * 100);
@@ -724,7 +723,7 @@
 
     var kpiCards = [
       { name: 'Entrega no prazo', value: kpis.kpi1+'%', meta: 'meta: '+config.meta_prazo+'%', pct: kpis.score_prazo },
-      { name: 'Taxa de rework', value: kpis.kpi2+'%', meta: 'meta: ≤'+config.meta_rework+'%', pct: kpis.score_rework },
+      { name: 'Retrabalhos', value: kpis.kpi2, meta: 'meta: ≤'+config.meta_rework, pct: kpis.score_rework },
       { name: 'Lead time médio', value: kpis.kpi3+' d.u.', meta: 'meta: ≤'+config.meta_leadtime+' d.u.', pct: kpis.score_leadtime },
       { name: 'Throughput mensal', value: kpis.kpi4+' cards', meta: 'meta: '+config.meta_through+' cards', pct: kpis.score_through },
       { name: 'Conformidade', value: kpis.kpi5+'%', meta: 'meta: '+config.meta_conformidade+'%', pct: kpis.score_conformidade }
@@ -1068,7 +1067,7 @@
           html += '<td>'+monthNames[s.month]+'/'+s.year+'</td>';
           html += '<td>'+s.data.score+'</td>';
           html += '<td>'+s.data.kpi1+'%</td>';
-          html += '<td>'+s.data.kpi2+'%</td>';
+          html += '<td>'+s.data.kpi2+'</td>';
           html += '<td>'+s.data.kpi3+' d.u.</td>';
           html += '<td>'+s.data.kpi4+'</td>';
           html += '<td>'+(s.data.kpi5 !== undefined ? s.data.kpi5+'%' : '—')+'</td>';
@@ -1106,7 +1105,7 @@
 
       html += '<div class="config-section"><h3>Metas</h3>';
       html += sliderRow('meta_prazo', 'Meta entrega no prazo', config.meta_prazo, 50, 100, 5, '%');
-      html += sliderRow('meta_rework', 'Meta rework máximo', config.meta_rework, 5, 60, 5, '%');
+      html += sliderRow('meta_rework', 'Meta retrabalhos máximo', config.meta_rework, 0, 1000, 5, ' retrabalhos');
       html += sliderRow('meta_leadtime', 'Meta lead time máximo', config.meta_leadtime, 2, 20, 1, ' d.u.');
       html += sliderRow('meta_through', 'Meta throughput mensal', config.meta_through, 5, 1000, 5, ' cards');
       html += sliderRow('meta_conformidade', 'Meta conformidade de processo', config.meta_conformidade, 50, 100, 5, '%');
