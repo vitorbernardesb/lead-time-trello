@@ -481,33 +481,14 @@
       cards.forEach(function(c) {
         cfByCard[c.id] = Array.isArray(c.customFieldItems) ? c.customFieldItems : [];
       });
-      var hasCFInline = false;
-      if (retrabalhoFieldId && cards.length > 0) {
-        for (var ci = 0; ci < cards.length; ci++) {
-          var cfi = cards[ci].customFieldItems;
-          if (Array.isArray(cfi) && cfi.length > 0) { hasCFInline = true; break; }
-        }
-      }
 
       var actionUrls = cards.map(function(c) {
         return '/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000';
       });
-      var cfUrls = [];
-      if (retrabalhoFieldId && !hasCFInline) {
-        cfUrls = cards.map(function(c) {
-          return '/cards/'+c.id+'/customFieldItems';
-        });
-      }
-      var allUrls = actionUrls.concat(cfUrls);
 
-      return throttledFetch(allUrls, token, 20, 2500).then(function(allResults) {
-        var allActions = allResults.slice(0, cards.length);
-        var allCF;
-        if (retrabalhoFieldId && !hasCFInline) {
-          allCF = allResults.slice(cards.length);
-        } else {
-          allCF = cards.map(function(c) { return cfByCard[c.id]; });
-        }
+      return throttledFetch(actionUrls, token, 20, 2500).then(function(allResults) {
+        var allActions = allResults;
+        var allCF = cards.map(function(c) { return cfByCard[c.id]; });
 
           var now = new Date();
           var curMonth = now.getMonth(), curYear = now.getFullYear();
