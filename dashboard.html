@@ -464,6 +464,10 @@
             return nextBatch();
           }
 
+          console.log('[DEBUG] retrabalhoFieldId:', retrabalhoFieldId);
+          console.log('[DEBUG] customFields encontrados:', JSON.stringify((customFields||[]).map(function(f){return{id:f.id,name:f.name,type:f.type};})));
+          console.log('[DEBUG] Primeiros 3 cards com customFieldItems:', JSON.stringify(cards.slice(0,3).map(function(c){return{name:c.name,cfi:c.customFieldItems};})));
+
           return fetchActionsThrottled(cards, 8, 1200).then(function(allActions) {
             var allCF = cards.map(function(c) { return c.customFieldItems || []; });
             var now = new Date();
