@@ -395,29 +395,37 @@
   });
 
   // ─── FETCH DATA ─────────────────────────────────
-  function fetchAllBoardActions(boardId, token) {
-    var all = [];
-    function page(before) {
-      var url = '/boards/'+boardId+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000';
-      if (before) url += '&before='+before;
-      return fetch(apiUrl(url, token)).then(function(r){ return r.json(); }).then(function(acts) {
-        if (!Array.isArray(acts) || acts.length === 0) return all;
-        all = all.concat(acts);
-        if (acts.length < 1000) return all;
-        return page(acts[acts.length-1].id);
+  function throttledFetch(urls, token, batchSize, delayMs) {
+    var results = new Array(urls.length);
+    var idx = 0;
+    function nextBatch() {
+      if (idx >= urls.length) return Promise.resolve(results);
+      var end = Math.min(idx + batchSize, urls.length);
+      var batch = [];
+      for (var b = idx; b < end; b++) {
+        (function(i) {
+          batch.push(
+            fetch(apiUrl(urls[i], token))
+              .then(function(r){ return r.json(); })
+              .then(function(data){ results[i] = data; })
+          );
+        })(b);
+      }
+      idx = end;
+      return Promise.all(batch).then(function() {
+        if (idx >= urls.length) return results;
+        return new Promise(function(resolve){ setTimeout(resolve, delayMs); }).then(nextBatch);
       });
     }
-    return page(null);
+    return nextBatch();
   }
 
   function fetchData(token, boardId) {
     return Promise.all([
       fetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(function(r){ return r.json(); }),
-      fetch(apiUrl('/boards/'+boardId+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&customFieldItems=true', token)).then(function(r){ return r.json(); }),
-      fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); }),
-      fetchAllBoardActions(boardId, token)
-    ]).then(function(res) {
-      var lists = res[0], allCards = res[1], customFields = res[2], allBoardActions = res[3];
+      fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); })
+    ]).then(function(initial) {
+      var lists = initial[0], customFields = initial[1];
 
       var flowListIds = {};
       if (Array.isArray(lists)) {
@@ -428,24 +436,7 @@
         });
       }
       if (!Object.keys(flowListIds).length) throw new Error('Nenhuma lista do fluxo encontrada.');
-
-      var cards = [];
-      if (Array.isArray(allCards)) {
-        allCards.forEach(function(c) {
-          if (flowListIds[c.idList]) cards.push(c);
-        });
-      }
-
-      var actionsByCard = {};
-      if (Array.isArray(allBoardActions)) {
-        allBoardActions.forEach(function(act) {
-          var cid = act.data && act.data.card ? act.data.card.id : null;
-          if (cid) {
-            if (!actionsByCard[cid]) actionsByCard[cid] = [];
-            actionsByCard[cid].push(act);
-          }
-        });
-      }
+      var flowListArray = Object.keys(flowListIds);
 
       var retrabalhoFieldId = null;
       var retrabalhoOptions = {};
@@ -463,101 +454,122 @@
         }
       }
 
-      var now = new Date();
-      var curMonth = now.getMonth(), curYear = now.getFullYear();
-      var throughput = {};
-      FLOW_LISTS.forEach(function(n) { throughput[n] = 0; });
+      var cardUrls = flowListArray.map(function(lid) {
+        return '/lists/'+lid+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&customFieldItems=true';
+      });
+      return throttledFetch(cardUrls, token, 11, 0).then(function(cardArrays) {
+        var cards = [];
+        cardArrays.forEach(function(arr) { if (Array.isArray(arr)) cards = cards.concat(arr); });
 
-      var processed = [];
-      for (var i=0; i<cards.length; i++) {
-        var card = cards[i];
-        var actions = actionsByCard[card.id] || [];
-
-        actions.forEach(function(act) {
-          if (act.type === 'updateCard' && act.data.listBefore) {
-            var d = new Date(act.date);
-            if (d.getMonth() === curMonth && d.getFullYear() === curYear) {
-              var fromList = act.data.listBefore.name;
-              if (throughput.hasOwnProperty(fromList)) throughput[fromList]++;
-            }
-          }
+        var needCF = retrabalhoFieldId && cards.length > 0 && (!cards[0].customFieldItems || !Array.isArray(cards[0].customFieldItems));
+        var actionUrls = cards.map(function(c) {
+          return '/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000';
         });
+        var cfUrls = needCF ? cards.map(function(c) {
+          return '/cards/'+c.id+'/customFieldItems';
+        }) : [];
 
-        var rwVal = 0;
-        var hasRetrabalho = false;
-        var cfItems = card.customFieldItems || [];
-        if (retrabalhoFieldId && Array.isArray(cfItems)) {
-          for (var cfi=0; cfi<cfItems.length; cfi++) {
-            if (cfItems[cfi].idCustomField === retrabalhoFieldId) {
-              var cfItem = cfItems[cfi];
-              var v = cfItem.value;
-              if (v !== null && v !== undefined) {
-                if (v.number !== null && v.number !== undefined) { rwVal = parseFloat(v.number); if (isNaN(rwVal)) rwVal = 0; }
-                else if (v.text !== null && v.text !== undefined) { rwVal = parseFloat(v.text); if (isNaN(rwVal)) rwVal = 0; }
-                else if (v.checked !== undefined) { rwVal = v.checked === 'true' || v.checked === true ? 1 : 0; }
-                hasRetrabalho = true;
-              } else if (cfItem.idValue) {
-                hasRetrabalho = true;
-                var opt = retrabalhoOptions[cfItem.idValue];
-                if (opt !== undefined && opt !== '') {
-                  rwVal = parseFloat(opt);
-                  if (isNaN(rwVal)) rwVal = 1;
-                } else {
-                  rwVal = 1;
+        return throttledFetch(actionUrls.concat(cfUrls), token, 10, 1100).then(function(allResults) {
+          var allActions = allResults.slice(0, cards.length);
+          var allCF = needCF ? allResults.slice(cards.length) : cards.map(function(c) { return c.customFieldItems || []; });
+
+          var now = new Date();
+          var curMonth = now.getMonth(), curYear = now.getFullYear();
+          var throughput = {};
+          FLOW_LISTS.forEach(function(n) { throughput[n] = 0; });
+
+          var processed = [];
+          for (var i=0; i<cards.length; i++) {
+            var card = cards[i];
+            var actions = Array.isArray(allActions[i]) ? allActions[i] : [];
+
+            actions.forEach(function(act) {
+              if (act.type === 'updateCard' && act.data.listBefore) {
+                var d = new Date(act.date);
+                if (d.getMonth() === curMonth && d.getFullYear() === curYear) {
+                  var fromList = act.data.listBefore.name;
+                  if (throughput.hasOwnProperty(fromList)) throughput[fromList]++;
                 }
               }
-              break;
+            });
+
+            var rwVal = 0;
+            var hasRetrabalho = false;
+            var cfItems = Array.isArray(allCF[i]) ? allCF[i] : [];
+            if (retrabalhoFieldId) {
+              for (var cfi=0; cfi<cfItems.length; cfi++) {
+                if (cfItems[cfi].idCustomField === retrabalhoFieldId) {
+                  var cfItem = cfItems[cfi];
+                  var v = cfItem.value;
+                  if (v !== null && v !== undefined) {
+                    if (v.number !== null && v.number !== undefined) { rwVal = parseFloat(v.number); if (isNaN(rwVal)) rwVal = 0; }
+                    else if (v.text !== null && v.text !== undefined) { rwVal = parseFloat(v.text); if (isNaN(rwVal)) rwVal = 0; }
+                    else if (v.checked !== undefined) { rwVal = v.checked === 'true' || v.checked === true ? 1 : 0; }
+                    hasRetrabalho = true;
+                  } else if (cfItem.idValue) {
+                    hasRetrabalho = true;
+                    var opt = retrabalhoOptions[cfItem.idValue];
+                    if (opt !== undefined && opt !== '') {
+                      rwVal = parseFloat(opt);
+                      if (isNaN(rwVal)) rwVal = 1;
+                    } else {
+                      rwVal = 1;
+                    }
+                  }
+                  break;
+                }
+              }
             }
+
+            var tl = buildTimeline(actions);
+            var currentStage = tl.length ? tl[tl.length-1] : null;
+            var currentListName = currentStage ? currentStage.name : (flowListIds[card.idList] || '');
+            var daysInCurrent = currentStage ? countBusinessDays(currentStage.enteredAt, now) : 0;
+            var totalBD = 0;
+            for (var si = 0; si < tl.length; si++) {
+              var stEnd = tl[si].leftAt || now;
+              totalBD += countBusinessDays(tl[si].enteredAt, stEnd);
+            }
+
+            var isLate = false;
+            var hasDue = !!card.due;
+            if (hasDue) {
+              var td = new Date(); td.setHours(0,0,0,0);
+              var du = new Date(card.due); du.setHours(0,0,0,0);
+              isLate = du < td;
+            }
+
+            var hasLabels = card.labels && card.labels.length > 0;
+
+            var inConcluido = false;
+            if (currentListName === 'Concluído 🏆') {
+              var dla = new Date(card.dateLastActivity);
+              if (dla.getMonth() === curMonth && dla.getFullYear() === curYear) inConcluido = true;
+            }
+
+            var missing = [];
+            if (!hasDue) missing.push('Prazo');
+            if (!hasLabels) missing.push('Label');
+
+            processed.push({
+              name: card.name,
+              retrabalho: rwVal,
+              hasRetrabalho: hasRetrabalho,
+              totalBD: totalBD,
+              daysInCurrent: daysInCurrent,
+              hasDue: hasDue,
+              isLate: isLate,
+              hasLabels: hasLabels,
+              labels: (card.labels || []).map(function(l) { return l.name; }),
+              currentListName: currentListName,
+              inConcluidoThisMonth: inConcluido,
+              missing: missing,
+              isConforme: missing.length === 0
+            });
           }
-        }
-
-        var tl = buildTimeline(actions);
-        var currentStage = tl.length ? tl[tl.length-1] : null;
-        var currentListName = currentStage ? currentStage.name : (flowListIds[card.idList] || '');
-        var daysInCurrent = currentStage ? countBusinessDays(currentStage.enteredAt, now) : 0;
-        var totalBD = 0;
-        for (var si = 0; si < tl.length; si++) {
-          var stEnd = tl[si].leftAt || now;
-          totalBD += countBusinessDays(tl[si].enteredAt, stEnd);
-        }
-
-        var isLate = false;
-        var hasDue = !!card.due;
-        if (hasDue) {
-          var td = new Date(); td.setHours(0,0,0,0);
-          var du = new Date(card.due); du.setHours(0,0,0,0);
-          isLate = du < td;
-        }
-
-        var hasLabels = card.labels && card.labels.length > 0;
-
-        var inConcluido = false;
-        if (currentListName === 'Concluído 🏆') {
-          var dla = new Date(card.dateLastActivity);
-          if (dla.getMonth() === curMonth && dla.getFullYear() === curYear) inConcluido = true;
-        }
-
-        var missing = [];
-        if (!hasDue) missing.push('Prazo');
-        if (!hasLabels) missing.push('Label');
-
-        processed.push({
-          name: card.name,
-          retrabalho: rwVal,
-          hasRetrabalho: hasRetrabalho,
-          totalBD: totalBD,
-          daysInCurrent: daysInCurrent,
-          hasDue: hasDue,
-          isLate: isLate,
-          hasLabels: hasLabels,
-          labels: (card.labels || []).map(function(l) { return l.name; }),
-          currentListName: currentListName,
-          inConcluidoThisMonth: inConcluido,
-          missing: missing,
-          isConforme: missing.length === 0
+          return { cards: processed, throughput: throughput };
         });
-      }
-      return { cards: processed, throughput: throughput };
+      });
     });
   }
 
