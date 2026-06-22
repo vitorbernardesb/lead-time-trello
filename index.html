@@ -217,7 +217,6 @@
 
     var currentListName = tl.length ? tl[tl.length-1].name : '';
     var daysInCurrentList = tl.length ? countBusinessDays(tl[tl.length-1].enteredAt, now) : 0;
-    var memberNames = (card.members||[]).map(function(m){ return m.fullName||m.username; }).join(', ');
 
     return {
       name: card.name,
@@ -230,8 +229,7 @@
       retrabalho: retrabalhoVal,
       status: sp,
       currentListName: currentListName,
-      daysInCurrentList: daysInCurrentList,
-      members: memberNames
+      daysInCurrentList: daysInCurrentList
     };
   }
 
@@ -423,26 +421,25 @@
       if (c.daysInCurrentList > limit) {
         alerts.push({
           name: c.name, list: c.currentListName, days: c.daysInCurrentList,
-          slaLimit: limit, excess: c.daysInCurrentList - limit,
-          members: c.members || '—'
+          slaLimit: limit, excess: c.daysInCurrentList - limit
         });
       }
     });
     alerts.sort(function(a,b) { return b.excess - a.excess; });
 
-    var hdr = ['Card','Etapa atual','Dias úteis na etapa','SLA da etapa','Excesso','Responsável'];
+    var hdr = ['Card','Etapa atual','Dias úteis na etapa','SLA da etapa','Excesso'];
     var data = [hdr];
     alerts.forEach(function(a) {
-      data.push([a.name, a.list, a.days, a.slaLimit, '+'+a.excess+' dias', a.members]);
+      data.push([a.name, a.list, a.days, a.slaLimit, '+'+a.excess+' dias']);
     });
 
     var hoje = new Date();
     var footer = 'Gerado em '+fmtDate(hoje)+' '+String(hoje.getHours()).padStart(2,'0')+':'+String(hoje.getMinutes()).padStart(2,'0');
     data.push([]);
-    data.push([footer,'','','','','']);
+    data.push([footer,'','','','']);
 
     var ws = XLSX.utils.aoa_to_sheet(data);
-    ws['!cols'] = [{wch:35},{wch:25},{wch:20},{wch:15},{wch:20},{wch:25}];
+    ws['!cols'] = [{wch:35},{wch:25},{wch:20},{wch:15},{wch:20}];
 
     var sAlertHeader = {font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'A32D2D'}},border:BD,alignment:{horizontal:'center'}};
     for (var c=0; c<hdr.length; c++) setS(ws, 0, c, sAlertHeader);
@@ -501,7 +498,7 @@
           return t.alert({message:'Nenhuma lista do fluxo encontrada.', display:'warning', duration:6});
 
         return Promise.all(flowLists.map(function(l) {
-          return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&members=true&member_fields=fullName,username', token))
+          return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList', token))
             .then(function(r){return r.json();});
         })).then(function(cardArrays) {
           var cards = [];
@@ -581,7 +578,7 @@
       return t.getRestApi().isAuthorized().then(function (ok) {
         if (!ok) return [];
         return Promise.all([
-          t.card('id', 'due', 'labels', 'members'),
+          t.card('id', 'due', 'labels'),
           t.getRestApi().getToken(),
           t.board('id')
         ]).then(function(res) {
@@ -616,14 +613,9 @@
 
             var hasDue = !!card.due;
             var hasLabels = card.labels && card.labels.length > 0;
-            var hasMembers = card.members && card.members.length > 0;
 
-            if (!hasDue || !hasLabels || !hasMembers || !hasRetrabalho) {
+            if (!hasDue || !hasLabels || !hasRetrabalho) {
               badges.push({ text: '⚠ incompleto', color: 'red', title: 'Card sem campos obrigatórios preenchidos' });
-            }
-
-            if (!hasMembers) {
-              badges.push({ text: 'sem responsável', color: 'yellow', title: 'Card sem membro atribuído' });
             }
 
             return badges;

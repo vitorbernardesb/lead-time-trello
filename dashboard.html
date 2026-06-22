@@ -356,7 +356,7 @@
 
         return Promise.all([
           Promise.all(flowLists.map(function(l) {
-            return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&members=true&member_fields=fullName,username', token))
+            return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList', token))
               .then(function(r){ return r.json(); });
           })),
           fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); })
@@ -436,9 +436,6 @@
               }
 
               var hasLabels = card.labels && card.labels.length > 0;
-              var members = (card.members || []);
-              var hasMembers = members.length > 0;
-              var memberNames = members.map(function(m){ return m.fullName || m.username; });
 
               var inConcluido = false;
               if (currentListName === 'Concluído 🏆') {
@@ -450,7 +447,6 @@
               if (!hasDue) missing.push('Prazo');
               if (!hasLabels) missing.push('Label');
               if (!hasRetrabalho) missing.push('Retrabalho');
-              if (!hasMembers) missing.push('Responsável');
 
               processed.push({
                 name: card.name,
@@ -460,8 +456,6 @@
                 hasDue: hasDue,
                 isLate: isLate,
                 hasLabels: hasLabels,
-                hasMembers: hasMembers,
-                memberNames: memberNames,
                 currentListName: currentListName,
                 inConcluidoThisMonth: inConcluido,
                 missing: missing,
@@ -530,8 +524,7 @@
           list: c.currentListName,
           days: c.daysInCurrent,
           slaLimit: limit,
-          excess: c.daysInCurrent - limit,
-          members: c.memberNames.length ? c.memberNames.join(', ') : null
+          excess: c.daysInCurrent - limit
         });
       }
     });
@@ -624,42 +617,6 @@
     }
 
     // Member distribution
-    var memberMap = {};
-    var sla = config.sla || DEFAULT_SLA;
-    cards.forEach(function(c) {
-      var names = c.memberNames.length ? c.memberNames : ['Sem responsável'];
-      names.forEach(function(name) {
-        if (!memberMap[name]) memberMap[name] = { cards: 0, totalDays: 0, totalRw: 0, aboveSLA: 0 };
-        memberMap[name].cards++;
-        memberMap[name].totalDays += c.daysInCurrent;
-        memberMap[name].totalRw += c.retrabalho;
-        var limit = sla[c.currentListName];
-        if (limit !== undefined && limit < 999 && c.daysInCurrent > limit) memberMap[name].aboveSLA++;
-      });
-    });
-    var memberRows = Object.keys(memberMap).map(function(name) {
-      var m = memberMap[name];
-      return { name: name, cards: m.cards, avgLT: m.cards ? Math.round(m.totalDays/m.cards*10)/10 : 0, totalRw: m.totalRw, aboveSLA: m.aboveSLA };
-    }).sort(function(a,b) { return b.cards - a.cards; });
-
-    if (memberRows.length > 0) {
-      html += '<div class="collapsible">';
-      html += '<button class="collapse-toggle" data-collapse="members">Distribuição por membro ('+memberRows.length+') ▼</button>';
-      html += '<div class="collapse-body" id="members-body">';
-      html += '<table><thead><tr><th>Membro</th><th>Cards</th><th>Lead time médio</th><th>Reworks totais</th><th>Acima do SLA</th></tr></thead><tbody>';
-      memberRows.forEach(function(m) {
-        var cls = m.name === 'Sem responsável' ? ' class="warn"' : '';
-        html += '<tr'+cls+'>';
-        html += '<td>'+escHtml(m.name)+'</td>';
-        html += '<td>'+m.cards+'</td>';
-        html += '<td>'+m.avgLT+' d.u.</td>';
-        html += '<td>'+m.totalRw+'</td>';
-        html += '<td>'+(m.aboveSLA > 0 ? '<span style="color:#eb5a46;font-weight:600;">'+m.aboveSLA+'</span>' : '0')+'</td>';
-        html += '</tr>';
-      });
-      html += '</tbody></table></div></div>';
-    }
-
     html += '<div class="footer-bar">';
     html += '<button class="btn btn-secondary" id="btn-refresh">Atualizar dados</button>';
     html += '<button class="btn" id="btn-export">Exportar relatório</button>';
@@ -784,7 +741,6 @@
         html += '<span class="ar-stage">'+escHtml(a.list)+'</span>';
         html += '<span class="ar-days">'+a.days+' d.u.</span>';
         html += '<span class="ar-excess">+'+a.excess+' dias acima do limite</span>';
-        html += '<span class="ar-member '+(a.members ? '' : 'none')+'">'+(a.members || 'sem responsável')+'</span>';
         html += '</div>';
       });
       html += '</div>';
