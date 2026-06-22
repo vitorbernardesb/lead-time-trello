@@ -614,7 +614,7 @@
             var hasDue = !!card.due;
             var hasLabels = card.labels && card.labels.length > 0;
 
-            if (!hasDue || !hasLabels || !hasRetrabalho) {
+            if (!hasDue || !hasLabels) {
               badges.push({ text: '⚠ incompleto', color: 'red', title: 'Card sem campos obrigatórios preenchidos' });
             }
 
