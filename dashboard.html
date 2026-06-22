@@ -395,6 +395,23 @@
   });
 
   // ─── FETCH DATA ─────────────────────────────────
+  function fetchWithRetry(url, token, maxRetries) {
+    var attempt = 0;
+    function tryFetch() {
+      return fetch(apiUrl(url, token))
+        .then(function(r){ return r.json(); })
+        .then(function(data) {
+          if (data && data.error && attempt < maxRetries) {
+            attempt++;
+            var wait = 2000 * attempt;
+            return new Promise(function(resolve){ setTimeout(resolve, wait); }).then(tryFetch);
+          }
+          return data;
+        });
+    }
+    return tryFetch();
+  }
+
   function throttledFetch(urls, token, batchSize, delayMs) {
     var results = new Array(urls.length);
     var idx = 0;
@@ -405,8 +422,7 @@
       for (var b = idx; b < end; b++) {
         (function(i) {
           batch.push(
-            fetch(apiUrl(urls[i], token))
-              .then(function(r){ return r.json(); })
+            fetchWithRetry(urls[i], token, 2)
               .then(function(data){ results[i] = data; })
           );
         })(b);
@@ -484,7 +500,7 @@
       }
       var allUrls = actionUrls.concat(cfUrls);
 
-      return throttledFetch(allUrls, token, 30, 3500).then(function(allResults) {
+      return throttledFetch(allUrls, token, 20, 2500).then(function(allResults) {
         var allActions = allResults.slice(0, cards.length);
         var allCF;
         if (retrabalhoFieldId && !hasCFInline) {
