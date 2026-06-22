@@ -537,6 +537,15 @@
 
     'board-buttons': function (t) {
       return [{
+        icon: 'https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/heart-pulse.svg',
+        text: 'Health Score',
+        callback: function(t) {
+          return t.overlay({
+            url: t.signUrl('./dashboard.html'),
+            args: { boardId: null }
+          });
+        }
+      }, {
         icon: 'https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/download.svg',
         text: 'Exportar Lead Time',
         callback: exportReport

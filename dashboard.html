@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Dashboard de Produção — Midiática</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      color: #172b4d;
+      background: #f4f5f7;
+      min-height: 100vh;
+    }
+
+    .header {
+      background: #1E3A5F;
+      color: #fff;
+      padding: 16px 24px 0;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .header h1 { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
+    .tabs { display: flex; gap: 4px; }
+    .tab {
+      padding: 10px 20px;
+      background: transparent;
+      color: rgba(255,255,255,0.7);
+      border: none;
+      border-radius: 6px 6px 0 0;
+      cursor: pointer;
+      font-size: 14px;
+      font-family: inherit;
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+    }
+    .tab:hover { background: rgba(255,255,255,0.1); color: #fff; }
+    .tab.active { background: rgba(255,255,255,0.2); color: #fff; font-weight: 600; }
+
+    .body { padding: 24px; max-width: 900px; margin: 0 auto; }
+
+    .spinner-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 0; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 4px solid #dfe1e6;
+      border-top-color: #1E3A5F;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner-wrap p { margin-top: 12px; color: #5e6c84; }
+
+    .error-box { text-align: center; padding: 60px 20px; color: #eb5a46; }
+    .error-box button { margin-top: 12px; }
+
+    .auth-wrap { text-align: center; padding: 80px 20px; }
+    .auth-wrap p { color: #5e6c84; margin-bottom: 16px; font-size: 16px; }
+
+    .btn {
+      background: #0079bf;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: #026aa7; }
+    .btn:disabled { background: #a0a0a0; cursor: not-allowed; }
+    .btn-secondary {
+      background: #f4f5f7;
+      color: #172b4d;
+      border: 1px solid #dfe1e6;
+    }
+    .btn-secondary:hover { background: #ebecf0; }
+
+    .score-circle-wrap { text-align: center; margin-bottom: 28px; }
+    .score-circle {
+      width: 160px; height: 160px;
+      border-radius: 50%;
+      border: 6px solid;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+    }
+    .score-circle .number { font-size: 48px; font-weight: 700; line-height: 1; }
+    .score-circle .label { font-size: 13px; font-weight: 500; margin-top: 2px; }
+    .score-status { font-size: 16px; font-weight: 600; }
+
+    .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .kpi-card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 16px;
+      border: 1px solid #dfe1e6;
+    }
+    .kpi-card .kpi-name { font-size: 13px; color: #5e6c84; font-weight: 500; margin-bottom: 6px; }
+    .kpi-card .kpi-value { font-size: 28px; font-weight: 700; color: #172b4d; }
+    .kpi-card .kpi-meta { font-size: 12px; color: #97a0af; margin-top: 4px; }
+    .kpi-bar-bg {
+      height: 8px;
+      background: #ebecf0;
+      border-radius: 4px;
+      margin-top: 10px;
+      overflow: hidden;
+    }
+    .kpi-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
+
+    .footer-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .footer-bar .info { font-size: 12px; color: #97a0af; margin-left: auto; }
+
+    .history-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; border: 1px solid #dfe1e6; }
+    .history-table th {
+      text-align: left; padding: 10px 14px; background: #f4f5f7;
+      font-size: 12px; text-transform: uppercase; color: #5e6c84; font-weight: 600; letter-spacing: 0.03em;
+      border-bottom: 2px solid #dfe1e6;
+    }
+    .history-table td { padding: 10px 14px; border-bottom: 1px solid #ebecf0; font-size: 13px; }
+    .history-table tr.current-month td { background: #e4f0f6; font-weight: 600; }
+    .history-empty { text-align: center; padding: 40px; color: #5e6c84; }
+
+    .config-section { background: #fff; border-radius: 8px; padding: 20px; border: 1px solid #dfe1e6; margin-bottom: 20px; }
+    .config-section h3 { font-size: 15px; margin-bottom: 16px; color: #1E3A5F; }
+    .config-row { margin-bottom: 16px; }
+    .config-row label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: #172b4d; }
+    .config-row .slider-row { display: flex; align-items: center; gap: 12px; }
+    .config-row input[type=range] { flex: 1; accent-color: #0079bf; }
+    .config-row .slider-val { min-width: 50px; text-align: right; font-weight: 600; font-size: 14px; }
+    .peso-sum { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+    .peso-sum.invalid { color: #eb5a46; }
+    .peso-sum.valid { color: #36b37e; }
+    .config-footer { display: flex; gap: 12px; align-items: center; }
+    .config-msg { font-size: 13px; color: #36b37e; font-weight: 500; }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    @media (max-width: 600px) {
+      .kpi-grid { grid-template-columns: 1fr; }
+      .body { padding: 16px; }
+    }
+  </style>
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+</head>
+<body>
+<div class="header">
+  <h1>Dashboard de produção — Midiática</h1>
+  <div class="tabs">
+    <button class="tab active" data-tab="realtime">Tempo real</button>
+    <button class="tab" data-tab="history">Histórico</button>
+    <button class="tab" data-tab="config">Configurar metas</button>
+  </div>
+</div>
+
+<div class="body">
+  <div id="auth-screen" class="auth-wrap" style="display:none;">
+    <p>Autorize o Power-Up para acessar os dados do board.</p>
+    <button class="btn" id="auth-btn">Autorizar Power-Up</button>
+  </div>
+
+  <div id="tab-realtime" class="tab-content active">
+    <div class="spinner-wrap" id="rt-loading"><div class="spinner"></div><p>Carregando dados…</p></div>
+    <div id="rt-error" class="error-box" style="display:none;"><p></p><button class="btn" id="rt-retry">Tentar novamente</button></div>
+    <div id="rt-content" style="display:none;"></div>
+  </div>
+
+  <div id="tab-history" class="tab-content">
+    <div class="spinner-wrap" id="hist-loading"><div class="spinner"></div><p>Carregando histórico…</p></div>
+    <div id="hist-content" style="display:none;"></div>
+  </div>
+
+  <div id="tab-config" class="tab-content">
+    <div id="cfg-content"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var APP_KEY = '35b840777660fac1ae7823df3d2398f6';
+  var APP_NAME = 'Lead Time Midiática';
+  var MIN_STAGE_MS = 600000;
+
+  var FLOW_LISTS = [
+    'Planejamento',
+    'Captação de Imagem 🎥',
+    '🛑URGÊNCIAS🛑',
+    'A fazer 👇',
+    'Em andamento 💪',
+    'Alterações ✏️',
+    '⚠️Atrasos⚠️',
+    'Revisão Interna 🔎',
+    'Revisão Externa 🧐',
+    'Revisões em Atraso ⏰',
+    'Concluído 🏆'
+  ];
+
+  var DEFAULTS = {
+    meta_prazo: 80, meta_rework: 30, meta_leadtime: 7, meta_through: 12,
+    peso1: 35, peso2: 25, peso3: 25, peso4: 15
+  };
+
+  var t = TrelloPowerUp.iframe({ appKey: APP_KEY, appName: APP_NAME });
+  var cachedData = null;
+
+  function countBusinessDays(from, to) {
+    var s = new Date(from); s.setHours(0,0,0,0);
+    var e = new Date(to);   e.setHours(0,0,0,0);
+    var c = 0, d = new Date(s);
+    while (d < e) { if (d.getDay()!==0 && d.getDay()!==6) c++; d.setDate(d.getDate()+1); }
+    return c;
+  }
+
+  function buildTimeline(actions) {
+    if (!Array.isArray(actions)) actions = [];
+    actions.sort(function(a,b){ return new Date(a.date)-new Date(b.date); });
+    var stages = [];
+    for (var i=0; i<actions.length; i++) {
+      var act=actions[i], date=new Date(act.date);
+      if ((act.type==='createCard'||act.type==='copyCard') && act.data.list) {
+        stages.push({name:act.data.list.name, enteredAt:date, leftAt:null});
+      } else if (act.type==='updateCard' && act.data.listAfter) {
+        if (stages.length===0 && act.data.listBefore)
+          stages.push({name:act.data.listBefore.name, enteredAt:date, leftAt:date});
+        if (stages.length>0) stages[stages.length-1].leftAt = date;
+        stages.push({name:act.data.listAfter.name, enteredAt:date, leftAt:null});
+      }
+    }
+    var out = [];
+    for (var j=0; j<stages.length; j++) {
+      var st=stages[j], dur=(st.leftAt?st.leftAt.getTime():Date.now())-st.enteredAt.getTime();
+      if (dur<MIN_STAGE_MS && st.leftAt && out.length>0) out[out.length-1].leftAt=st.leftAt;
+      else out.push(st);
+    }
+    return out;
+  }
+
+  function apiUrl(path, token) {
+    return 'https://api.trello.com/1'+path+(path.indexOf('?')>=0?'&':'?')+'key='+APP_KEY+'&token='+token;
+  }
+
+  // ─── TABS ───────────────────────────────────────
+  var tabs = document.querySelectorAll('.tab');
+  var tabContents = document.querySelectorAll('.tab-content');
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      tabs.forEach(function(t){ t.classList.remove('active'); });
+      tabContents.forEach(function(tc){ tc.classList.remove('active'); });
+      tab.classList.add('active');
+      document.getElementById('tab-'+tab.getAttribute('data-tab')).classList.add('active');
+      if (tab.getAttribute('data-tab') === 'history') loadHistory();
+      if (tab.getAttribute('data-tab') === 'config') renderConfig();
+    });
+  });
+
+  // ─── AUTH ───────────────────────────────────────
+  function checkAuth(cb) {
+    t.getRestApi().isAuthorized().then(function(ok) {
+      if (ok) {
+        document.getElementById('auth-screen').style.display = 'none';
+        cb();
+      } else {
+        document.getElementById('auth-screen').style.display = '';
+        document.getElementById('rt-loading').style.display = 'none';
+      }
+    });
+  }
+
+  document.getElementById('auth-btn').addEventListener('click', function() {
+    t.getRestApi().authorize({ scope: 'read', expiration: 'never' }).then(function() {
+      document.getElementById('auth-screen').style.display = 'none';
+      loadRealtime();
+    });
+  });
+
+  // ─── FETCH DATA ─────────────────────────────────
+  function fetchData(token, boardId) {
+    return fetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token))
+      .then(function(r){ return r.json(); })
+      .then(function(lists) {
+        var flowLists = [];
+        if (Array.isArray(lists)) {
+          lists.forEach(function(l) {
+            for (var fi=0; fi<FLOW_LISTS.length; fi++) {
+              if (l.name.trim() === FLOW_LISTS[fi]) { flowLists.push(l); break; }
+            }
+          });
+        }
+        if (!flowLists.length) throw new Error('Nenhuma lista do fluxo encontrada.');
+
+        return Promise.all([
+          Promise.all(flowLists.map(function(l) {
+            return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList', token))
+              .then(function(r){ return r.json(); });
+          })),
+          fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); })
+        ]).then(function(res) {
+          var cardArrays = res[0], customFields = res[1];
+          var cards = [];
+          cardArrays.forEach(function(arr) { if (Array.isArray(arr)) cards = cards.concat(arr); });
+
+          var retrabalhoFieldId = null;
+          if (Array.isArray(customFields)) {
+            for (var fi=0; fi<customFields.length; fi++) {
+              if (customFields[fi].name === 'Retrabalho') { retrabalhoFieldId = customFields[fi].id; break; }
+            }
+          }
+
+          return Promise.all([
+            Promise.all(cards.map(function(c) {
+              return fetch(apiUrl('/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
+                .then(function(r){ return r.json(); });
+            })),
+            Promise.all(cards.map(function(c) {
+              if (!retrabalhoFieldId) return Promise.resolve([]);
+              return fetch(apiUrl('/cards/'+c.id+'/customFieldItems', token))
+                .then(function(r){ return r.json(); });
+            }))
+          ]).then(function(results) {
+            var allActions = results[0], allCF = results[1];
+            var processed = [];
+            for (var i=0; i<cards.length; i++) {
+              var card = cards[i];
+              var actions = allActions[i];
+              var rwVal = 0;
+              if (retrabalhoFieldId && Array.isArray(allCF[i])) {
+                for (var cfi=0; cfi<allCF[i].length; cfi++) {
+                  if (allCF[i][cfi].idCustomField === retrabalhoFieldId) {
+                    var v = allCF[i][cfi].value;
+                    rwVal = v ? (Number(v.number) || Number(v.text) || 0) : 0;
+                    break;
+                  }
+                }
+              }
+              var tl = buildTimeline(Array.isArray(actions) ? actions : []);
+              var currentStage = tl.length ? tl[tl.length-1] : null;
+              var daysInCurrent = currentStage ? countBusinessDays(currentStage.enteredAt, new Date()) : 0;
+
+              var isLate = false;
+              var hasDue = !!card.due;
+              if (hasDue) {
+                var td = new Date(); td.setHours(0,0,0,0);
+                var du = new Date(card.due); du.setHours(0,0,0,0);
+                isLate = du < td;
+              }
+
+              var inConcluido = false;
+              if (currentStage && currentStage.name === 'Concluído 🏆') {
+                var now = new Date();
+                var dla = new Date(card.dateLastActivity);
+                if (dla.getMonth() === now.getMonth() && dla.getFullYear() === now.getFullYear()) {
+                  inConcluido = true;
+                }
+              }
+
+              processed.push({
+                name: card.name,
+                retrabalho: rwVal,
+                daysInCurrent: daysInCurrent,
+                hasDue: hasDue,
+                isLate: isLate,
+                inConcluidoThisMonth: inConcluido
+              });
+            }
+            return processed;
+          });
+        });
+      });
+  }
+
+  // ─── CALCULATE KPIs ─────────────────────────────
+  function calcKPIs(cards, config) {
+    var withDue = cards.filter(function(c){ return c.hasDue; });
+    var onTime = withDue.filter(function(c){ return !c.isLate; });
+    var kpi1 = withDue.length ? Math.round(onTime.length / withDue.length * 1000) / 10 : 100;
+
+    var totalRw = 0;
+    cards.forEach(function(c){ totalRw += c.retrabalho; });
+    var avgRw = cards.length ? totalRw / cards.length : 0;
+    var kpi2 = Math.min(100, Math.round(avgRw * 10 * 10) / 10);
+
+    var totalDays = 0, countDays = 0;
+    cards.forEach(function(c){ totalDays += c.daysInCurrent; countDays++; });
+    var kpi3 = countDays ? Math.round(totalDays / countDays * 10) / 10 : 0;
+
+    var kpi4 = cards.filter(function(c){ return c.inConcluidoThisMonth; }).length;
+
+    var score_prazo = Math.min(100, (kpi1 / config.meta_prazo) * 100);
+    var score_rework = Math.max(0, Math.min(100, ((config.meta_rework - kpi2) / config.meta_rework) * 100 + 50));
+    var score_leadtime = kpi3 > 0 ? Math.max(0, Math.min(100, (config.meta_leadtime / kpi3) * 100)) : 100;
+    var score_through = Math.min(100, (kpi4 / config.meta_through) * 100);
+
+    var healthScore = Math.round(
+      (score_prazo * config.peso1 + score_rework * config.peso2 +
+       score_leadtime * config.peso3 + score_through * config.peso4) / 100
+    );
+
+    return {
+      kpi1: kpi1, kpi2: kpi2, kpi3: kpi3, kpi4: kpi4,
+      score_prazo: score_prazo, score_rework: score_rework,
+      score_leadtime: score_leadtime, score_through: score_through,
+      healthScore: healthScore,
+      totalCards: cards.length
+    };
+  }
+
+  // ─── RENDER REALTIME ────────────────────────────
+  function scoreColor(score) {
+    if (score >= 80) return { border: '#3B6D11', bg: '#EAF3DE', text: '#3B6D11' };
+    if (score >= 60) return { border: '#BA7517', bg: '#FAEEDA', text: '#854F0B' };
+    if (score >= 40) return { border: '#D85A30', bg: '#FAECE7', text: '#993C1D' };
+    return { border: '#A32D2D', bg: '#FCEBEB', text: '#A32D2D' };
+  }
+
+  function scoreStatus(score) {
+    if (score >= 80) return 'Produção excelente';
+    if (score >= 60) return 'Produção em dia';
+    if (score >= 40) return 'Atenção necessária';
+    return 'Situação crítica';
+  }
+
+  function barColor(pct) {
+    if (pct >= 75) return '#36b37e';
+    if (pct >= 50) return '#ffab00';
+    return '#eb5a46';
+  }
+
+  function renderRealtime(kpis, config) {
+    var sc = scoreColor(kpis.healthScore);
+    var html = '';
+
+    html += '<div class="score-circle-wrap">';
+    html += '<div class="score-circle" style="border-color:'+sc.border+';background:'+sc.bg+';">';
+    html += '<span class="number" style="color:'+sc.text+';">'+kpis.healthScore+'</span>';
+    html += '<span class="label" style="color:'+sc.text+';">Health Score</span>';
+    html += '</div>';
+    html += '<div class="score-status" style="color:'+sc.text+';">'+scoreStatus(kpis.healthScore)+'</div>';
+    html += '</div>';
+
+    var kpiCards = [
+      { name: 'Entrega no prazo', value: kpis.kpi1+'%', meta: 'meta: '+config.meta_prazo+'%', pct: kpis.score_prazo },
+      { name: 'Taxa de rework', value: kpis.kpi2+'%', meta: 'meta: ≤'+config.meta_rework+'%', pct: kpis.score_rework },
+      { name: 'Lead time médio', value: kpis.kpi3+' d.u.', meta: 'meta: ≤'+config.meta_leadtime+' d.u.', pct: kpis.score_leadtime },
+      { name: 'Throughput mensal', value: kpis.kpi4+' cards', meta: 'meta: '+config.meta_through+' cards', pct: kpis.score_through }
+    ];
+
+    html += '<div class="kpi-grid">';
+    kpiCards.forEach(function(k) {
+      var pct = Math.min(100, Math.max(0, Math.round(k.pct)));
+      html += '<div class="kpi-card">';
+      html += '<div class="kpi-name">'+k.name+'</div>';
+      html += '<div class="kpi-value">'+k.value+'</div>';
+      html += '<div class="kpi-meta">'+k.meta+'</div>';
+      html += '<div class="kpi-bar-bg"><div class="kpi-bar-fill" style="width:'+pct+'%;background:'+barColor(pct)+';"></div></div>';
+      html += '</div>';
+    });
+    html += '</div>';
+
+    html += '<div class="footer-bar">';
+    html += '<button class="btn btn-secondary" id="btn-refresh">Atualizar dados</button>';
+    html += '<button class="btn" id="btn-export">Exportar relatório</button>';
+    html += '<span class="info">'+kpis.totalCards+' cards analisados · atualizado agora</span>';
+    html += '</div>';
+
+    var el = document.getElementById('rt-content');
+    el.innerHTML = html;
+    el.style.display = '';
+    document.getElementById('rt-loading').style.display = 'none';
+    document.getElementById('rt-error').style.display = 'none';
+
+    document.getElementById('btn-refresh').addEventListener('click', function() { loadRealtime(); });
+    document.getElementById('btn-export').addEventListener('click', function() {
+      t.getContext().then(function(ctx) {
+        window.open('https://vitorbernardesb.github.io/lead-time-trello/index.html', '_blank');
+      });
+    });
+  }
+
+  // ─── SNAPSHOT ───────────────────────────────────
+  function saveSnapshotIfNeeded(kpis, config) {
+    var now = new Date();
+    var key = 'snapshot_'+now.getFullYear()+'_'+String(now.getMonth()+1).padStart(2,'0');
+    t.get('board', 'shared', key).then(function(existing) {
+      if (!existing) {
+        var snap = {
+          score: kpis.healthScore,
+          kpi1: kpis.kpi1, kpi2: kpis.kpi2, kpi3: kpis.kpi3, kpi4: kpis.kpi4,
+          meta_prazo: config.meta_prazo, meta_rework: config.meta_rework,
+          meta_leadtime: config.meta_leadtime, meta_through: config.meta_through,
+          totalCards: kpis.totalCards,
+          savedAt: now.toISOString()
+        };
+        t.set('board', 'shared', key, snap);
+      }
+    });
+  }
+
+  function forceSnapshot(kpis, config) {
+    var now = new Date();
+    var key = 'snapshot_'+now.getFullYear()+'_'+String(now.getMonth()+1).padStart(2,'0');
+    var snap = {
+      score: kpis.healthScore,
+      kpi1: kpis.kpi1, kpi2: kpis.kpi2, kpi3: kpis.kpi3, kpi4: kpis.kpi4,
+      meta_prazo: config.meta_prazo, meta_rework: config.meta_rework,
+      meta_leadtime: config.meta_leadtime, meta_through: config.meta_through,
+      totalCards: kpis.totalCards,
+      savedAt: now.toISOString()
+    };
+    return t.set('board', 'shared', key, snap);
+  }
+
+  // ─── LOAD REALTIME ──────────────────────────────
+  function loadRealtime() {
+    document.getElementById('rt-loading').style.display = '';
+    document.getElementById('rt-content').style.display = 'none';
+    document.getElementById('rt-error').style.display = 'none';
+
+    var token, boardId;
+    t.getRestApi().getToken()
+      .then(function(tok) { token = tok; return t.board('id'); })
+      .then(function(board) { boardId = board.id; return t.get('board', 'shared', 'healthConfig'); })
+      .then(function(cfg) {
+        var config = cfg || DEFAULTS;
+        return fetchData(token, boardId).then(function(cards) {
+          cachedData = { cards: cards, config: config };
+          var kpis = calcKPIs(cards, config);
+          renderRealtime(kpis, config);
+          saveSnapshotIfNeeded(kpis, config);
+        });
+      })
+      .catch(function(err) {
+        document.getElementById('rt-loading').style.display = 'none';
+        var errEl = document.getElementById('rt-error');
+        errEl.style.display = '';
+        errEl.querySelector('p').textContent = 'Erro ao carregar dados: '+(err.message||String(err));
+      });
+  }
+
+  document.getElementById('rt-retry').addEventListener('click', function() { loadRealtime(); });
+
+  // ─── HISTORY ────────────────────────────────────
+  function loadHistory() {
+    document.getElementById('hist-loading').style.display = '';
+    document.getElementById('hist-content').style.display = 'none';
+
+    t.get('board', 'shared').then(function(data) {
+      var snapshots = [];
+      if (data) {
+        Object.keys(data).forEach(function(key) {
+          if (key.indexOf('snapshot_') === 0) {
+            var parts = key.replace('snapshot_','').split('_');
+            snapshots.push({ key: key, year: parseInt(parts[0]), month: parseInt(parts[1]), data: data[key] });
+          }
+        });
+      }
+      snapshots.sort(function(a,b) { return b.year !== a.year ? b.year - a.year : b.month - a.month; });
+
+      var now = new Date();
+      var curMonth = now.getMonth()+1, curYear = now.getFullYear();
+      var monthNames = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+      var html = '';
+      if (!snapshots.length) {
+        html = '<div class="history-empty"><p>O histórico será gerado automaticamente a partir do próximo acesso mensal.</p></div>';
+      } else {
+        html += '<table class="history-table"><thead><tr>';
+        html += '<th>Mês</th><th>Health Score</th><th>No prazo</th><th>Rework</th><th>Lead time</th><th>Throughput</th><th>Cards</th>';
+        html += '</tr></thead><tbody>';
+        snapshots.forEach(function(s) {
+          var isCurrent = s.month === curMonth && s.year === curYear;
+          html += '<tr'+(isCurrent?' class="current-month"':'')+'>';
+          html += '<td>'+monthNames[s.month]+'/'+s.year+'</td>';
+          html += '<td>'+s.data.score+'</td>';
+          html += '<td>'+s.data.kpi1+'%</td>';
+          html += '<td>'+s.data.kpi2+'%</td>';
+          html += '<td>'+s.data.kpi3+' d.u.</td>';
+          html += '<td>'+s.data.kpi4+'</td>';
+          html += '<td>'+s.data.totalCards+'</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+
+      html += '<div style="margin-top:16px;">';
+      html += '<button class="btn btn-secondary" id="btn-force-snap">Salvar snapshot agora</button>';
+      html += '</div>';
+
+      var el = document.getElementById('hist-content');
+      el.innerHTML = html;
+      el.style.display = '';
+      document.getElementById('hist-loading').style.display = 'none';
+
+      document.getElementById('btn-force-snap').addEventListener('click', function() {
+        if (!cachedData) {
+          alert('Acesse a aba "Tempo real" primeiro para carregar os dados.');
+          return;
+        }
+        var kpis = calcKPIs(cachedData.cards, cachedData.config);
+        forceSnapshot(kpis, cachedData.config).then(function() {
+          loadHistory();
+        });
+      });
+    });
+  }
+
+  // ─── CONFIG ─────────────────────────────────────
+  function renderConfig() {
+    t.get('board', 'shared', 'healthConfig').then(function(cfg) {
+      var config = cfg || DEFAULTS;
+      var html = '';
+
+      html += '<div class="config-section"><h3>Metas</h3>';
+      html += sliderRow('meta_prazo', 'Meta entrega no prazo', config.meta_prazo, 50, 100, 5, '%');
+      html += sliderRow('meta_rework', 'Meta rework máximo', config.meta_rework, 5, 60, 5, '%');
+      html += sliderRow('meta_leadtime', 'Meta lead time máximo', config.meta_leadtime, 2, 20, 1, ' d.u.');
+      html += sliderRow('meta_through', 'Meta throughput mensal', config.meta_through, 5, 50, 1, ' cards');
+      html += '</div>';
+
+      html += '<div class="config-section"><h3>Pesos do Health Score</h3>';
+      html += '<div class="peso-sum valid" id="peso-sum">Soma dos pesos: 100</div>';
+      html += sliderRow('peso1', 'Peso entrega no prazo', config.peso1, 10, 60, 5, '');
+      html += sliderRow('peso2', 'Peso rework', config.peso2, 10, 40, 5, '');
+      html += sliderRow('peso3', 'Peso lead time', config.peso3, 10, 40, 5, '');
+      html += sliderRow('peso4', 'Peso throughput', config.peso4, 5, 30, 5, '');
+      html += '</div>';
+
+      html += '<div class="config-footer">';
+      html += '<button class="btn" id="btn-save-config">Salvar configurações</button>';
+      html += '<span class="config-msg" id="cfg-msg" style="display:none;"></span>';
+      html += '</div>';
+
+      document.getElementById('cfg-content').innerHTML = html;
+
+      var sliders = document.querySelectorAll('#cfg-content input[type=range]');
+      sliders.forEach(function(sl) {
+        sl.addEventListener('input', function() {
+          document.getElementById('val-'+sl.id).textContent = sl.value + (sl.getAttribute('data-unit')||'');
+          updatePesoSum();
+        });
+      });
+
+      updatePesoSum();
+
+      document.getElementById('btn-save-config').addEventListener('click', function() {
+        var newConfig = {
+          meta_prazo: parseInt(document.getElementById('meta_prazo').value),
+          meta_rework: parseInt(document.getElementById('meta_rework').value),
+          meta_leadtime: parseInt(document.getElementById('meta_leadtime').value),
+          meta_through: parseInt(document.getElementById('meta_through').value),
+          peso1: parseInt(document.getElementById('peso1').value),
+          peso2: parseInt(document.getElementById('peso2').value),
+          peso3: parseInt(document.getElementById('peso3').value),
+          peso4: parseInt(document.getElementById('peso4').value)
+        };
+        var sum = newConfig.peso1 + newConfig.peso2 + newConfig.peso3 + newConfig.peso4;
+        if (sum !== 100) return;
+
+        t.set('board', 'shared', 'healthConfig', newConfig).then(function() {
+          var msg = document.getElementById('cfg-msg');
+          msg.textContent = 'Configurações salvas!';
+          msg.style.display = '';
+          if (cachedData) cachedData.config = newConfig;
+          setTimeout(function() {
+            tabs[0].click();
+          }, 1000);
+        });
+      });
+    });
+  }
+
+  function sliderRow(id, label, value, min, max, step, unit) {
+    return '<div class="config-row">' +
+      '<label for="'+id+'">'+label+'</label>' +
+      '<div class="slider-row">' +
+      '<input type="range" id="'+id+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+value+'" data-unit="'+unit+'">' +
+      '<span class="slider-val" id="val-'+id+'">'+value+unit+'</span>' +
+      '</div></div>';
+  }
+
+  function updatePesoSum() {
+    var p1 = parseInt(document.getElementById('peso1').value) || 0;
+    var p2 = parseInt(document.getElementById('peso2').value) || 0;
+    var p3 = parseInt(document.getElementById('peso3').value) || 0;
+    var p4 = parseInt(document.getElementById('peso4').value) || 0;
+    var sum = p1+p2+p3+p4;
+    var el = document.getElementById('peso-sum');
+    var btn = document.getElementById('btn-save-config');
+    el.textContent = 'Soma dos pesos: '+sum;
+    if (sum === 100) {
+      el.className = 'peso-sum valid';
+      btn.disabled = false;
+    } else {
+      el.className = 'peso-sum invalid';
+      el.textContent += ' (deve ser 100)';
+      btn.disabled = true;
+    }
+  }
+
+  // ─── INIT ───────────────────────────────────────
+  checkAuth(loadRealtime);
+})();
+</script>
+</body>
+</html>
