@@ -423,9 +423,10 @@
   function fetchData(token, boardId) {
     return Promise.all([
       fetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(function(r){ return r.json(); }),
-      fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); })
+      fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); }),
+      fetch(apiUrl('/boards/'+boardId+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&customFieldItems=true', token)).then(function(r){ return r.json(); })
     ]).then(function(initial) {
-      var lists = initial[0], customFields = initial[1];
+      var lists = initial[0], customFields = initial[1], allBoardCards = initial[2];
 
       var flowListIds = {};
       if (Array.isArray(lists)) {
@@ -436,7 +437,6 @@
         });
       }
       if (!Object.keys(flowListIds).length) throw new Error('Nenhuma lista do fluxo encontrada.');
-      var flowListArray = Object.keys(flowListIds);
 
       var retrabalhoFieldId = null;
       var retrabalhoOptions = {};
@@ -454,24 +454,38 @@
         }
       }
 
-      var cardUrls = flowListArray.map(function(lid) {
-        return '/lists/'+lid+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&customFieldItems=true';
-      });
-      return throttledFetch(cardUrls, token, 11, 0).then(function(cardArrays) {
-        var cards = [];
-        cardArrays.forEach(function(arr) { if (Array.isArray(arr)) cards = cards.concat(arr); });
-
-        var needCF = retrabalhoFieldId && cards.length > 0 && (!cards[0].customFieldItems || !Array.isArray(cards[0].customFieldItems));
-        var actionUrls = cards.map(function(c) {
-          return '/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000';
+      var cards = [];
+      if (Array.isArray(allBoardCards)) {
+        allBoardCards.forEach(function(c) {
+          if (flowListIds[c.idList]) cards.push(c);
         });
-        var cfUrls = needCF ? cards.map(function(c) {
-          return '/cards/'+c.id+'/customFieldItems';
-        }) : [];
+      }
 
-        return throttledFetch(actionUrls.concat(cfUrls), token, 10, 1100).then(function(allResults) {
-          var allActions = allResults.slice(0, cards.length);
-          var allCF = needCF ? allResults.slice(cards.length) : cards.map(function(c) { return c.customFieldItems || []; });
+      var cfByCard = {};
+      cards.forEach(function(c) {
+        cfByCard[c.id] = Array.isArray(c.customFieldItems) ? c.customFieldItems : [];
+      });
+      var hasCFInline = cards.length > 0 && Array.isArray(allBoardCards[0].customFieldItems);
+
+      var actionUrls = cards.map(function(c) {
+        return '/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000';
+      });
+      var cfUrls = [];
+      if (retrabalhoFieldId && !hasCFInline) {
+        cfUrls = cards.map(function(c) {
+          return '/cards/'+c.id+'/customFieldItems';
+        });
+      }
+      var allUrls = actionUrls.concat(cfUrls);
+
+      return throttledFetch(allUrls, token, 30, 3500).then(function(allResults) {
+        var allActions = allResults.slice(0, cards.length);
+        var allCF;
+        if (retrabalhoFieldId && !hasCFInline) {
+          allCF = allResults.slice(cards.length);
+        } else {
+          allCF = cards.map(function(c) { return cfByCard[c.id]; });
+        }
 
           var now = new Date();
           var curMonth = now.getMonth(), curYear = now.getFullYear();
