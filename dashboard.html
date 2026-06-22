@@ -414,7 +414,7 @@
 
         return Promise.all([
           Promise.all(flowLists.map(function(l) {
-            return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList', token))
+            return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&customFieldItems=true', token))
               .then(function(r){ return r.json(); });
           })),
           fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); })
@@ -439,18 +439,33 @@
             }
           }
 
-          return Promise.all([
-            Promise.all(cards.map(function(c) {
-              return fetch(apiUrl('/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
-                .then(function(r){ return r.json(); });
-            })),
-            Promise.all(cards.map(function(c) {
-              if (!retrabalhoFieldId) return Promise.resolve([]);
-              return fetch(apiUrl('/cards/'+c.id+'/customFieldItems', token))
-                .then(function(r){ return r.json(); });
-            }))
-          ]).then(function(results) {
-            var allActions = results[0], allCF = results[1];
+          function fetchActionsThrottled(cardList, batchSize, delayMs) {
+            var results = new Array(cardList.length);
+            var idx = 0;
+            function nextBatch() {
+              if (idx >= cardList.length) return Promise.resolve(results);
+              var end = Math.min(idx + batchSize, cardList.length);
+              var batch = [];
+              for (var b = idx; b < end; b++) {
+                (function(i) {
+                  batch.push(
+                    fetch(apiUrl('/cards/'+cardList[i].id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
+                      .then(function(r){ return r.json(); })
+                      .then(function(data){ results[i] = data; })
+                  );
+                })(b);
+              }
+              idx = end;
+              return Promise.all(batch).then(function() {
+                if (idx >= cardList.length) return results;
+                return new Promise(function(resolve) { setTimeout(resolve, delayMs); }).then(nextBatch);
+              });
+            }
+            return nextBatch();
+          }
+
+          return fetchActionsThrottled(cards, 8, 1200).then(function(allActions) {
+            var allCF = cards.map(function(c) { return c.customFieldItems || []; });
             var now = new Date();
             var curMonth = now.getMonth(), curYear = now.getFullYear();
 
@@ -476,7 +491,6 @@
 
               var rwVal = 0;
               var hasRetrabalho = false;
-              console.log('[REWORK DEBUG] Card: ' + card.name + ' | retrabalhoFieldId: ' + retrabalhoFieldId + ' | customFieldItems: ' + JSON.stringify(allCF[i]));
               if (retrabalhoFieldId && Array.isArray(allCF[i])) {
                 for (var cfi=0; cfi<allCF[i].length; cfi++) {
                   if (allCF[i][cfi].idCustomField === retrabalhoFieldId) {
@@ -553,6 +567,7 @@
         });
       });
   }
+
 
   // ─── CALCULATE KPIs ─────────────────────────────
   function calcKPIs(cards, config) {
