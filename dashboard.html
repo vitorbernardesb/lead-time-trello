@@ -919,6 +919,13 @@
         (rc.labels || []).forEach(function(l) { h += '<span class="label-tag">'+escHtml(l)+'</span>'; });
         h += '</td></tr>';
       }
+      var totalRwFiltered = 0;
+      for (var ti = 0; ti < filtered.length; ti++) { totalRwFiltered += filtered[ti].retrabalho; }
+      h += '<tr style="background:#0A0A0A;">';
+      h += '<td colspan="2" style="color:#FFCF06;font-weight:700;">Total</td>';
+      h += '<td style="color:#FFCF06;font-weight:700;">'+totalRwFiltered+'</td>';
+      h += '<td colspan="2" style="color:#ABABB0;font-size:12px;">'+filtered.length+' cards</td>';
+      h += '</tr>';
       h += '</tbody></table>';
       wrap.innerHTML = h;
     }
