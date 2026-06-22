@@ -481,13 +481,20 @@
                   if (allCF[i][cfi].idCustomField === retrabalhoFieldId) {
                     var cfItem = allCF[i][cfi];
                     var v = cfItem.value;
-                    if (v) {
-                      if (v.number !== undefined) rwVal = parseFloat(v.number) || 0;
-                      else if (v.text !== undefined) rwVal = parseFloat(v.text) || 0;
+                    if (v !== null && v !== undefined) {
+                      if (v.number !== null && v.number !== undefined) { rwVal = parseFloat(v.number); if (isNaN(rwVal)) rwVal = 0; }
+                      else if (v.text !== null && v.text !== undefined) { rwVal = parseFloat(v.text); if (isNaN(rwVal)) rwVal = 0; }
+                      else if (v.checked !== undefined) { rwVal = v.checked === 'true' || v.checked === true ? 1 : 0; }
                       hasRetrabalho = true;
                     } else if (cfItem.idValue) {
+                      hasRetrabalho = true;
                       var opt = retrabalhoOptions[cfItem.idValue];
-                      if (opt !== undefined) { rwVal = parseFloat(opt) || 0; hasRetrabalho = true; }
+                      if (opt !== undefined && opt !== '') {
+                        rwVal = parseFloat(opt);
+                        if (isNaN(rwVal)) rwVal = 1;
+                      } else {
+                        rwVal = 1;
+                      }
                     }
                     break;
                   }
@@ -498,6 +505,11 @@
               var currentStage = tl.length ? tl[tl.length-1] : null;
               var currentListName = currentStage ? currentStage.name : (listIdToName[card.idList] || '');
               var daysInCurrent = currentStage ? countBusinessDays(currentStage.enteredAt, now) : 0;
+              var totalBD = 0;
+              for (var si = 0; si < tl.length; si++) {
+                var stEnd = tl[si].leftAt || now;
+                totalBD += countBusinessDays(tl[si].enteredAt, stEnd);
+              }
 
               var isLate = false;
               var hasDue = !!card.due;
@@ -523,6 +535,7 @@
                 name: card.name,
                 retrabalho: rwVal,
                 hasRetrabalho: hasRetrabalho,
+                totalBD: totalBD,
                 daysInCurrent: daysInCurrent,
                 hasDue: hasDue,
                 isLate: isLate,
@@ -552,7 +565,7 @@
     var kpi2 = Math.min(100, Math.round(avgRw * 10 * 10) / 10);
 
     var totalDays = 0, countDays = 0;
-    cards.forEach(function(c){ totalDays += c.daysInCurrent; countDays++; });
+    cards.forEach(function(c){ totalDays += c.totalBD; countDays++; });
     var kpi3 = countDays ? Math.round(totalDays / countDays * 10) / 10 : 0;
 
     var kpi4 = cards.filter(function(c){ return c.inConcluidoThisMonth; }).length;
