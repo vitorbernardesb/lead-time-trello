@@ -476,6 +476,7 @@
 
               var rwVal = 0;
               var hasRetrabalho = false;
+              console.log('[REWORK DEBUG] Card: ' + card.name + ' | retrabalhoFieldId: ' + retrabalhoFieldId + ' | customFieldItems: ' + JSON.stringify(allCF[i]));
               if (retrabalhoFieldId && Array.isArray(allCF[i])) {
                 for (var cfi=0; cfi<allCF[i].length; cfi++) {
                   if (allCF[i][cfi].idCustomField === retrabalhoFieldId) {
