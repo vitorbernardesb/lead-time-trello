@@ -60,6 +60,25 @@
       cursor: pointer;
     }
     .auth-btn:hover { background: rgba(255,207,6,0.85); }
+    .mode-bar { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 6px; }
+    .mode-btn {
+      background: transparent;
+      border: 1px solid rgba(171,171,176,0.40);
+      color: #ABABB0;
+      border-radius: 4px;
+      padding: 3px 10px;
+      font-size: 11px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .mode-btn:hover { background: rgba(255,207,6,0.10); color: #0A0A0A; }
+    .mode-btn.active {
+      background: #FFCF06;
+      border-color: #FFCF06;
+      color: #0A0A0A;
+      font-weight: 700;
+    }
   </style>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
 </head>
@@ -69,31 +88,17 @@
 </div>
 <script>
 (function () {
-  // ─── Mesma API Key usada no index.html ────────────────────
   var APP_KEY = '35b840777660fac1ae7823df3d2398f6';
   var t = TrelloPowerUp.iframe({ appKey: APP_KEY, appName: 'Lead Time Midiática' });
   var content = document.getElementById('content');
 
-  function countBusinessDays(from, to) {
-    var start = new Date(from);
-    start.setHours(0, 0, 0, 0);
-    var end = new Date(to);
-    end.setHours(0, 0, 0, 0);
-    var count = 0;
-    var d = new Date(start);
-    while (d < end) {
-      if (d.getDay() !== 0 && d.getDay() !== 6) count++;
-      d.setDate(d.getDate() + 1);
-    }
-    return count;
-  }
-
-  function formatElapsed(ms) {
-    var totalMin = Math.floor(ms / 60000);
-    var h = Math.floor(totalMin / 60);
-    var m = totalMin % 60;
-    return h > 0 ? h + 'h ' + m + 'min' : m + 'min';
-  }
+  var MIN_STAGE_MS = 600000;
+  var MODES = [
+    { key: 'businessDays', label: 'Dias úteis', header: 'Dias úteis' },
+    { key: 'elapsedDays', label: 'Dias corridos', header: 'Dias corridos' },
+    { key: 'workingHours', label: 'Horas úteis', header: 'Horas úteis' },
+    { key: 'elapsedHours', label: 'Horas corridas', header: 'Horas corridas' }
+  ];
 
   function escapeHtml(str) {
     var el = document.createElement('span');
@@ -101,14 +106,55 @@
     return el.innerHTML;
   }
 
-  var MIN_STAGE_MS = 600000;
+  function countBusinessDays(from, to) {
+    var s = new Date(from); s.setHours(0,0,0,0);
+    var e = new Date(to);   e.setHours(0,0,0,0);
+    var c = 0, d = new Date(s);
+    while (d < e) {
+      if (d.getDay() !== 0 && d.getDay() !== 6) c++;
+      d.setDate(d.getDate() + 1);
+    }
+    return c;
+  }
+
+  function countWorkingHours(from, to) {
+    var s = new Date(from), e = new Date(to);
+    var cur = new Date(s);
+    cur.setMinutes(0, 0, 0);
+    var count = 0;
+    while (cur < e) {
+      var day = cur.getDay(), hour = cur.getHours();
+      if (day >= 1 && day <= 5 && hour >= 8 && hour < 18) count++;
+      cur.setTime(cur.getTime() + 3600000);
+    }
+    return count;
+  }
+
+  function formatBusinessDays(v) { return v + ' d.u.'; }
+  function formatElapsedDays(v) { return v < 1 ? '< 1 dia' : v + (v === 1 ? ' dia' : ' dias'); }
+  function formatWorkingHours(v) {
+    if (v < 10) return v + 'h';
+    var d = Math.floor(v / 10), h = v % 10;
+    return h > 0 ? d + 'd ' + h + 'h' : d + 'd';
+  }
+  function formatElapsedHours(v) {
+    if (v < 24) return v + 'h';
+    var d = Math.floor(v / 24), h = v % 24;
+    return h > 0 ? d + 'd ' + h + 'h' : d + 'd';
+  }
+
+  var FORMATTERS = {
+    businessDays: formatBusinessDays,
+    elapsedDays: formatElapsedDays,
+    workingHours: formatWorkingHours,
+    elapsedHours: formatElapsedHours
+  };
 
   function buildTimeline(actions) {
     actions.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
     var stages = [];
     for (var i = 0; i < actions.length; i++) {
-      var act = actions[i];
-      var date = new Date(act.date);
+      var act = actions[i], date = new Date(act.date);
       if ((act.type === 'createCard' || act.type === 'copyCard') && act.data.list) {
         stages.push({ name: act.data.list.name, enteredAt: date, leftAt: null });
       } else if (act.type === 'updateCard' && act.data.listAfter) {
@@ -132,39 +178,122 @@
     return filtered;
   }
 
-  function renderTable(stages) {
+  function computeSegments(stages) {
     var now = new Date();
-    var totalBD = 0;
-    var totalMs = 0;
-    var html =
-      '<table><thead><tr>' +
-      '<th>Etapa</th><th>Dias Úteis</th><th>Tempo Corrido</th>' +
-      '</tr></thead><tbody>';
-
+    var segments = [];
     for (var i = 0; i < stages.length; i++) {
       var s = stages[i];
       var end = s.leftAt || now;
-      var bd = countBusinessDays(s.enteredAt, end);
       var ms = end.getTime() - s.enteredAt.getTime();
-      totalBD += bd;
-      totalMs += ms;
-      var cls = s.leftAt ? '' : ' class="current"';
-      html +=
-        '<tr' + cls + '>' +
-        '<td>' + escapeHtml(s.name) + '</td>' +
-        '<td>' + bd + ' d.u.</td>' +
-        '<td>' + formatElapsed(ms) + '</td>' +
-        '</tr>';
+      segments.push({
+        name: s.name,
+        current: !s.leftAt,
+        businessDays: countBusinessDays(s.enteredAt, end),
+        elapsedDays: Math.floor(ms / 86400000),
+        workingHours: countWorkingHours(s.enteredAt, end),
+        elapsedHours: Math.round(ms / 3600000)
+      });
+    }
+    return segments;
+  }
+
+  function mergeByStage(segments) {
+    var merged = [];
+    var indexMap = {};
+    for (var i = 0; i < segments.length; i++) {
+      var seg = segments[i];
+      if (indexMap.hasOwnProperty(seg.name)) {
+        var existing = merged[indexMap[seg.name]];
+        existing.businessDays += seg.businessDays;
+        existing.elapsedDays += seg.elapsedDays;
+        existing.workingHours += seg.workingHours;
+        existing.elapsedHours += seg.elapsedHours;
+        if (seg.current) existing.current = true;
+      } else {
+        indexMap[seg.name] = merged.length;
+        merged.push({
+          name: seg.name,
+          current: seg.current,
+          businessDays: seg.businessDays,
+          elapsedDays: seg.elapsedDays,
+          workingHours: seg.workingHours,
+          elapsedHours: seg.elapsedHours
+        });
+      }
+    }
+    return merged;
+  }
+
+  function computeTotals(segments) {
+    var totals = { businessDays: 0, elapsedDays: 0, workingHours: 0, elapsedHours: 0 };
+    for (var i = 0; i < segments.length; i++) {
+      totals.businessDays += segments[i].businessDays;
+      totals.elapsedDays += segments[i].elapsedDays;
+      totals.workingHours += segments[i].workingHours;
+      totals.elapsedHours += segments[i].elapsedHours;
+    }
+    return totals;
+  }
+
+  function renderTable(segments, totals, mode) {
+    var modeObj = MODES[0];
+    for (var mi = 0; mi < MODES.length; mi++) {
+      if (MODES[mi].key === mode) { modeObj = MODES[mi]; break; }
+    }
+    var fmt = FORMATTERS[modeObj.key];
+
+    var html = '<div class="mode-bar">';
+    for (var bi = 0; bi < MODES.length; bi++) {
+      var cls = MODES[bi].key === modeObj.key ? 'mode-btn active' : 'mode-btn';
+      html += '<button class="' + cls + '" data-mode="' + MODES[bi].key + '">' + MODES[bi].label + '</button>';
+    }
+    html += '</div>';
+
+    html += '<table><thead><tr>';
+    html += '<th>Etapa</th><th id="th-time">' + modeObj.header + '</th>';
+    html += '</tr></thead><tbody>';
+
+    for (var i = 0; i < segments.length; i++) {
+      var s = segments[i];
+      var cls2 = s.current ? ' class="current"' : '';
+      html += '<tr' + cls2 + '>';
+      html += '<td>' + escapeHtml(s.name) + '</td>';
+      html += '<td class="time-val" data-bd="' + s.businessDays + '" data-ed="' + s.elapsedDays + '" data-wh="' + s.workingHours + '" data-eh="' + s.elapsedHours + '">' + fmt(s[modeObj.key]) + '</td>';
+      html += '</tr>';
     }
 
-    html +=
-      '<tr class="total">' +
-      '<td>Lead Time Total</td>' +
-      '<td>' + totalBD + ' d.u.</td>' +
-      '<td>' + formatElapsed(totalMs) + '</td>' +
-      '</tr></tbody></table>';
+    html += '<tr class="total">';
+    html += '<td>Lead Time Total</td>';
+    html += '<td class="time-val" data-bd="' + totals.businessDays + '" data-ed="' + totals.elapsedDays + '" data-wh="' + totals.workingHours + '" data-eh="' + totals.elapsedHours + '">' + fmt(totals[modeObj.key]) + '</td>';
+    html += '</tr></tbody></table>';
 
     return html;
+  }
+
+  function switchMode(newMode) {
+    var modeObj = MODES[0];
+    for (var mi = 0; mi < MODES.length; mi++) {
+      if (MODES[mi].key === newMode) { modeObj = MODES[mi]; break; }
+    }
+    var fmt = FORMATTERS[modeObj.key];
+    var dataAttr = { businessDays: 'bd', elapsedDays: 'ed', workingHours: 'wh', elapsedHours: 'eh' };
+    var attr = dataAttr[modeObj.key];
+
+    var btns = document.querySelectorAll('.mode-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].className = btns[i].getAttribute('data-mode') === newMode ? 'mode-btn active' : 'mode-btn';
+    }
+
+    var th = document.getElementById('th-time');
+    if (th) th.textContent = modeObj.header;
+
+    var cells = document.querySelectorAll('.time-val');
+    for (var j = 0; j < cells.length; j++) {
+      var val = parseInt(cells[j].getAttribute('data-' + attr));
+      cells[j].textContent = fmt(val);
+    }
+
+    try { t.set('card', 'shared', 'leadTimeViewMode', newMode); } catch(e) {}
   }
 
   function render() {
@@ -182,23 +311,47 @@
         return;
       }
 
-      t.card('id').then(function (card) {
-        return t.getRestApi().getToken().then(function (token) {
-          return fetch(
-            'https://api.trello.com/1/cards/' + card.id +
-            '/actions?filter=updateCard:idList,createCard,copyCard&limit=1000' +
-            '&key=' + APP_KEY + '&token=' + token
-          ).then(function (r) { return r.json(); });
-        });
-      }).then(function (actions) {
+      Promise.all([
+        t.card('id').then(function (card) {
+          return t.getRestApi().getToken().then(function (token) {
+            return fetch(
+              'https://api.trello.com/1/cards/' + card.id +
+              '/actions?filter=updateCard:idList,createCard,copyCard&limit=1000' +
+              '&key=' + APP_KEY + '&token=' + token
+            ).then(function (r) { return r.json(); });
+          });
+        }),
+        t.get('card', 'shared', 'leadTimeViewMode').catch(function() { return null; })
+      ]).then(function (results) {
+        var actions = results[0];
+        var savedMode = results[1] || 'businessDays';
+
         if (!actions || !actions.length) {
           content.innerHTML = '<p class="msg">Nenhum histórico encontrado para este card.</p>';
-        } else {
-          var stages = buildTimeline(actions);
-          content.innerHTML = stages.length
-            ? renderTable(stages)
-            : '<p class="msg">Nenhuma movimentação encontrada.</p>';
+          t.sizeTo('#content');
+          return;
         }
+
+        var stages = buildTimeline(actions);
+        if (!stages.length) {
+          content.innerHTML = '<p class="msg">Nenhuma movimentação encontrada.</p>';
+          t.sizeTo('#content');
+          return;
+        }
+
+        var rawSegments = computeSegments(stages);
+        var merged = mergeByStage(rawSegments);
+        var totals = computeTotals(rawSegments);
+
+        content.innerHTML = renderTable(merged, totals, savedMode);
+
+        document.querySelectorAll('.mode-btn').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            switchMode(btn.getAttribute('data-mode'));
+            t.sizeTo('#content');
+          });
+        });
+
         t.sizeTo('#content');
       }).catch(function () {
         content.innerHTML = '<p class="msg error">Erro ao carregar histórico do card.</p>';
