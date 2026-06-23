@@ -160,7 +160,15 @@
       border: 1px solid rgba(10,10,10,0.25); display: inline-block;
     }
     .funnel-table tr.concluded td { background: rgba(255,207,6,0.12); }
-    .alerts-section { margin-top: 24px; }
+    .detail-flex { display: flex; gap: 24px; margin-top: 24px; }
+    .detail-flex > div { flex: 1; min-width: 0; }
+    @media (max-width: 900px) { .detail-flex { flex-direction: column; } }
+    .pag-controls { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; }
+    .pag-btn { background: #0A0A0A; color: #FFCF06; border: none; border-radius: 6px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .pag-btn:disabled { opacity: 0.35; cursor: default; }
+    .pag-btn:hover:not(:disabled) { background: #1a1a1a; }
+    .pag-info { font-size: 12px; color: #ABABB0; }
+    .alerts-section { margin-top: 0; }
     .alerts-section h3 { font-size: 15px; margin-bottom: 12px; color: #0A0A0A; font-weight: 700; }
     .alert-row { background: #FFFFFF; border: 1px solid rgba(171,171,176,0.40); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .alert-row .ar-name { font-weight: 600; flex: 1; min-width: 200px; color: #0A0A0A; }
@@ -199,7 +207,7 @@
     .config-msg { font-size: 13px; color: #0A0A0A; font-weight: 500; }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
-    .rework-section { margin-top: 28px; }
+    .rework-section { margin-top: 0; }
     .rework-section h3 { font-size: 15px; margin-bottom: 12px; color: #0A0A0A; font-weight: 700; }
     .rework-filters { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
     .rework-filters select, .rework-filters input[type=number] {
@@ -450,7 +458,8 @@
     document.getElementById('tab-'+name).classList.add('active');
     if (name === 'history' && !renderedTabs.history) { loadHistory(); renderedTabs.history = true; }
     if (name === 'config') renderConfig();
-    if (name === 'funnel' && !renderedTabs.funnel) { renderFunnel(); renderedTabs.funnel = true; }
+    if (name === 'funnel' && cachedData) { renderFunnel(); renderedTabs.funnel = true; }
+    else if (name === 'funnel' && !cachedData) { document.getElementById('funnel-content').innerHTML = '<div class="no-data"><p>Carregue os dados na aba "Tempo real" primeiro.</p></div>'; }
   }
   tabs.forEach(function(tab) {
     tab.addEventListener('click', function() { switchTab(tab.getAttribute('data-tab')); });
@@ -956,19 +965,12 @@
     });
     html += '</tbody></table>';
 
-    if (slaAlerts.length > 0) {
-      html += '<div class="alerts-section">';
-      html += '<h3>Alertas ativos ('+slaAlerts.length+')</h3>';
-      slaAlerts.forEach(function(a) {
-        html += '<div class="alert-row">';
-        html += '<span class="ar-name">'+escHtml(a.name)+'</span>';
-        html += '<span class="ar-stage">'+escHtml(a.list)+'</span>';
-        html += '<span class="ar-days">'+a.days+' d.u.</span>';
-        html += '<span class="ar-excess">+'+a.excess+' dias acima do limite</span>';
-        html += '</div>';
-      });
-      html += '</div>';
-    }
+    html += '<div class="detail-flex">';
+
+    html += '<div class="alerts-section">';
+    html += '<h3>Alertas ativos ('+slaAlerts.length+')</h3>';
+    html += '<div id="alerts-page-wrap"></div>';
+    html += '</div>';
 
     // ─── REWORK RANKING ──────────────────────────────
     var reworkCards = cards.filter(function(c) { return c.retrabalho > 0; });
@@ -998,7 +1000,49 @@
     html += '<div id="rework-table-wrap"></div>';
     html += '</div>';
 
+    html += '</div>'; // close detail-flex
+
     el.innerHTML = html;
+
+    var ITEMS_PER_PAGE = 10;
+    var alertPage = 0;
+
+    function renderAlertsPaginated() {
+      var wrap = document.getElementById('alerts-page-wrap');
+      if (slaAlerts.length === 0) {
+        wrap.innerHTML = '<p style="color:#ABABB0;font-size:13px;">Nenhum alerta ativo.</p>';
+        return;
+      }
+      var totalPages = Math.ceil(slaAlerts.length / ITEMS_PER_PAGE);
+      if (alertPage >= totalPages) alertPage = totalPages - 1;
+      var start = alertPage * ITEMS_PER_PAGE;
+      var pageItems = slaAlerts.slice(start, start + ITEMS_PER_PAGE);
+
+      var h = '';
+      pageItems.forEach(function(a) {
+        h += '<div class="alert-row">';
+        h += '<span class="ar-name">'+escHtml(a.name)+'</span>';
+        h += '<span class="ar-stage">'+escHtml(a.list)+'</span>';
+        h += '<span class="ar-days">'+a.days+' d.u.</span>';
+        h += '<span class="ar-excess">+'+a.excess+' dias acima do limite</span>';
+        h += '</div>';
+      });
+      if (totalPages > 1) {
+        h += '<div class="pag-controls">';
+        h += '<button class="pag-btn" id="alert-prev"'+(alertPage===0?' disabled':'')+'>← Anterior</button>';
+        h += '<span class="pag-info">'+(alertPage+1)+' / '+totalPages+'</span>';
+        h += '<button class="pag-btn" id="alert-next"'+(alertPage>=totalPages-1?' disabled':'')+'>Próximo →</button>';
+        h += '</div>';
+      }
+      wrap.innerHTML = h;
+      var prev = document.getElementById('alert-prev');
+      var next = document.getElementById('alert-next');
+      if (prev) prev.addEventListener('click', function() { alertPage--; renderAlertsPaginated(); });
+      if (next) next.addEventListener('click', function() { alertPage++; renderAlertsPaginated(); });
+    }
+    renderAlertsPaginated();
+
+    var reworkPage = 0;
 
     function renderReworkTable() {
       var stageF = document.getElementById('rw-filter-stage').value;
@@ -1018,14 +1062,20 @@
         return;
       }
 
+      var totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+      if (reworkPage >= totalPages) reworkPage = totalPages - 1;
+      var start = reworkPage * ITEMS_PER_PAGE;
+      var pageItems = filtered.slice(start, start + ITEMS_PER_PAGE);
+
       var h = '<table class="rework-table"><thead><tr>';
       h += '<th>#</th><th>Card</th><th>Retrabalho</th><th>Etapa atual</th><th>Labels</th>';
       h += '</tr></thead><tbody>';
-      for (var ri = 0; ri < filtered.length; ri++) {
-        var rc = filtered[ri];
+      for (var ri = 0; ri < pageItems.length; ri++) {
+        var rc = pageItems[ri];
+        var globalIdx = start + ri;
         var rwClass = rc.retrabalho >= 3 ? 'high' : rc.retrabalho >= 2 ? 'med' : 'low';
         h += '<tr>';
-        h += '<td class="rework-rank">'+(ri+1)+'</td>';
+        h += '<td class="rework-rank">'+(globalIdx+1)+'</td>';
         h += '<td>'+escHtml(rc.name)+'</td>';
         h += '<td class="rework-val '+rwClass+'">'+rc.retrabalho+'</td>';
         h += '<td>'+escHtml(rc.currentListName)+'</td>';
@@ -1041,13 +1091,24 @@
       h += '<td colspan="2" style="color:#ABABB0;font-size:12px;">'+filtered.length+' cards</td>';
       h += '</tr>';
       h += '</tbody></table>';
+      if (totalPages > 1) {
+        h += '<div class="pag-controls">';
+        h += '<button class="pag-btn" id="rw-prev"'+(reworkPage===0?' disabled':'')+'>← Anterior</button>';
+        h += '<span class="pag-info">'+(reworkPage+1)+' / '+totalPages+'</span>';
+        h += '<button class="pag-btn" id="rw-next"'+(reworkPage>=totalPages-1?' disabled':'')+'>Próximo →</button>';
+        h += '</div>';
+      }
       wrap.innerHTML = h;
+      var prev = document.getElementById('rw-prev');
+      var next = document.getElementById('rw-next');
+      if (prev) prev.addEventListener('click', function() { reworkPage--; renderReworkTable(); });
+      if (next) next.addEventListener('click', function() { reworkPage++; renderReworkTable(); });
     }
 
     renderReworkTable();
-    document.getElementById('rw-filter-stage').addEventListener('change', renderReworkTable);
-    document.getElementById('rw-filter-label').addEventListener('change', renderReworkTable);
-    document.getElementById('rw-filter-min').addEventListener('input', renderReworkTable);
+    document.getElementById('rw-filter-stage').addEventListener('change', function() { reworkPage = 0; renderReworkTable(); });
+    document.getElementById('rw-filter-label').addEventListener('change', function() { reworkPage = 0; renderReworkTable(); });
+    document.getElementById('rw-filter-min').addEventListener('input', function() { reworkPage = 0; renderReworkTable(); });
   }
 
   // ─── SNAPSHOT ───────────────────────────────────
