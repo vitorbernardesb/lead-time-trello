@@ -815,19 +815,23 @@
     if (score >= 40) return 'Atenção necessária';
     return 'Situação crítica';
   }
-  function barColor(pct) {
+  function pctTipoA(valor, meta) {
+    if (!meta || meta === 0) return 0;
+    return Math.min(100, Math.round((valor / meta) * 100));
+  }
+  function pctTipoB(valor, meta) {
+    if (!meta || meta === 0) return 0;
+    return Math.min(100, Math.round((valor / meta) * 100));
+  }
+  function corTipoA(pct) {
     if (pct >= 75) return '#FFCF06';
     if (pct >= 50) return 'rgba(255,207,6,0.60)';
     return '#ABABB0';
   }
-  function pctMaiorMelhor(valor, meta) {
-    if (!meta) return 0;
-    return Math.min(100, Math.round((valor / meta) * 100));
-  }
-  function pctMenorMelhor(valor, meta) {
-    if (valor <= meta) return 100;
-    var pior = meta * 2;
-    return Math.max(0, Math.round((1 - (valor - meta) / (pior - meta)) * 100));
+  function corTipoB(pct) {
+    if (pct <= 50) return '#FFCF06';
+    if (pct <= 75) return 'rgba(255,207,6,0.60)';
+    return '#ABABB0';
   }
 
   function renderRealtime(kpis, config, cards, cachedAt) {
@@ -843,21 +847,22 @@
     html += '</div>';
 
     var kpiCards = [
-      { name: 'Entrega no prazo', value: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', meta: 'meta: '+config.meta_prazo+'%', pct: pctMaiorMelhor(kpis.kpi1, config.meta_prazo) },
-      { name: 'Retrabalhos', value: kpis.kpi2, meta: 'meta: ≤'+config.meta_rework, pct: pctMenorMelhor(kpis.kpi2, config.meta_rework) },
-      { name: 'Lead time médio', value: kpis.kpi3+' d.u.', meta: 'meta: ≤'+config.meta_leadtime+' d.u.', pct: pctMenorMelhor(kpis.kpi3, config.meta_leadtime) },
-      { name: 'Throughput mensal', value: kpis.kpi4+' cards', meta: 'meta: '+config.meta_through+' cards', pct: pctMaiorMelhor(kpis.kpi4, config.meta_through) },
-      { name: 'Conformidade', value: kpis.kpi5+'%', meta: 'meta: '+config.meta_conformidade+'%', pct: pctMaiorMelhor(kpis.kpi5, config.meta_conformidade) }
+      { name: 'Entrega no prazo', value: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', meta: 'meta: '+config.meta_prazo+'%', pct: pctTipoA(kpis.kpi1, config.meta_prazo), tipo: 'A' },
+      { name: 'Retrabalhos', value: kpis.kpi2, meta: 'meta: ≤'+config.meta_rework, pct: pctTipoB(kpis.kpi2, config.meta_rework), tipo: 'B' },
+      { name: 'Lead time médio', value: kpis.kpi3+' d.u.', meta: 'meta: ≤'+config.meta_leadtime+' d.u.', pct: pctTipoB(kpis.kpi3, config.meta_leadtime), tipo: 'B' },
+      { name: 'Throughput mensal', value: kpis.kpi4+' cards', meta: 'meta: '+config.meta_through+' cards', pct: pctTipoA(kpis.kpi4, config.meta_through), tipo: 'A' },
+      { name: 'Conformidade', value: kpis.kpi5+'%', meta: 'meta: '+config.meta_conformidade+'%', pct: pctTipoA(kpis.kpi5, config.meta_conformidade), tipo: 'A' }
     ];
 
     html += '<div class="kpi-grid">';
     kpiCards.forEach(function(k) {
       var pct = Math.min(100, Math.max(0, Math.round(k.pct)));
+      var cor = k.tipo === 'B' ? corTipoB(pct) : corTipoA(pct);
       html += '<div class="kpi-card">';
       html += '<div class="kpi-name">'+k.name+'</div>';
       html += '<div class="kpi-value">'+k.value+'</div>';
       html += '<div class="kpi-meta">'+k.meta+'</div>';
-      html += '<div class="kpi-bar-bg"><div class="kpi-bar-fill" style="width:'+pct+'%;background:'+barColor(pct)+';"></div></div>';
+      html += '<div class="kpi-bar-bg"><div class="kpi-bar-fill" style="width:'+pct+'%;background:'+cor+';"></div></div>';
       html += '</div>';
     });
     html += '</div>';
