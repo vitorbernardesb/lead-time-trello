@@ -530,7 +530,7 @@
     return fieldCachePromise.then(function(cachedField) {
       var phase1 = [
         fetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(function(r){ return r.json(); }),
-        fetch(apiUrl('/boards/'+boardId+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&customFieldItems=true', token)).then(function(r){ return r.json(); })
+        fetch(apiUrl('/boards/'+boardId+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList,idMembers&customFieldItems=true', token)).then(function(r){ return r.json(); })
       ];
       if (!cachedField) {
         phase1.push(fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); }));
@@ -663,14 +663,18 @@
             var hasLabels = card.labels && card.labels.length > 0;
 
             var inConcluido = false;
-            if (currentListName === 'Concluído 🏆') {
+            if (currentListName === 'Concluído 🏆' && card.dateLastActivity) {
               var dla = new Date(card.dateLastActivity);
               if (dla.getMonth() === curMonth && dla.getFullYear() === curYear) inConcluido = true;
             }
 
+            var hasMembers = card.idMembers && card.idMembers.length > 0;
+
             var missing = [];
             if (!hasDue) missing.push('Prazo');
             if (!hasLabels) missing.push('Label');
+            if (!hasRetrabalho) missing.push('Retrabalho');
+            if (!hasMembers) missing.push('Membro');
 
             processed.push({
               name: card.name,
@@ -681,11 +685,12 @@
               hasDue: hasDue,
               isLate: isLate,
               hasLabels: hasLabels,
+              hasMembers: hasMembers,
               labels: (card.labels || []).map(function(l) { return l.name; }),
               currentListName: currentListName,
               inConcluidoThisMonth: inConcluido,
               missing: missing,
-              isConforme: missing.length === 0
+              isConforme: hasDue && hasLabels && hasRetrabalho && hasMembers
             });
           }
           return { cards: processed, throughput: throughput };
@@ -699,20 +704,20 @@
   function calcKPIs(cards, config) {
     var withDue = cards.filter(function(c){ return c.hasDue; });
     var onTime = withDue.filter(function(c){ return !c.isLate; });
-    var kpi1 = withDue.length ? Math.round(onTime.length / withDue.length * 1000) / 10 : 100;
+    var kpi1 = withDue.length ? Math.round(onTime.length / withDue.length * 1000) / 10 : 0;
 
     var totalRw = 0;
     cards.forEach(function(c){ totalRw += c.retrabalho; });
     var kpi2 = totalRw;
 
     var totalDays = 0, countDays = 0;
-    cards.forEach(function(c){ totalDays += c.totalBD; countDays++; });
+    cards.forEach(function(c){ totalDays += c.daysInCurrent; countDays++; });
     var kpi3 = countDays ? Math.round(totalDays / countDays * 10) / 10 : 0;
 
     var kpi4 = cards.filter(function(c){ return c.inConcluidoThisMonth; }).length;
 
     var conformes = cards.filter(function(c){ return c.isConforme; }).length;
-    var kpi5 = cards.length ? Math.round(conformes / cards.length * 1000) / 10 : 100;
+    var kpi5 = cards.length ? Math.round(conformes / cards.length * 1000) / 10 : 0;
 
     var score_prazo = Math.min(100, (kpi1 / config.meta_prazo) * 100);
     var score_rework = Math.max(0, Math.min(100, ((config.meta_rework - kpi2) / config.meta_rework) * 100));
@@ -720,14 +725,14 @@
     var score_through = Math.min(100, (kpi4 / config.meta_through) * 100);
     var score_conformidade = Math.min(100, (kpi5 / config.meta_conformidade) * 100);
 
-    var healthScore = Math.round(
+    var healthScore = Math.max(0, Math.min(100, Math.round(
       (score_prazo * config.peso1 + score_rework * config.peso2 +
        score_leadtime * config.peso3 + score_through * config.peso4 +
        score_conformidade * config.peso5) / 100
-    );
+    )));
 
     return {
-      kpi1: kpi1, kpi2: kpi2, kpi3: kpi3, kpi4: kpi4, kpi5: kpi5,
+      kpi1: kpi1, kpi2: kpi2, kpi3: kpi3, kpi4: kpi4, kpi5: kpi5, noDueData: withDue.length === 0,
       score_prazo: score_prazo, score_rework: score_rework,
       score_leadtime: score_leadtime, score_through: score_through,
       score_conformidade: score_conformidade,
@@ -807,8 +812,8 @@
     html += '</div>';
 
     var kpiCards = [
-      { name: 'Entrega no prazo', value: kpis.kpi1+'%', meta: 'meta: '+config.meta_prazo+'%', pct: kpis.score_prazo },
-      { name: 'Retrabalhos', value: kpis.kpi2, meta: 'meta: ≤'+config.meta_rework, pct: kpis.score_rework },
+      { name: 'Entrega no prazo', value: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', meta: 'meta: '+config.meta_prazo+'%', pct: kpis.score_prazo },
+      { name: 'Retrabalhos', value: kpis.kpi2, meta: 'meta: ≤'+config.meta_rework, pct: Math.max(0, Math.min(100, ((config.meta_rework - kpis.kpi2) / config.meta_rework) * 100 + 50)) },
       { name: 'Lead time médio', value: kpis.kpi3+' d.u.', meta: 'meta: ≤'+config.meta_leadtime+' d.u.', pct: kpis.score_leadtime },
       { name: 'Throughput mensal', value: kpis.kpi4+' cards', meta: 'meta: '+config.meta_through+' cards', pct: kpis.score_through },
       { name: 'Conformidade', value: kpis.kpi5+'%', meta: 'meta: '+config.meta_conformidade+'%', pct: kpis.score_conformidade }
