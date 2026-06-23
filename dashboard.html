@@ -236,6 +236,22 @@
     }
     .rework-empty { text-align: center; padding: 24px; color: #ABABB0; font-style: italic; }
     .no-data { text-align: center; padding: 60px 20px; color: #ABABB0; }
+    .card-link {
+      color: #0A0A0A;
+      text-decoration: underline;
+      text-decoration-color: rgba(255,207,6,0.60);
+      text-underline-offset: 3px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: color 0.15s, text-decoration-color 0.15s;
+    }
+    .card-link:hover {
+      color: #0A0A0A;
+      text-decoration-color: #FFCF06;
+      background: rgba(255,207,6,0.10);
+      border-radius: 3px;
+      padding: 0 2px;
+    }
     @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
     .skeleton {
       background: linear-gradient(90deg, rgba(171,171,176,0.12) 25%, rgba(171,171,176,0.25) 50%, rgba(171,171,176,0.12) 75%);
@@ -682,6 +698,7 @@
             if (!hasDesc) missing.push('Sem descrição preenchida');
 
             processed.push({
+              id: card.id,
               name: card.name,
               retrabalho: rwVal,
               hasRetrabalho: hasRetrabalho,
@@ -755,6 +772,7 @@
       if (limit === undefined || limit >= 999) return;
       if (c.daysInCurrent > limit) {
         alerts.push({
+          id: c.id,
           name: c.name,
           list: c.currentListName,
           days: c.daysInCurrent,
@@ -853,7 +871,7 @@
       html += '<div class="collapse-body'+(expanded?' open':'')+'" id="nc-body">';
       html += '<table><thead><tr><th>Card</th><th>Campos faltantes</th></tr></thead><tbody>';
       nonConforming.forEach(function(c) {
-        html += '<tr><td>'+escHtml(c.name)+'</td><td>';
+        html += '<tr><td><span class="card-link" data-card-id="'+escHtml(c.id)+'">'+escHtml(c.name)+'</span></td><td>';
         c.missing.forEach(function(m) { html += '<span class="missing-tag">⚠️ '+escHtml(m)+'</span>'; });
         html += '</td></tr>';
       });
@@ -878,6 +896,10 @@
     document.getElementById('rt-loading').style.display = 'none';
     document.getElementById('rt-error').style.display = 'none';
 
+    el.addEventListener('click', function(e) {
+      var target = e.target.closest('.card-link');
+      if (target) { var cid = target.getAttribute('data-card-id'); if (cid) t.showCard(cid); }
+    });
     document.getElementById('btn-refresh').addEventListener('click', function() { loadRealtime(true); });
     var btnCache = document.getElementById('btn-refresh-cache');
     if (btnCache) btnCache.addEventListener('click', function() { loadRealtime(true); });
@@ -1021,6 +1043,10 @@
     html += '</div>'; // close detail-flex
 
     el.innerHTML = html;
+    el.addEventListener('click', function(e) {
+      var target = e.target.closest('.card-link');
+      if (target) { var cid = target.getAttribute('data-card-id'); if (cid) t.showCard(cid); }
+    });
 
     var ITEMS_PER_PAGE = 10;
     var alertPage = 0;
@@ -1039,7 +1065,7 @@
       var h = '';
       pageItems.forEach(function(a) {
         h += '<div class="alert-row">';
-        h += '<span class="ar-name">'+escHtml(a.name)+'</span>';
+        h += '<span class="ar-name"><span class="card-link" data-card-id="'+escHtml(a.id)+'">'+escHtml(a.name)+'</span></span>';
         h += '<span class="ar-stage">'+escHtml(a.list)+'</span>';
         h += '<span class="ar-days">'+a.days+' d.u.</span>';
         h += '<span class="ar-excess">+'+a.excess+' dias acima do limite</span>';
@@ -1094,7 +1120,7 @@
         var rwClass = rc.retrabalho >= 3 ? 'high' : rc.retrabalho >= 2 ? 'med' : 'low';
         h += '<tr>';
         h += '<td class="rework-rank">'+(globalIdx+1)+'</td>';
-        h += '<td>'+escHtml(rc.name)+'</td>';
+        h += '<td><span class="card-link" data-card-id="'+escHtml(rc.id)+'">'+escHtml(rc.name)+'</span></td>';
         h += '<td class="rework-val '+rwClass+'">'+rc.retrabalho+'</td>';
         h += '<td>'+escHtml(rc.currentListName)+'</td>';
         h += '<td>';
