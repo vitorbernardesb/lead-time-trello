@@ -70,6 +70,24 @@
     return out;
   }
 
+  function validarTitulo(nome) {
+    if (!nome || typeof nome !== 'string') return false;
+    var pipes = (nome.match(/\|/g) || []).length;
+    if (pipes !== 2) return false;
+    var partes = nome.split('|');
+    var bloco1 = partes[0].trim();
+    var bloco2 = partes[1].trim();
+    var bloco3 = partes[2];
+    if (!bloco1 || !bloco2) return false;
+    if (!/^(0[1-9]|1[0-2])\/\d{4}$/.test(bloco2)) return false;
+    if (!bloco3 || !bloco3.includes(' - ')) return false;
+    var subpartes = bloco3.split(' - ');
+    var tipoEntrega = subpartes[0].trim();
+    var descricao = subpartes.slice(1).join(' - ').trim();
+    if (!tipoEntrega || !descricao) return false;
+    return true;
+  }
+
   function apiUrl(path, token) {
     return 'https://api.trello.com/1'+path+(path.indexOf('?')>=0?'&':'?')+'key='+APP_KEY+'&token='+token;
   }
@@ -578,43 +596,24 @@
       return t.getRestApi().isAuthorized().then(function (ok) {
         if (!ok) return [];
         return Promise.all([
-          t.card('id', 'due', 'labels'),
-          t.getRestApi().getToken(),
-          t.board('id')
+          t.card('id', 'name', 'due', 'desc', 'labels'),
+          t.getRestApi().getToken()
         ]).then(function(res) {
-          var card = res[0], token = res[1], boardId = res[2].id;
-          return Promise.all([
-            fetch(apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token)).then(function(r){ return r.json(); }),
-            fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); }),
-            fetch(apiUrl('/cards/'+card.id+'/customFieldItems', token)).then(function(r){ return r.json(); })
-          ]).then(function(results) {
-            var actions = results[0], customFields = results[1], cfItems = results[2];
+          var card = res[0], token = res[1];
+          return fetch(apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
+            .then(function(r){ return r.json(); })
+            .then(function(actions) {
             var badges = [];
 
             var ltBadge = badgeFromActions(actions);
             if (ltBadge) badges.push(ltBadge);
 
-            var retrabalhoFieldId = null;
-            if (Array.isArray(customFields)) {
-              for (var fi=0; fi<customFields.length; fi++) {
-                if (customFields[fi].name === 'Retrabalhos') { retrabalhoFieldId = customFields[fi].id; break; }
-              }
-            }
-            var hasRetrabalho = false;
-            if (retrabalhoFieldId && Array.isArray(cfItems)) {
-              for (var ci=0; ci<cfItems.length; ci++) {
-                if (cfItems[ci].idCustomField === retrabalhoFieldId) {
-                  var v = cfItems[ci].value;
-                  if (v && (v.number !== undefined || v.text !== undefined)) hasRetrabalho = true;
-                  break;
-                }
-              }
-            }
-
-            var hasDue = !!card.due;
+            var tituloOk = validarTitulo(card.name);
             var hasLabels = card.labels && card.labels.length > 0;
+            var hasDue = !!card.due;
+            var hasDesc = card.desc && card.desc.trim().length > 0;
 
-            if (!hasDue || !hasLabels) {
+            if (!tituloOk || !hasLabels || !hasDue || !hasDesc) {
               badges.push({ text: '⚠ incompleto', color: 'red', title: 'Card sem campos obrigatórios preenchidos' });
             }
 

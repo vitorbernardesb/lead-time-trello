@@ -431,6 +431,43 @@
 
   function escHtml(s) { var el = document.createElement('span'); el.appendChild(document.createTextNode(s)); return el.innerHTML; }
 
+  function validarTitulo(nome) {
+    if (!nome || typeof nome !== 'string') return false;
+    var pipes = (nome.match(/\|/g) || []).length;
+    if (pipes !== 2) return false;
+    var partes = nome.split('|');
+    var bloco1 = partes[0].trim();
+    var bloco2 = partes[1].trim();
+    var bloco3 = partes[2];
+    if (!bloco1 || !bloco2) return false;
+    if (!/^(0[1-9]|1[0-2])\/\d{4}$/.test(bloco2)) return false;
+    if (!bloco3 || !bloco3.includes(' - ')) return false;
+    var subpartes = bloco3.split(' - ');
+    var tipoEntrega = subpartes[0].trim();
+    var descricao = subpartes.slice(1).join(' - ').trim();
+    if (!tipoEntrega || !descricao) return false;
+    return true;
+  }
+
+  function errosTitulo(nome) {
+    var erros = [];
+    if (!nome || typeof nome !== 'string') { erros.push('Título fora do padrão: bloco incompleto'); return erros; }
+    var pipes = (nome.match(/\|/g) || []).length;
+    if (pipes !== 2) { erros.push('Título fora do padrão: faltam separadores ( | )'); return erros; }
+    var partes = nome.split('|');
+    var bloco1 = partes[0].trim();
+    var bloco2 = partes[1].trim();
+    var bloco3 = partes[2];
+    if (!bloco1 || !bloco2 || !bloco3 || !bloco3.trim()) { erros.push('Título fora do padrão: bloco incompleto'); }
+    if (bloco2 && !/^(0[1-9]|1[0-2])\/\d{4}$/.test(bloco2)) { erros.push('Título fora do padrão: data deve ser MM/AAAA'); }
+    if (bloco3 && !bloco3.includes(' - ')) { erros.push('Título fora do padrão: falta separador ( - )'); }
+    else if (bloco3 && bloco3.includes(' - ')) {
+      var subpartes = bloco3.split(' - ');
+      if (!subpartes[0].trim() || !subpartes.slice(1).join(' - ').trim()) { erros.push('Título fora do padrão: bloco incompleto'); }
+    }
+    return erros;
+  }
+
   function mergeConfig(cfg) {
     var config = {};
     Object.keys(DEFAULTS).forEach(function(k) { config[k] = DEFAULTS[k]; });
@@ -530,7 +567,7 @@
     return fieldCachePromise.then(function(cachedField) {
       var phase1 = [
         fetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(function(r){ return r.json(); }),
-        fetch(apiUrl('/boards/'+boardId+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList,idMembers&customFieldItems=true', token)).then(function(r){ return r.json(); })
+        fetch(apiUrl('/boards/'+boardId+'/cards?filter=open&fields=name,desc,due,dateLastActivity,labels,idList&customFieldItems=true', token)).then(function(r){ return r.json(); })
       ];
       if (!cachedField) {
         phase1.push(fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); }));
@@ -668,13 +705,17 @@
               if (dla.getMonth() === curMonth && dla.getFullYear() === curYear) inConcluido = true;
             }
 
-            var hasMembers = card.idMembers && card.idMembers.length > 0;
+            var tituloValido = validarTitulo(card.name);
+            var hasDesc = card.desc && card.desc.trim().length > 0;
 
             var missing = [];
-            if (!hasDue) missing.push('Prazo');
-            if (!hasLabels) missing.push('Label');
-            if (!hasRetrabalho) missing.push('Retrabalho');
-            if (!hasMembers) missing.push('Membro');
+            if (!tituloValido) {
+              var te = errosTitulo(card.name);
+              for (var ei = 0; ei < te.length; ei++) missing.push(te[ei]);
+            }
+            if (!hasLabels) missing.push('Sem etiqueta definida');
+            if (!hasDue) missing.push('Sem data de entrega definida');
+            if (!hasDesc) missing.push('Sem descrição preenchida');
 
             processed.push({
               name: card.name,
@@ -685,12 +726,11 @@
               hasDue: hasDue,
               isLate: isLate,
               hasLabels: hasLabels,
-              hasMembers: hasMembers,
               labels: (card.labels || []).map(function(l) { return l.name; }),
               currentListName: currentListName,
               inConcluidoThisMonth: inConcluido,
               missing: missing,
-              isConforme: hasDue && hasLabels && hasRetrabalho && hasMembers
+              isConforme: tituloValido && hasLabels && hasDue && hasDesc
             });
           }
           return { cards: processed, throughput: throughput };
@@ -841,7 +881,7 @@
       html += '<table><thead><tr><th>Card</th><th>Campos faltantes</th></tr></thead><tbody>';
       nonConforming.forEach(function(c) {
         html += '<tr><td>'+escHtml(c.name)+'</td><td>';
-        c.missing.forEach(function(m) { html += '<span class="missing-tag">'+m+'</span>'; });
+        c.missing.forEach(function(m) { html += '<span class="missing-tag">⚠️ '+escHtml(m)+'</span>'; });
         html += '</td></tr>';
       });
       html += '</tbody></table></div></div>';
