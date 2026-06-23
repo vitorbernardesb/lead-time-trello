@@ -358,7 +358,7 @@
   FLOW_LISTS.forEach(function(n, i) { DEFAULT_SLA[n] = slaDefaults[i]; });
 
   var DEFAULTS = {
-    meta_prazo: 80, meta_rework: 120, meta_leadtime: 7, meta_through: 12, meta_conformidade: 85,
+    meta_prazo: 20, meta_rework: 120, meta_leadtime: 7, meta_through: 12, meta_conformidade: 85,
     peso1: 30, peso2: 20, peso3: 20, peso4: 10, peso5: 20,
     sla: DEFAULT_SLA
   };
@@ -736,8 +736,8 @@
   // ─── CALCULATE KPIs ─────────────────────────────
   function calcKPIs(cards, config) {
     var withDue = cards.filter(function(c){ return c.hasDue; });
-    var onTime = withDue.filter(function(c){ return !c.isLate; });
-    var kpi1 = withDue.length ? Math.round(onTime.length / withDue.length * 1000) / 10 : 0;
+    var vencidos = withDue.filter(function(c){ return c.isLate; });
+    var kpi1 = withDue.length ? Math.round(vencidos.length / withDue.length * 1000) / 10 : 0;
 
     var totalRw = 0;
     cards.forEach(function(c){ totalRw += c.retrabalho; });
@@ -752,13 +752,14 @@
 
     var kpi4 = cards.filter(function(c){ return c.inConcluidoThisMonth; }).length;
 
+    console.log('[KPI1]', 'withDue:', withDue.length, 'vencidos:', vencidos.length, 'kpi1:', kpi1);
     console.log('[KPI3]', 'prodCards:', prodCards.length, 'totalDays:', totalDays, 'kpi3:', kpi3);
     console.log('[KPI4]', 'dueComplete no mês:', kpi4);
 
     var conformes = cards.filter(function(c){ return c.isConforme; }).length;
     var kpi5 = cards.length ? Math.round(conformes / cards.length * 1000) / 10 : 0;
 
-    var score_prazo = Math.min(100, (kpi1 / config.meta_prazo) * 100);
+    var score_prazo = Math.max(0, Math.min(100, ((config.meta_prazo - kpi1) / config.meta_prazo) * 100));
     var score_rework = Math.max(0, Math.min(100, ((config.meta_rework - kpi2) / config.meta_rework) * 100));
     var score_leadtime = kpi3 > 0 ? Math.max(0, Math.min(100, (config.meta_leadtime / kpi3) * 100)) : 100;
     var score_through = Math.min(100, (kpi4 / config.meta_through) * 100);
@@ -869,7 +870,7 @@
     html += '</div>';
 
     var kpiCards = [
-      { name: 'Entrega no prazo', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'meta: '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'A' },
+      { name: 'Cards vencidos', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'meta: máx. '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'B', sub: '% de cards com due date vencido' },
       { name: 'Retrabalhos', display: kpis.kpi2, metaLabel: 'meta: ≤'+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B' },
       { name: 'Lead time médio', display: kpis.kpi3+' d.u.', metaLabel: 'meta: ≤'+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B', sub: 'média das etapas de produção ativa' },
       { name: 'Throughput mensal', display: kpis.kpi4+' cards', metaLabel: 'meta: '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A', sub: 'cards com due date no mês marcados como concluídos' },
@@ -1292,7 +1293,7 @@
         html = '<div class="history-empty"><p>O histórico será gerado automaticamente a partir do próximo acesso mensal.</p></div>';
       } else {
         html += '<table class="history-table"><thead><tr>';
-        html += '<th>Mês</th><th>Health Score</th><th>No prazo</th><th>Rework</th><th>Lead time</th><th>Throughput</th><th>Conformidade</th><th>Cards</th>';
+        html += '<th>Mês</th><th>Health Score</th><th>Vencidos</th><th>Rework</th><th>Lead time</th><th>Throughput</th><th>Conformidade</th><th>Cards</th>';
         html += '</tr></thead><tbody>';
         snapshots.forEach(function(s) {
           var isCurrent = s.month === curMonth && s.year === curYear;
@@ -1337,7 +1338,7 @@
       var html = '';
 
       html += '<div class="config-section"><h3>Metas</h3>';
-      html += sliderRow('meta_prazo', 'Meta entrega no prazo', config.meta_prazo, 50, 100, 5, '%');
+      html += sliderRow('meta_prazo', 'Meta máx. de cards vencidos', config.meta_prazo, 0, 50, 5, '%');
       html += sliderRow('meta_rework', 'Meta retrabalhos máximo', config.meta_rework, 0, 1000, 5, ' retrabalhos');
       html += sliderRow('meta_leadtime', 'Meta lead time máximo', config.meta_leadtime, 2, 20, 1, ' d.u.');
       html += sliderRow('meta_through', 'Meta throughput mensal', config.meta_through, 5, 1000, 5, ' cards');
@@ -1346,7 +1347,7 @@
 
       html += '<div class="config-section"><h3>Pesos do Health Score</h3>';
       html += '<div class="peso-sum valid" id="peso-sum">Soma dos pesos: 100</div>';
-      html += sliderRow('peso1', 'Peso entrega no prazo', config.peso1, 10, 60, 5, '');
+      html += sliderRow('peso1', 'Peso cards vencidos', config.peso1, 10, 60, 5, '');
       html += sliderRow('peso2', 'Peso rework', config.peso2, 5, 40, 5, '');
       html += sliderRow('peso3', 'Peso lead time', config.peso3, 5, 40, 5, '');
       html += sliderRow('peso4', 'Peso throughput', config.peso4, 5, 30, 5, '');
