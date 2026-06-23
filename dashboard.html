@@ -802,6 +802,15 @@
     if (pct >= 50) return 'rgba(255,207,6,0.60)';
     return '#ABABB0';
   }
+  function pctMaiorMelhor(valor, meta) {
+    if (!meta) return 0;
+    return Math.min(100, Math.round((valor / meta) * 100));
+  }
+  function pctMenorMelhor(valor, meta) {
+    if (valor <= meta) return 100;
+    var pior = meta * 2;
+    return Math.max(0, Math.round((1 - (valor - meta) / (pior - meta)) * 100));
+  }
 
   function renderRealtime(kpis, config, cards, cachedAt) {
     var sc = scoreColor(kpis.healthScore);
@@ -816,11 +825,11 @@
     html += '</div>';
 
     var kpiCards = [
-      { name: 'Entrega no prazo', value: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', meta: 'meta: '+config.meta_prazo+'%', pct: kpis.score_prazo },
-      { name: 'Retrabalhos', value: kpis.kpi2, meta: 'meta: ≤'+config.meta_rework, pct: Math.max(0, Math.min(100, ((config.meta_rework - kpis.kpi2) / config.meta_rework) * 100 + 50)) },
-      { name: 'Lead time médio', value: kpis.kpi3+' d.u.', meta: 'meta: ≤'+config.meta_leadtime+' d.u.', pct: kpis.score_leadtime },
-      { name: 'Throughput mensal', value: kpis.kpi4+' cards', meta: 'meta: '+config.meta_through+' cards', pct: kpis.score_through },
-      { name: 'Conformidade', value: kpis.kpi5+'%', meta: 'meta: '+config.meta_conformidade+'%', pct: kpis.score_conformidade }
+      { name: 'Entrega no prazo', value: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', meta: 'meta: '+config.meta_prazo+'%', pct: pctMaiorMelhor(kpis.kpi1, config.meta_prazo) },
+      { name: 'Retrabalhos', value: kpis.kpi2, meta: 'meta: ≤'+config.meta_rework, pct: pctMenorMelhor(kpis.kpi2, config.meta_rework) },
+      { name: 'Lead time médio', value: kpis.kpi3+' d.u.', meta: 'meta: ≤'+config.meta_leadtime+' d.u.', pct: pctMenorMelhor(kpis.kpi3, config.meta_leadtime) },
+      { name: 'Throughput mensal', value: kpis.kpi4+' cards', meta: 'meta: '+config.meta_through+' cards', pct: pctMaiorMelhor(kpis.kpi4, config.meta_through) },
+      { name: 'Conformidade', value: kpis.kpi5+'%', meta: 'meta: '+config.meta_conformidade+'%', pct: pctMaiorMelhor(kpis.kpi5, config.meta_conformidade) }
     ];
 
     html += '<div class="kpi-grid">';
