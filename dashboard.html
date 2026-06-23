@@ -228,6 +228,27 @@
     }
     .rework-empty { text-align: center; padding: 24px; color: #ABABB0; font-style: italic; }
     .no-data { text-align: center; padding: 60px 20px; color: #ABABB0; }
+    @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+    .skeleton {
+      background: linear-gradient(90deg, rgba(171,171,176,0.12) 25%, rgba(171,171,176,0.25) 50%, rgba(171,171,176,0.12) 75%);
+      background-size: 400px 100%;
+      animation: shimmer 1.5s ease-in-out infinite;
+      border-radius: 8px;
+    }
+    .skeleton-circle { width: 160px; height: 160px; border-radius: 50%; margin: 0 auto 8px; }
+    .skeleton-text { height: 16px; margin-bottom: 12px; }
+    .skeleton-card { height: 100px; }
+    .skeleton-wrap { max-width: 960px; margin: 0 auto; padding: 24px; }
+    .skeleton-kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+    .skeleton-status { text-align: center; color: #ABABB0; font-size: 14px; margin-top: 16px; }
+    .cache-indicator {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 12px; color: #ABABB0; background: rgba(171,171,176,0.08);
+      padding: 4px 12px; border-radius: 4px;
+    }
+    .cache-indicator a { color: #0A0A0A; font-weight: 600; cursor: pointer; text-decoration: underline; }
+    .fade-in { animation: fadeIn 0.2s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @media (max-width: 700px) {
       .kpi-grid { grid-template-columns: 1fr; }
       .sla-grid { grid-template-columns: 1fr; }
@@ -308,6 +329,61 @@
 
   var t = TrelloPowerUp.iframe({ appKey: APP_KEY, appName: APP_NAME });
   var cachedData = null;
+  var renderedTabs = {};
+
+  function debounce(fn, delay) {
+    var timer;
+    return function() {
+      clearTimeout(timer);
+      var args = arguments, ctx = this;
+      timer = setTimeout(function() { fn.apply(ctx, args); }, delay);
+    };
+  }
+
+  var CACHE_TTL = 300000;
+  var FIELD_CACHE_TTL = 86400000;
+
+  function getCacheKey(boardId) { return 'leadtime_cache_' + boardId; }
+
+  function readCache(boardId) {
+    try {
+      var raw = localStorage.getItem(getCacheKey(boardId));
+      if (!raw) return null;
+      var obj = JSON.parse(raw);
+      if (obj && obj.cachedAt && (Date.now() - obj.cachedAt < CACHE_TTL)) return obj;
+    } catch(e) {}
+    return null;
+  }
+
+  function writeCache(boardId, data) {
+    try {
+      data.cachedAt = Date.now();
+      localStorage.setItem(getCacheKey(boardId), JSON.stringify(data));
+    } catch(e) {}
+  }
+
+  function cacheAge(cachedAt) {
+    var sec = Math.floor((Date.now() - cachedAt) / 1000);
+    if (sec < 60) return sec + 's atrás';
+    return Math.floor(sec / 60) + 'min atrás';
+  }
+
+  function showSkeleton(msg) {
+    var el = document.getElementById('rt-loading');
+    el.innerHTML = '<div class="skeleton-wrap">' +
+      '<div class="score-circle-wrap"><div class="skeleton skeleton-circle"></div></div>' +
+      '<div class="skeleton-kpi-grid">' +
+      '<div class="skeleton skeleton-card"></div>'.repeat(5) +
+      '</div>' +
+      '<p class="skeleton-status">' + (msg || 'Buscando cards do board…') + '</p>' +
+      '</div>';
+    el.style.display = '';
+  }
+
+  function updateSkeletonMsg(msg) {
+    var p = document.querySelector('.skeleton-status');
+    if (p) p.textContent = msg;
+  }
 
   function countBusinessDays(from, to) {
     var s = new Date(from); s.setHours(0,0,0,0);
@@ -372,9 +448,9 @@
       if (tabs[i].getAttribute('data-tab') === name) tabs[i].classList.add('active');
     }
     document.getElementById('tab-'+name).classList.add('active');
-    if (name === 'history') loadHistory();
+    if (name === 'history' && !renderedTabs.history) { loadHistory(); renderedTabs.history = true; }
     if (name === 'config') renderConfig();
-    if (name === 'funnel') renderFunnel();
+    if (name === 'funnel' && !renderedTabs.funnel) { renderFunnel(); renderedTabs.funnel = true; }
   }
   tabs.forEach(function(tab) {
     tab.addEventListener('click', function() { switchTab(tab.getAttribute('data-tab')); });
@@ -437,38 +513,55 @@
   }
 
   function fetchData(token, boardId) {
-    return Promise.all([
-      fetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(function(r){ return r.json(); }),
-      fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); }),
-      fetch(apiUrl('/boards/'+boardId+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&customFieldItems=true', token)).then(function(r){ return r.json(); })
-    ]).then(function(initial) {
-      var lists = initial[0], customFields = initial[1], allBoardCards = initial[2];
+    var fieldCachePromise = t.get('board', 'private', 'retrabalhoFieldCache').then(function(fc) {
+      if (fc && fc.id && fc.savedAt && (Date.now() - fc.savedAt < FIELD_CACHE_TTL)) return fc;
+      return null;
+    }).catch(function() { return null; });
 
-      var flowListIds = {};
-      if (Array.isArray(lists)) {
-        lists.forEach(function(l) {
-          for (var fi=0; fi<FLOW_LISTS.length; fi++) {
-            if (l.name.trim() === FLOW_LISTS[fi]) { flowListIds[l.id] = l.name.trim(); break; }
-          }
-        });
+    return fieldCachePromise.then(function(cachedField) {
+      var phase1 = [
+        fetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(function(r){ return r.json(); }),
+        fetch(apiUrl('/boards/'+boardId+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList&customFieldItems=true', token)).then(function(r){ return r.json(); })
+      ];
+      if (!cachedField) {
+        phase1.push(fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){ return r.json(); }));
       }
-      if (!Object.keys(flowListIds).length) throw new Error('Nenhuma lista do fluxo encontrada.');
+      return Promise.all(phase1).then(function(initial) {
+        var lists = initial[0], allBoardCards = initial[1], customFields = initial[2] || [];
 
-      var retrabalhoFieldId = null;
-      var retrabalhoOptions = {};
-      if (Array.isArray(customFields)) {
-        for (var fi=0; fi<customFields.length; fi++) {
-          if (customFields[fi].name === 'Retrabalhos') {
-            retrabalhoFieldId = customFields[fi].id;
-            if (Array.isArray(customFields[fi].options)) {
-              customFields[fi].options.forEach(function(o) {
-                retrabalhoOptions[o.id] = o.value && o.value.text ? o.value.text : '';
-              });
+        var flowListIds = {};
+        if (Array.isArray(lists)) {
+          lists.forEach(function(l) {
+            for (var fi=0; fi<FLOW_LISTS.length; fi++) {
+              if (l.name.trim() === FLOW_LISTS[fi]) { flowListIds[l.id] = l.name.trim(); break; }
             }
-            break;
+          });
+        }
+        if (!Object.keys(flowListIds).length) throw new Error('Nenhuma lista do fluxo encontrada.');
+
+        var retrabalhoFieldId = null;
+        var retrabalhoOptions = {};
+        if (cachedField) {
+          retrabalhoFieldId = cachedField.id;
+          retrabalhoOptions = cachedField.options || {};
+        } else if (Array.isArray(customFields)) {
+          for (var fi=0; fi<customFields.length; fi++) {
+            if (customFields[fi].name === 'Retrabalhos') {
+              retrabalhoFieldId = customFields[fi].id;
+              if (Array.isArray(customFields[fi].options)) {
+                customFields[fi].options.forEach(function(o) {
+                  retrabalhoOptions[o.id] = o.value && o.value.text ? o.value.text : '';
+                });
+              }
+              try {
+                t.set('board', 'private', 'retrabalhoFieldCache', {
+                  id: retrabalhoFieldId, options: retrabalhoOptions, savedAt: Date.now()
+                });
+              } catch(e) {}
+              break;
+            }
           }
         }
-      }
 
       var cards = [];
       if (Array.isArray(allBoardCards)) {
@@ -482,11 +575,13 @@
         cfByCard[c.id] = Array.isArray(c.customFieldItems) ? c.customFieldItems : [];
       });
 
-      var actionUrls = cards.map(function(c) {
-        return '/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000';
-      });
+        updateSkeletonMsg('Calculando lead time de ' + cards.length + ' cards…');
 
-      return throttledFetch(actionUrls, token, 20, 2500).then(function(allResults) {
+        var actionUrls = cards.map(function(c) {
+          return '/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000';
+        });
+
+        return throttledFetch(actionUrls, token, 20, 2500).then(function(allResults) {
         var allActions = allResults;
         var allCF = cards.map(function(c) { return cfByCard[c.id]; });
 
@@ -690,7 +785,7 @@
     return '#ABABB0';
   }
 
-  function renderRealtime(kpis, config, cards) {
+  function renderRealtime(kpis, config, cards, cachedAt) {
     var sc = scoreColor(kpis.healthScore);
     var html = '';
 
@@ -742,16 +837,23 @@
     html += '<div class="footer-bar">';
     html += '<button class="btn btn-secondary" id="btn-refresh">Atualizar dados</button>';
     html += '<button class="btn" id="btn-export">Exportar relatório</button>';
-    html += '<span class="info">'+kpis.totalCards+' cards analisados · atualizado agora</span>';
+    if (cachedAt) {
+      html += '<span class="cache-indicator">dados de ' + cacheAge(cachedAt) + ' · <a id="btn-refresh-cache">Atualizar</a></span>';
+    } else {
+      html += '<span class="info">'+kpis.totalCards+' cards analisados · atualizado agora</span>';
+    }
     html += '</div>';
 
     var el = document.getElementById('rt-content');
     el.innerHTML = html;
     el.style.display = '';
+    el.classList.add('fade-in');
     document.getElementById('rt-loading').style.display = 'none';
     document.getElementById('rt-error').style.display = 'none';
 
-    document.getElementById('btn-refresh').addEventListener('click', function() { loadRealtime(); });
+    document.getElementById('btn-refresh').addEventListener('click', function() { loadRealtime(true); });
+    var btnCache = document.getElementById('btn-refresh-cache');
+    if (btnCache) btnCache.addEventListener('click', function() { loadRealtime(true); });
     document.getElementById('btn-export').addEventListener('click', function() {
       t.alert({message: 'Use o botão "Exportar Lead Time" no board para gerar o relatório XLSX.', display: 'info', duration: 5});
     });
@@ -984,22 +1086,38 @@
   }
 
   // ─── LOAD REALTIME ──────────────────────────────
-  function loadRealtime() {
-    document.getElementById('rt-loading').style.display = '';
+  function loadRealtime(forceRefresh) {
     document.getElementById('rt-content').style.display = 'none';
     document.getElementById('rt-error').style.display = 'none';
+    renderedTabs = {};
 
-    var token, boardId;
+    var token, boardId, config;
     t.getRestApi().getToken()
       .then(function(tok) { token = tok; return t.board('id'); })
       .then(function(board) { boardId = board.id; return t.get('board', 'shared', 'healthConfig'); })
       .then(function(cfg) {
-        var config = mergeConfig(cfg);
+        config = mergeConfig(cfg);
+
+        if (!forceRefresh) {
+          var cache = readCache(boardId);
+          if (cache && cache.cards) {
+            cachedData = { cards: cache.cards, config: config, throughput: cache.throughput };
+            var kpis = calcKPIs(cache.cards, config);
+            var slaAlerts = computeSLAAlerts(cache.cards, config);
+            renderRealtime(kpis, config, cache.cards, cache.cachedAt);
+            renderAlertBanner(slaAlerts);
+            document.getElementById('rt-loading').style.display = 'none';
+            return;
+          }
+        }
+
+        showSkeleton('Buscando cards do board…');
         return fetchData(token, boardId).then(function(data) {
           cachedData = { cards: data.cards, config: config, throughput: data.throughput };
+          writeCache(boardId, { cards: data.cards, throughput: data.throughput });
           var kpis = calcKPIs(data.cards, config);
           var slaAlerts = computeSLAAlerts(data.cards, config);
-          renderRealtime(kpis, config, data.cards);
+          renderRealtime(kpis, config, data.cards, null);
           renderAlertBanner(slaAlerts);
           saveSnapshotIfNeeded(kpis, config);
         });
@@ -1121,11 +1239,12 @@
 
       document.getElementById('cfg-content').innerHTML = html;
 
+      var debouncedPesoSum = debounce(updatePesoSum, 300);
       var sliders = document.querySelectorAll('#cfg-content input[type=range]');
       sliders.forEach(function(sl) {
         sl.addEventListener('input', function() {
           document.getElementById('val-'+sl.id).textContent = sl.value + (sl.getAttribute('data-unit')||'');
-          updatePesoSum();
+          debouncedPesoSum();
         });
       });
       updatePesoSum();
