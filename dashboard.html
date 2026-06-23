@@ -816,12 +816,16 @@
     return 'Situação crítica';
   }
   function pctTipoA(valor, meta) {
-    if (!meta || meta === 0) return 0;
-    return Math.min(100, Math.round((valor / meta) * 100));
+    valor = parseFloat(valor);
+    meta = parseFloat(meta);
+    if (isNaN(valor) || isNaN(meta) || meta === 0) return 0;
+    return Math.min(100, Math.max(0, Math.round((valor / meta) * 100)));
   }
   function pctTipoB(valor, meta) {
-    if (!meta || meta === 0) return 0;
-    return Math.min(100, Math.round((valor / meta) * 100));
+    valor = parseFloat(valor);
+    meta = parseFloat(meta);
+    if (isNaN(valor) || isNaN(meta) || meta === 0) return 0;
+    return Math.min(100, Math.max(0, Math.round((valor / meta) * 100)));
   }
   function corTipoA(pct) {
     if (pct >= 75) return '#FFCF06';
@@ -847,21 +851,22 @@
     html += '</div>';
 
     var kpiCards = [
-      { name: 'Entrega no prazo', value: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', meta: 'meta: '+config.meta_prazo+'%', pct: pctTipoA(kpis.kpi1, config.meta_prazo), tipo: 'A' },
-      { name: 'Retrabalhos', value: kpis.kpi2, meta: 'meta: ≤'+config.meta_rework, pct: pctTipoB(kpis.kpi2, config.meta_rework), tipo: 'B' },
-      { name: 'Lead time médio', value: kpis.kpi3+' d.u.', meta: 'meta: ≤'+config.meta_leadtime+' d.u.', pct: pctTipoB(kpis.kpi3, config.meta_leadtime), tipo: 'B' },
-      { name: 'Throughput mensal', value: kpis.kpi4+' cards', meta: 'meta: '+config.meta_through+' cards', pct: pctTipoA(kpis.kpi4, config.meta_through), tipo: 'A' },
-      { name: 'Conformidade', value: kpis.kpi5+'%', meta: 'meta: '+config.meta_conformidade+'%', pct: pctTipoA(kpis.kpi5, config.meta_conformidade), tipo: 'A' }
+      { name: 'Entrega no prazo', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'meta: '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'A' },
+      { name: 'Retrabalhos', display: kpis.kpi2, metaLabel: 'meta: ≤'+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B' },
+      { name: 'Lead time médio', display: kpis.kpi3+' d.u.', metaLabel: 'meta: ≤'+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B' },
+      { name: 'Throughput mensal', display: kpis.kpi4+' cards', metaLabel: 'meta: '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A' },
+      { name: 'Conformidade', display: kpis.kpi5+'%', metaLabel: 'meta: '+config.meta_conformidade+'%', valor: kpis.kpi5, meta: config.meta_conformidade, tipo: 'A' }
     ];
 
     html += '<div class="kpi-grid">';
     kpiCards.forEach(function(k) {
-      var pct = Math.min(100, Math.max(0, Math.round(k.pct)));
+      var pct = k.tipo === 'B' ? pctTipoB(k.valor, k.meta) : pctTipoA(k.valor, k.meta);
       var cor = k.tipo === 'B' ? corTipoB(pct) : corTipoA(pct);
+      console.log('[BARRA]', k.name, 'valor:', k.valor, 'meta:', k.meta, 'pct:', pct, 'tipo:', k.tipo);
       html += '<div class="kpi-card">';
       html += '<div class="kpi-name">'+k.name+'</div>';
-      html += '<div class="kpi-value">'+k.value+'</div>';
-      html += '<div class="kpi-meta">'+k.meta+'</div>';
+      html += '<div class="kpi-value">'+k.display+'</div>';
+      html += '<div class="kpi-meta">'+k.metaLabel+'</div>';
       html += '<div class="kpi-bar-bg"><div class="kpi-bar-fill" style="width:'+pct+'%;background:'+cor+';"></div></div>';
       html += '</div>';
     });
