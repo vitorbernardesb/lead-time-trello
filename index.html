@@ -71,21 +71,7 @@
   }
 
   function validarTitulo(nome) {
-    if (!nome || typeof nome !== 'string') return false;
-    var pipes = (nome.match(/\|/g) || []).length;
-    if (pipes !== 2) return false;
-    var partes = nome.split('|');
-    var bloco1 = partes[0].trim();
-    var bloco2 = partes[1].trim();
-    var bloco3 = partes[2];
-    if (!bloco1 || !bloco2) return false;
-    if (!/^(0[1-9]|1[0-2])\/\d{4}$/.test(bloco2)) return false;
-    if (!bloco3 || !bloco3.includes(' - ')) return false;
-    var subpartes = bloco3.split(' - ');
-    var tipoEntrega = subpartes[0].trim();
-    var descricao = subpartes.slice(1).join(' - ').trim();
-    if (!tipoEntrega || !descricao) return false;
-    return true;
+    return typeof nome === 'string' && nome.trim().length > 0;
   }
 
   function apiUrl(path, token) {
