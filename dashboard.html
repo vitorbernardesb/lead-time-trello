@@ -485,25 +485,66 @@
 
   function buildTimeline(actions) {
     if (!Array.isArray(actions)) actions = [];
-    actions.sort(function(a,b){ return new Date(a.date)-new Date(b.date); });
-    var stages = [];
-    for (var i=0; i<actions.length; i++) {
-      var act=actions[i], date=new Date(act.date);
-      if ((act.type==='createCard'||act.type==='copyCard') && act.data.list) {
-        stages.push({name:act.data.list.name, enteredAt:date, leftAt:null});
-      } else if (act.type==='updateCard' && act.data.listAfter) {
-        if (stages.length===0 && act.data.listBefore)
-          stages.push({name:act.data.listBefore.name, enteredAt:date, leftAt:date});
-        if (stages.length>0) stages[stages.length-1].leftAt = date;
-        stages.push({name:act.data.listAfter.name, enteredAt:date, leftAt:null});
+    actions.sort(function(a, b) {
+      var diff = new Date(a.date) - new Date(b.date);
+      if (diff !== 0) return diff;
+      var priority = { createCard: 0, copyCard: 0, updateCard: 1 };
+      return (priority[a.type] || 2) - (priority[b.type] || 2);
+    });
+
+    var createdAt = null;
+    for (var k = 0; k < actions.length; k++) {
+      if (actions[k].type === 'createCard' || actions[k].type === 'copyCard') {
+        createdAt = new Date(actions[k].date);
+        break;
       }
     }
-    var out = [];
-    for (var j=0; j<stages.length; j++) {
-      var st=stages[j], dur=(st.leftAt?st.leftAt.getTime():Date.now())-st.enteredAt.getTime();
-      if (dur<MIN_STAGE_MS && st.leftAt && out.length>0) out[out.length-1].leftAt=st.leftAt;
-      else out.push(st);
+    if (!createdAt && actions.length > 0) {
+      createdAt = new Date(actions[0].date);
     }
+
+    var stages = [];
+    for (var i = 0; i < actions.length; i++) {
+      var act = actions[i], date = new Date(act.date);
+      if (createdAt && date < createdAt) continue;
+      if ((act.type === 'createCard' || act.type === 'copyCard') && act.data.list) {
+        if (stages.length === 0) {
+          stages.push({ name: act.data.list.name, enteredAt: date, leftAt: null });
+        }
+      } else if (act.type === 'updateCard' && act.data.listAfter) {
+        if (stages.length === 0 && act.data.listBefore) {
+          var fallback = createdAt || date;
+          stages.push({ name: act.data.listBefore.name, enteredAt: fallback, leftAt: date });
+        }
+        if (stages.length > 0) stages[stages.length - 1].leftAt = date;
+        stages.push({ name: act.data.listAfter.name, enteredAt: date, leftAt: null });
+      }
+    }
+
+    if (stages.length > 0) {
+      for (var v = 0; v < stages.length; v++) {
+        if (createdAt && stages[v].enteredAt < createdAt) {
+          stages[v].enteredAt = createdAt;
+        }
+      }
+    }
+
+    var out = [];
+    for (var j = 0; j < stages.length; j++) {
+      var st = stages[j];
+      var dur = (st.leftAt ? st.leftAt.getTime() : Date.now()) - st.enteredAt.getTime();
+      if (dur < MIN_STAGE_MS && st.leftAt && out.length > 0) {
+        out[out.length - 1].leftAt = st.leftAt;
+      } else {
+        out.push(st);
+      }
+    }
+
+    if (out.length === 1 && !out[0].leftAt && createdAt) {
+      out[0].enteredAt = createdAt;
+    }
+
+    console.log('[TIMELINE]', 'stages:', out.length, 'createdAt:', createdAt, 'actions:', actions.length);
     return out;
   }
 
@@ -812,10 +853,6 @@
 
     var kpi4 = cards.filter(function(c){ return c.inConcluidoThisMonth; }).length;
 
-    console.log('[KPI1 - Vencidos]', 'com due (excl. concluídos):', withDue.length, 'vencidos:', vencidos.length, 'kpi1:', kpi1 + '%');
-    console.log('[KPI3]', 'prodCards:', prodCards.length, 'totalDays:', totalDays, 'kpi3:', kpi3);
-    console.log('[KPI4]', 'dueComplete no mês:', kpi4);
-
     var conformes = cards.filter(function(c){ return c.isConforme; }).length;
     var kpi5 = cards.length ? Math.round(conformes / cards.length * 1000) / 10 : 0;
 
@@ -953,7 +990,6 @@
     kpiCards.forEach(function(k) {
       var pct = k.tipo === 'B' ? pctTipoB(k.valor, k.meta) : pctTipoA(k.valor, k.meta);
       var cor = k.tipo === 'B' ? corTipoB(pct) : corTipoA(pct);
-      console.log('[BARRA]', k.name, 'valor:', k.valor, 'meta:', k.meta, 'pct:', pct, 'tipo:', k.tipo);
       html += '<div class="kpi-card">';
       html += '<div class="kpi-name">'+k.name+'</div>';
       html += '<div class="kpi-value">'+k.display+'</div>';
