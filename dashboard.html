@@ -59,7 +59,7 @@
     }
     .alert-banner.danger { background: rgba(10,10,10,0.05); border-color: #0A0A0A; color: #0A0A0A; }
     .alert-banner.success { background: rgba(255,207,6,0.10); border-color: #FFCF06; color: #0A0A0A; }
-    .body { padding: 24px; max-width: 960px; margin: 0 auto; }
+    .body { padding: 24px; max-width: 960px; margin: 0 auto; position: relative; }
     .spinner-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 0; }
     .spinner {
       width: 32px; height: 32px;
@@ -268,6 +268,43 @@
     .cache-indicator a { color: #0A0A0A; font-weight: 600; cursor: pointer; text-decoration: underline; }
     .fade-in { animation: fadeIn 0.2s ease-in; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .etapa-count-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 28px; padding: 2px 8px;
+      background: rgba(255,207,6,0.12); border: 1px solid rgba(255,207,6,0.40);
+      border-radius: 20px; font-size: 13px; font-weight: 700; color: #0A0A0A;
+      cursor: pointer; transition: background 0.15s, border-color 0.15s;
+    }
+    .etapa-count-btn:hover { background: rgba(255,207,6,0.25); border-color: #FFCF06; }
+    .etapa-popup {
+      position: absolute; z-index: 1000; width: 280px; max-height: 320px;
+      background: #FFFFFF; border: 1px solid rgba(171,171,176,0.40); border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(10,10,10,0.12); overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .etapa-popup-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; background: #0A0A0A; flex-shrink: 0;
+    }
+    .etapa-popup-title {
+      font-size: 12px; font-weight: 700; color: #FFCF06;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
+    }
+    .etapa-popup-close {
+      background: none; border: none; color: #ABABB0; font-size: 18px;
+      cursor: pointer; line-height: 1; padding: 0; flex-shrink: 0;
+    }
+    .etapa-popup-close:hover { color: #FFCF06; }
+    .etapa-popup-body { overflow-y: auto; max-height: 270px; padding: 8px 0; }
+    .etapa-popup-list { list-style: none; padding: 0; margin: 0; }
+    .etapa-popup-card {
+      display: block; padding: 7px 14px; font-size: 12px; color: #0A0A0A;
+      cursor: pointer; text-decoration: underline;
+      text-decoration-color: rgba(255,207,6,0.50); text-underline-offset: 3px;
+      transition: background 0.12s;
+    }
+    .etapa-popup-card:hover { background: rgba(255,207,6,0.08); text-decoration-color: #FFCF06; }
+    .etapa-popup-empty { padding: 12px 14px; font-size: 12px; color: #ABABB0; text-align: center; }
     @media (max-width: 700px) {
       .kpi-grid { grid-template-columns: 1fr; }
       .sla-grid { grid-template-columns: 1fr; }
@@ -313,6 +350,14 @@
 
   <div id="tab-config" class="tab-content">
     <div id="cfg-content"></div>
+  </div>
+
+  <div id="etapa-popup" class="etapa-popup" style="display:none;">
+    <div class="etapa-popup-header">
+      <span class="etapa-popup-title" id="etapa-popup-title"></span>
+      <button class="etapa-popup-close" id="etapa-popup-close">&times;</button>
+    </div>
+    <div class="etapa-popup-body" id="etapa-popup-body"></div>
   </div>
 </div>
 
@@ -1042,7 +1087,7 @@
       var barW = maxCards > 0 ? Math.round(cnt / maxCards * 100) : 0;
       html += '<tr'+(isConcluido ? ' class="concluded"' : '')+'>';
       html += '<td>'+escHtml(n)+'</td>';
-      html += '<td><div style="display:flex;align-items:center;gap:8px;"><span>'+cnt+'</span><div class="funnel-bar" style="width:'+barW+'%;"></div></div></td>';
+      html += '<td><div style="display:flex;align-items:center;gap:8px;"><span class="etapa-count-btn" data-etapa="'+escHtml(n)+'">'+cnt+'</span><div class="funnel-bar" style="width:'+barW+'%;"></div></div></td>';
       html += '<td style="color:'+(abv>0?'#eb5a46':'#36b37e')+';font-weight:600;">'+abv+'</td>';
       html += '<td>'+(limit >= 999 ? '—' : limit+'d úteis')+'</td>';
       html += '<td>'+tp+'</td>';
@@ -1092,6 +1137,74 @@
     el.addEventListener('click', function(e) {
       var target = e.target.closest('.card-link');
       if (target) { var cid = target.getAttribute('data-card-id'); if (cid) t.showCard(cid); }
+    });
+
+    function fecharPopup() {
+      document.getElementById('etapa-popup').style.display = 'none';
+    }
+
+    function abrirPopupEtapa(nomeEtapa, trigger) {
+      var cardsNaEtapa = cards.filter(function(c) {
+        return c.currentListName === nomeEtapa;
+      });
+
+      var popup = document.getElementById('etapa-popup');
+      var title = document.getElementById('etapa-popup-title');
+      var body = document.getElementById('etapa-popup-body');
+
+      title.textContent = nomeEtapa + ' (' + cardsNaEtapa.length + ')';
+      body.innerHTML = '';
+
+      if (!cardsNaEtapa.length) {
+        body.innerHTML = '<p class="etapa-popup-empty">Nenhum card nesta etapa.</p>';
+      } else {
+        var ul = document.createElement('ul');
+        ul.className = 'etapa-popup-list';
+        cardsNaEtapa.forEach(function(card) {
+          var li = document.createElement('li');
+          var span = document.createElement('span');
+          span.textContent = card.name;
+          span.className = 'card-link etapa-popup-card';
+          span.addEventListener('click', function() { t.showCard(card.id); });
+          li.appendChild(span);
+          ul.appendChild(li);
+        });
+        body.appendChild(ul);
+      }
+
+      var rect = trigger.getBoundingClientRect();
+      var bodyRect = document.querySelector('.body').getBoundingClientRect();
+
+      popup.style.display = 'flex';
+
+      var popupWidth = 280;
+      var left = rect.right - bodyRect.left + 8;
+      if (left + popupWidth > bodyRect.width) {
+        left = rect.left - bodyRect.left - popupWidth - 8;
+      }
+      var top = rect.top - bodyRect.top;
+
+      popup.style.left = Math.max(0, left) + 'px';
+      popup.style.top = Math.max(0, top) + 'px';
+    }
+
+    el.addEventListener('click', function(e) {
+      var btn = e.target.closest('.etapa-count-btn');
+      if (btn) {
+        e.stopPropagation();
+        abrirPopupEtapa(btn.getAttribute('data-etapa'), btn);
+      }
+    });
+
+    document.getElementById('etapa-popup-close').addEventListener('click', fecharPopup);
+
+    document.addEventListener('click', function(e) {
+      var popup = document.getElementById('etapa-popup');
+      if (popup.style.display !== 'none' &&
+          !popup.contains(e.target) &&
+          !e.target.classList.contains('etapa-count-btn')) {
+        fecharPopup();
+      }
     });
 
     var ITEMS_PER_PAGE = 10;
