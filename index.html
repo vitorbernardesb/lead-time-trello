@@ -3,7 +3,6 @@
 <head>
   <meta charset="utf-8">
   <title>Lead Time Midiática</title>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
 </head>
 <body>
@@ -35,9 +34,17 @@
   function countBusinessDays(from, to) {
     var s = new Date(from); s.setHours(0,0,0,0);
     var e = new Date(to);   e.setHours(0,0,0,0);
-    var c = 0, d = new Date(s);
-    while (d < e) { if (d.getDay()!==0 && d.getDay()!==6) c++; d.setDate(d.getDate()+1); }
-    return c;
+    var totalDays = Math.round((e - s) / 86400000);
+    if (totalDays <= 0) return 0;
+    var weeks = Math.floor(totalDays / 7);
+    var remainder = totalDays % 7;
+    var count = weeks * 5;
+    var dayOfWeek = s.getDay();
+    for (var i = 0; i < remainder; i++) {
+      var d = (dayOfWeek + i) % 7;
+      if (d !== 0 && d !== 6) count++;
+    }
+    return count;
   }
 
   function fmtDate(v) {
@@ -463,10 +470,23 @@
   //  EXPORTAÇÃO
   // ═══════════════════════════════════════════════
 
-  function exportReport(t) {
-    if (typeof XLSX === 'undefined')
-      return t.alert({message:'Erro: biblioteca de exportação não carregou. Recarregue a página.', display:'error', duration:10});
+  function loadXLSX(callback) {
+    if (typeof XLSX !== 'undefined') return callback();
+    var script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+    script.onload = callback;
+    script.onerror = function() { callback(new Error('Falha ao carregar biblioteca XLSX.')); };
+    document.head.appendChild(script);
+  }
 
+  function exportReport(t) {
+    return loadXLSX(function(err) {
+      if (err) return t.alert({message: err.message, display: 'error', duration: 10});
+      return _doExport(t);
+    });
+  }
+
+  function _doExport(t) {
     var token, boardId;
     return t.getRestApi().getToken()
       .then(function(tok) {
@@ -573,6 +593,37 @@
       });
   }
 
+  var BADGE_CACHE_TTL = 300000;
+
+  function fetchAndComputeBadges(t) {
+    return Promise.all([
+      t.card('id', 'name', 'due', 'desc', 'labels'),
+      t.getRestApi().getToken()
+    ]).then(function(res) {
+      var card = res[0], token = res[1];
+      return fetch(apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
+        .then(function(r){ return r.json(); })
+        .then(function(actions) {
+          var badges = [];
+          var ltBadge = badgeFromActions(actions);
+          if (ltBadge) badges.push(ltBadge);
+
+          var tituloOk = validarTitulo(card.name);
+          var hasLabels = card.labels && card.labels.length > 0;
+          var hasDue = !!card.due;
+          var hasDesc = card.desc && card.desc.trim().length > 0;
+
+          if (!tituloOk || !hasLabels || !hasDue || !hasDesc) {
+            badges.push({ text: '⚠ incompleto', color: 'red', title: 'Card sem campos obrigatórios preenchidos' });
+          }
+
+          t.set('card', 'private', 'badgeCache', { badges: badges, cachedAt: Date.now() });
+          console.log('[Badge] MISS – fetched from API');
+          return badges;
+        });
+    });
+  }
+
   // ═══════════════════════════════════════════════
   //  INICIALIZAÇÃO
   // ═══════════════════════════════════════════════
@@ -581,32 +632,14 @@
     'card-badges': function (t) {
       return t.getRestApi().isAuthorized().then(function (ok) {
         if (!ok) return [];
-        return Promise.all([
-          t.card('id', 'name', 'due', 'desc', 'labels'),
-          t.getRestApi().getToken()
-        ]).then(function(res) {
-          var card = res[0], token = res[1];
-          return fetch(apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
-            .then(function(r){ return r.json(); })
-            .then(function(actions) {
-            var badges = [];
-
-            var ltBadge = badgeFromActions(actions);
-            if (ltBadge) badges.push(ltBadge);
-
-            var tituloOk = validarTitulo(card.name);
-            var hasLabels = card.labels && card.labels.length > 0;
-            var hasDue = !!card.due;
-            var hasDesc = card.desc && card.desc.trim().length > 0;
-
-            if (!tituloOk || !hasLabels || !hasDue || !hasDesc) {
-              badges.push({ text: '⚠ incompleto', color: 'red', title: 'Card sem campos obrigatórios preenchidos' });
-            }
-
-            return badges;
-          });
-        }).catch(function () { return []; });
-      });
+        return t.get('card', 'private', 'badgeCache').then(function(cached) {
+          if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
+            console.log('[Badge] HIT – using cache');
+            return cached.badges;
+          }
+          return fetchAndComputeBadges(t);
+        }).catch(function() { return fetchAndComputeBadges(t); });
+      }).catch(function () { return []; });
     },
 
     'card-back-section': function (t) {

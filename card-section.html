@@ -106,12 +106,17 @@
   function countBusinessDays(from, to) {
     var s = new Date(from); s.setHours(0,0,0,0);
     var e = new Date(to);   e.setHours(0,0,0,0);
-    var c = 0, d = new Date(s);
-    while (d < e) {
-      if (d.getDay() !== 0 && d.getDay() !== 6) c++;
-      d.setDate(d.getDate() + 1);
+    var totalDays = Math.round((e - s) / 86400000);
+    if (totalDays <= 0) return 0;
+    var weeks = Math.floor(totalDays / 7);
+    var remainder = totalDays % 7;
+    var count = weeks * 5;
+    var dayOfWeek = s.getDay();
+    for (var i = 0; i < remainder; i++) {
+      var d = (dayOfWeek + i) % 7;
+      if (d !== 0 && d !== 6) count++;
     }
-    return c;
+    return count;
   }
 
   function countWorkingHours(from, to) {
