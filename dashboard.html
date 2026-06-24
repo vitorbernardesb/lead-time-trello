@@ -87,12 +87,12 @@
     .score-ring-svg { display: block; margin: 0 auto 8px; }
     .score-ring-progress { transition: stroke-dashoffset 0.8s ease, stroke 0.8s ease; }
     .score-status { font-size: 16px; font-weight: 600; }
-    .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }
     .kpi-card {
       background: #FFFFFF; border-radius: 8px; padding: 16px; border: 1px solid rgba(171,171,176,0.40);
     }
-    .kpi-card .kpi-name { font-size: 11px; color: #ABABB0; font-weight: 500; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em; }
-    .kpi-card .kpi-value { font-size: 20px; font-weight: 700; color: #0A0A0A; }
+    .kpi-card .kpi-name { font-size: 10px; color: #ABABB0; font-weight: 500; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .kpi-card .kpi-value { font-size: 18px; font-weight: 700; color: #0A0A0A; }
     .kpi-card .kpi-meta { font-size: 11px; color: #ABABB0; margin-top: 4px; }
     .kpi-bar-bg { height: 8px; background: rgba(171,171,176,0.20); border-radius: 4px; margin-top: 10px; overflow: hidden; }
     .kpi-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
@@ -200,8 +200,9 @@
     .peso-sum.valid { color: #0A0A0A; }
     .config-footer { display: flex; gap: 12px; align-items: center; }
     .config-msg { font-size: 13px; color: #0A0A0A; font-weight: 500; }
-    .tab-content { display: none; }
+    .tab-content { display: none; opacity: 0; transition: opacity 0.15s ease; }
     .tab-content.active { display: block; }
+    .tab-content.visible { opacity: 1; }
     .rework-section { margin-top: 0; }
     .rework-section h3 { font-size: 15px; margin-bottom: 12px; color: #0A0A0A; font-weight: 700; }
     .rework-filters { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
@@ -247,18 +248,18 @@
       border-radius: 3px;
       padding: 0 2px;
     }
-    @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     .skeleton {
-      background: linear-gradient(90deg, rgba(171,171,176,0.12) 25%, rgba(171,171,176,0.25) 50%, rgba(171,171,176,0.12) 75%);
-      background-size: 400px 100%;
-      animation: shimmer 1.5s ease-in-out infinite;
-      border-radius: 8px;
+      background: linear-gradient(90deg, rgba(171,171,176,0.15) 25%, rgba(171,171,176,0.30) 50%, rgba(171,171,176,0.15) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 6px;
     }
-    .skeleton-circle { width: 160px; height: 160px; border-radius: 50%; margin: 0 auto 8px; }
+    .skeleton-circle { width: 120px; height: 120px; border-radius: 50%; margin: 0 auto 8px; }
     .skeleton-text { height: 16px; margin-bottom: 12px; }
     .skeleton-card { height: 100px; }
     .skeleton-wrap { max-width: 960px; margin: 0 auto; padding: 24px; }
-    .skeleton-kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+    .skeleton-kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-top: 24px; }
     .skeleton-status { text-align: center; color: #ABABB0; font-size: 14px; margin-top: 16px; }
     .cache-indicator {
       display: inline-flex; align-items: center; gap: 8px;
@@ -305,11 +306,16 @@
     }
     .etapa-popup-card:hover { background: rgba(255,207,6,0.08); text-decoration-color: #FFCF06; }
     .etapa-popup-empty { padding: 12px 14px; font-size: 12px; color: #ABABB0; text-align: center; }
+    @media (max-width: 900px) {
+      .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+    }
     @media (max-width: 700px) {
-      .kpi-grid { grid-template-columns: 1fr; }
       .sla-grid { grid-template-columns: 1fr; }
       .body { padding: 16px; }
       .summary-cards { flex-direction: column; }
+    }
+    @media (max-width: 600px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
     }
   </style>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
@@ -333,7 +339,7 @@
     <button class="btn" id="auth-btn">Autorizar Power-Up</button>
   </div>
 
-  <div id="tab-realtime" class="tab-content active">
+  <div id="tab-realtime" class="tab-content active visible">
     <div class="spinner-wrap" id="rt-loading"><div class="spinner"></div><p>Carregando dados…</p></div>
     <div id="rt-error" class="error-box" style="display:none;"><p></p><button class="btn" id="rt-retry">Tentar novamente</button></div>
     <div id="rt-content" style="display:none;"></div>
@@ -531,15 +537,20 @@
   var tabContents = document.querySelectorAll('.tab-content');
   function switchTab(name) {
     tabs.forEach(function(t){ t.classList.remove('active'); });
-    tabContents.forEach(function(tc){ tc.classList.remove('active'); });
+    tabContents.forEach(function(tc){ tc.classList.remove('visible'); });
     for (var i=0; i<tabs.length; i++) {
       if (tabs[i].getAttribute('data-tab') === name) tabs[i].classList.add('active');
     }
-    document.getElementById('tab-'+name).classList.add('active');
-    if (name === 'history' && !renderedTabs.history) { loadHistory(); renderedTabs.history = true; }
-    if (name === 'config') renderConfig();
-    if (name === 'funnel' && cachedData) { renderFunnel(); renderedTabs.funnel = true; }
-    else if (name === 'funnel' && !cachedData) { document.getElementById('funnel-content').innerHTML = '<div class="no-data"><p>Carregue os dados na aba "Tempo real" primeiro.</p></div>'; }
+    setTimeout(function() {
+      tabContents.forEach(function(tc){ tc.classList.remove('active'); });
+      var target = document.getElementById('tab-'+name);
+      target.classList.add('active');
+      if (name === 'history' && !renderedTabs.history) { loadHistory(); renderedTabs.history = true; }
+      if (name === 'config') renderConfig();
+      if (name === 'funnel' && cachedData) { renderFunnel(); renderedTabs.funnel = true; }
+      else if (name === 'funnel' && !cachedData) { document.getElementById('funnel-content').innerHTML = '<div class="no-data"><p>Carregue os dados na aba "Tempo real" primeiro.</p></div>'; }
+      requestAnimationFrame(function() { target.classList.add('visible'); });
+    }, 150);
   }
   tabs.forEach(function(tab) {
     tab.addEventListener('click', function() { switchTab(tab.getAttribute('data-tab')); });

@@ -522,7 +522,7 @@
           return t.alert({message:'Nenhuma lista do fluxo encontrada.', display:'warning', duration:6});
 
         return Promise.all(flowLists.map(function(l) {
-          return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList', token))
+          return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList,desc,dueComplete', token))
             .then(function(r){return r.json();});
         })).then(function(cardArrays) {
           var cards = [];
@@ -597,24 +597,48 @@
 
   function fetchAndComputeBadges(t) {
     return Promise.all([
-      t.card('id', 'name', 'due', 'desc', 'labels'),
-      t.getRestApi().getToken()
+      t.card('id', 'name', 'due', 'desc', 'labels', 'idList'),
+      t.getRestApi().getToken(),
+      t.lists('id', 'name'),
+      t.get('board', 'shared', 'healthConfig')
     ]).then(function(res) {
-      var card = res[0], token = res[1];
+      var card = res[0], token = res[1], lists = res[2], cfg = res[3];
+      var currentList = lists.find(function(l) { return l.id === card.idList; });
+      var currentListName = currentList ? currentList.name.trim() : '';
+      var isConcluido = currentListName === 'Concluído 🏆';
+
       return fetch(apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
         .then(function(r){ return r.json(); })
         .then(function(actions) {
           var badges = [];
+          var tl = buildTimeline(actions);
+
           var ltBadge = badgeFromActions(actions);
           if (ltBadge) badges.push(ltBadge);
 
-          var tituloOk = validarTitulo(card.name);
-          var hasLabels = card.labels && card.labels.length > 0;
-          var hasDue = !!card.due;
-          var hasDesc = card.desc && card.desc.trim().length > 0;
+          if (!isConcluido) {
+            var tituloOk = validarTitulo(card.name);
+            var hasLabels = card.labels && card.labels.length > 0;
+            var hasDue = !!card.due;
+            var hasDesc = card.desc && card.desc.trim().length > 0;
 
-          if (!tituloOk || !hasLabels || !hasDue || !hasDesc) {
-            badges.push({ text: '⚠ incompleto', color: 'red', title: 'Card sem campos obrigatórios preenchidos' });
+            if (!tituloOk || !hasLabels || !hasDue || !hasDesc) {
+              badges.push({ text: '⚠ incompleto', color: 'red', title: 'Card sem campos obrigatórios preenchidos' });
+            }
+          }
+
+          var slaConfig = (cfg && cfg.sla) ? cfg.sla : DEFAULT_SLA;
+          var slaLimite = slaConfig[currentListName];
+          if (tl.length && slaLimite && slaLimite < 999) {
+            var daysInCurrentList = countBusinessDays(tl[tl.length - 1].enteredAt, new Date());
+            if (daysInCurrentList > slaLimite) {
+              var excess = daysInCurrentList - slaLimite;
+              badges.push({
+                text: '+' + excess + 'd SLA',
+                color: 'red',
+                title: 'Card ' + excess + ' dia(s) acima do SLA da etapa'
+              });
+            }
           }
 
           t.set('card', 'private', 'badgeCache', { badges: badges, cachedAt: Date.now() });
@@ -668,7 +692,10 @@
       }, {
         icon: 'https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/download.svg',
         text: '​',
-        callback: exportReport
+        callback: function(t) {
+          t.alert({ message: 'Gerando relatório…', display: 'info', duration: 30 });
+          return exportReport(t);
+        }
       }];
     },
 
