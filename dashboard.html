@@ -682,9 +682,11 @@
 
         var retrabalhoFieldId = null;
         var retrabalhoOptions = {};
+        var prioridadeFieldId = null;
         if (cachedField) {
           retrabalhoFieldId = cachedField.id;
           retrabalhoOptions = cachedField.options || {};
+          prioridadeFieldId = cachedField.prioridadeId || null;
         } else if (Array.isArray(customFields)) {
           for (var fi=0; fi<customFields.length; fi++) {
             if (customFields[fi].name === 'Retrabalhos') {
@@ -694,14 +696,16 @@
                   retrabalhoOptions[o.id] = o.value && o.value.text ? o.value.text : '';
                 });
               }
-              try {
-                t.set('board', 'private', 'retrabalhoFieldCache', {
-                  id: retrabalhoFieldId, options: retrabalhoOptions, savedAt: Date.now()
-                });
-              } catch(e) {}
-              break;
+            }
+            if (customFields[fi].name === 'Prioridade') {
+              prioridadeFieldId = customFields[fi].id;
             }
           }
+          try {
+            t.set('board', 'private', 'retrabalhoFieldCache', {
+              id: retrabalhoFieldId, options: retrabalhoOptions, prioridadeId: prioridadeFieldId, savedAt: Date.now()
+            });
+          } catch(e) {}
         }
 
       var cards = [];
@@ -803,11 +807,24 @@
             var tituloValido = validarTitulo(card.name);
             var hasDesc = card.desc && card.desc.trim().length > 0;
 
+            var hasPrio = false;
+            if (prioridadeFieldId) {
+              for (var pi=0; pi<cfItems.length; pi++) {
+                if (cfItems[pi].idCustomField === prioridadeFieldId && cfItems[pi].idValue) {
+                  hasPrio = true;
+                  break;
+                }
+              }
+            } else {
+              hasPrio = true;
+            }
+
             var missing = [];
-            if (!tituloValido) missing.push('Sem título definido');
-            if (!hasLabels) missing.push('Sem etiqueta definida');
-            if (!hasDue) missing.push('Sem data de entrega definida');
-            if (!hasDesc) missing.push('Sem descrição preenchida');
+            if (!tituloValido) missing.push('Título não preenchido');
+            if (!hasLabels) missing.push('Etiqueta não definida');
+            if (!hasDue) missing.push('Data de entrega não definida');
+            if (!hasDesc) missing.push('Descrição não preenchida');
+            if (!hasPrio) missing.push('Prioridade não definida');
 
             processed.push({
               id: card.id,
@@ -819,12 +836,13 @@
               hasDue: hasDue,
               isLate: isLate,
               hasLabels: hasLabels,
+              hasPrioridade: hasPrio,
               labels: (card.labels || []).map(function(l) { return l.name; }),
               currentListName: currentListName,
               isConcluido: currentListName === 'Concluído 🏆',
               inConcluidoThisMonth: inConcluido,
               missing: missing,
-              isConforme: tituloValido && hasLabels && hasDue && hasDesc
+              isConforme: tituloValido && hasLabels && hasDue && hasDesc && hasPrio
             });
           }
           return { cards: processed, throughput: throughput };

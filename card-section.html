@@ -71,6 +71,38 @@
       font-family: inherit;
     }
     .auth-btn:hover { background: #026aa7; }
+    .warning-box {
+      background: #fff5f5;
+      border: 1px solid #eb5a46;
+      border-left: 4px solid #eb5a46;
+      border-radius: 3px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+    }
+    .warning-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #eb5a46;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .warning-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #172b4d;
+      margin-bottom: 3px;
+    }
+    .warning-item:last-child { margin-bottom: 0; }
+    .warning-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #eb5a46;
+      flex-shrink: 0;
+    }
   </style>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
 </head>
@@ -412,6 +444,20 @@
         adjustHeight();
       });
     });
+  }
+
+  var urlParams = new URLSearchParams(window.location.search);
+  var warningParam = urlParams.get('warning');
+  if (warningParam) {
+    var missingItems = warningParam.split('|');
+    var warningHtml = '<div class="warning-box">';
+    warningHtml += '<div class="warning-title">⚠ Card incompleto — preencha antes de avançar</div>';
+    missingItems.forEach(function(item) {
+      warningHtml += '<div class="warning-item"><span class="warning-dot"></span>' + escapeHtml(item) + '</div>';
+    });
+    warningHtml += '</div>';
+    content.innerHTML = warningHtml;
+    adjustHeight();
   }
 
   t.render(render);
