@@ -84,13 +84,8 @@
     .btn-secondary { background: transparent; color: #0A0A0A; border: 1px solid rgba(10,10,10,0.25); }
     .btn-secondary:hover { background: rgba(10,10,10,0.05); }
     .score-circle-wrap { text-align: center; margin-bottom: 28px; }
-    .score-circle {
-      width: 160px; height: 160px; border-radius: 50%; border: 3px solid;
-      display: inline-flex; flex-direction: column; align-items: center;
-      justify-content: center; margin-bottom: 8px;
-    }
-    .score-circle .number { font-size: 48px; font-weight: 700; line-height: 1; color: #0A0A0A; }
-    .score-circle .label { font-size: 13px; font-weight: 500; margin-top: 2px; color: #ABABB0; }
+    .score-ring-svg { display: block; margin: 0 auto 8px; }
+    .score-ring-progress { transition: stroke-dashoffset 0.8s ease, stroke 0.8s ease; }
     .score-status { font-size: 16px; font-weight: 600; }
     .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
     .kpi-card {
@@ -721,6 +716,7 @@
               hasLabels: hasLabels,
               labels: (card.labels || []).map(function(l) { return l.name; }),
               currentListName: currentListName,
+              isConcluido: currentListName === 'Concluído 🏆',
               inConcluidoThisMonth: inConcluido,
               missing: missing,
               isConforme: tituloValido && hasLabels && hasDue && hasDesc
@@ -735,7 +731,7 @@
 
   // ─── CALCULATE KPIs ─────────────────────────────
   function calcKPIs(cards, config) {
-    var withDue = cards.filter(function(c){ return c.hasDue; });
+    var withDue = cards.filter(function(c){ return c.hasDue && !c.isConcluido; });
     var vencidos = withDue.filter(function(c){ return c.isLate; });
     var kpi1 = withDue.length ? Math.round(vencidos.length / withDue.length * 1000) / 10 : 0;
 
@@ -752,7 +748,7 @@
 
     var kpi4 = cards.filter(function(c){ return c.inConcluidoThisMonth; }).length;
 
-    console.log('[KPI1]', 'withDue:', withDue.length, 'vencidos:', vencidos.length, 'kpi1:', kpi1);
+    console.log('[KPI1 - Vencidos]', 'com due (excl. concluídos):', withDue.length, 'vencidos:', vencidos.length, 'kpi1:', kpi1 + '%');
     console.log('[KPI3]', 'prodCards:', prodCards.length, 'totalDays:', totalDays, 'kpi3:', kpi3);
     console.log('[KPI4]', 'dueComplete no mês:', kpi4);
 
@@ -856,24 +852,36 @@
     if (pct <= 75) return 'rgba(255,207,6,0.60)';
     return '#ABABB0';
   }
+  function interpolarCor(score) {
+    var t = score / 100;
+    var r = Math.round(171 + (255 - 171) * t);
+    var g = Math.round(171 + (207 - 171) * t);
+    var b = Math.round(176 + (6   - 176) * t);
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  }
 
   function renderRealtime(kpis, config, cards, cachedAt) {
     var sc = scoreColor(kpis.healthScore);
+    var circumference = 2 * Math.PI * 52;
+    var ringCor = interpolarCor(kpis.healthScore);
     var html = '';
 
     html += '<div class="score-circle-wrap">';
-    html += '<div class="score-circle" style="border-color:'+sc.border+';background:'+sc.bg+';">';
-    html += '<span class="number" style="color:'+sc.text+';">'+kpis.healthScore+'</span>';
-    html += '<span class="label" style="color:'+sc.text+';">Health Score</span>';
-    html += '</div>';
+    html += '<svg class="score-ring-svg" width="120" height="120" viewBox="0 0 120 120">';
+    html += '<circle cx="60" cy="60" r="52" stroke="rgba(171,171,176,0.25)" stroke-width="6" fill="none"/>';
+    html += '<circle id="score-ring-progress" class="score-ring-progress" cx="60" cy="60" r="52" stroke="'+ringCor+'" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="'+circumference+'" stroke-dashoffset="'+circumference+'" transform="rotate(-90 60 60)"/>';
+    html += '<circle cx="60" cy="60" r="46" fill="'+sc.bg+'"/>';
+    html += '<text id="score-ring-number" x="60" y="54" text-anchor="middle" dominant-baseline="middle" font-size="28" font-weight="500" font-family="BW Modelica, Inter, Helvetica Neue, sans-serif" fill="'+ringCor+'">'+kpis.healthScore+'</text>';
+    html += '<text x="60" y="72" text-anchor="middle" font-size="9" font-family="BW Modelica, Inter, Helvetica Neue, sans-serif" fill="#ABABB0">Health Score</text>';
+    html += '</svg>';
     html += '<div class="score-status" style="color:'+sc.text+';">'+scoreStatus(kpis.healthScore)+'</div>';
     html += '</div>';
 
     var kpiCards = [
-      { name: 'Cards vencidos', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'Limite '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'B' },
+      { name: 'Cards vencidos', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'Limite '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'B', sub: '% de cards com due date vencido, exceto concluídos' },
       { name: 'Retrabalhos', display: kpis.kpi2, metaLabel: 'Limite: '+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B' },
-      { name: 'Lead time médio', display: kpis.kpi3+' dias úteis.', metaLabel: 'meta: '+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B' },
-      { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'meta: '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A' },
+      { name: 'Lead time médio', display: kpis.kpi3+' dias úteis.', metaLabel: 'meta: '+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B', sub: 'média das etapas de produção ativa' },
+      { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'meta: '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A', sub: 'cards com due date no mês marcados como concluídos' },
       { name: 'Conformidade', display: kpis.kpi5+'%', metaLabel: 'meta: '+config.meta_conformidade+'%', valor: kpis.kpi5, meta: config.meta_conformidade, tipo: 'A' }
     ];
 
@@ -925,6 +933,14 @@
     el.classList.add('fade-in');
     document.getElementById('rt-loading').style.display = 'none';
     document.getElementById('rt-error').style.display = 'none';
+
+    setTimeout(function() {
+      var progressArc = document.getElementById('score-ring-progress');
+      if (progressArc) {
+        var offset = circumference - (kpis.healthScore / 100) * circumference;
+        progressArc.style.strokeDashoffset = offset;
+      }
+    }, 100);
 
     el.addEventListener('click', function(e) {
       var target = e.target.closest('.card-link');
