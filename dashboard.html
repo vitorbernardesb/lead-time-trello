@@ -999,9 +999,9 @@
     var kpiCards = [
       { name: 'Cards vencidos', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'Limite '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'B', sub: '% de cards com due date vencido, exceto concluídos' },
       { name: 'Retrabalhos', display: kpis.kpi2, metaLabel: 'Limite: '+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B' },
-      { name: 'Lead time médio', display: kpis.kpi3+' dias úteis.', metaLabel: 'meta: '+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B', sub: 'média das etapas de produção ativa' },
-      { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'meta: '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A', sub: 'cards com due date no mês marcados como concluídos' },
-      { name: 'Conformidade', display: kpis.kpi5+'%', metaLabel: 'meta: '+config.meta_conformidade+'%', valor: kpis.kpi5, meta: config.meta_conformidade, tipo: 'A' }
+      { name: 'Lead time médio', display: kpis.kpi3+' dias úteis.', metaLabel: 'Limite: '+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B', sub: 'média das etapas de produção ativa' },
+      { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'Meta: '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A', sub: 'cards com due date no mês marcados como concluídos' },
+      { name: 'Conformidade', display: kpis.kpi5+'%', metaLabel: 'Meta: '+config.meta_conformidade+'%', valor: kpis.kpi5, meta: config.meta_conformidade, tipo: 'A' }
     ];
 
     html += '<div class="kpi-grid">';
