@@ -84,7 +84,6 @@
   var t = TrelloPowerUp.iframe({ appKey: APP_KEY, appName: 'Lead Time Midiática' });
   var content = document.getElementById('content');
 
-  var MIN_STAGE_MS = 600000;
   var MODES = [
     { key: 'businessDays', label: 'Dias úteis', header: 'Dias úteis' },
     { key: 'elapsedDays', label: 'Dias corridos', header: 'Dias corridos' },
@@ -120,39 +119,56 @@
   }
 
   function countWorkingHours(from, to) {
-    var s = new Date(from), e = new Date(to);
-    if (s >= e) return 0;
-    var WORK_START = 8, WORK_END = 18;
-    var count = 0;
+    var s = new Date(from);
+    var e = new Date(to);
+    if (e <= s) return 0;
+
+    var totalMinutes = 0;
     var cur = new Date(s);
-    while (cur < e) {
-      var day = cur.getDay();
-      if (day >= 1 && day <= 5) {
-        var dayStart = new Date(cur); dayStart.setHours(WORK_START, 0, 0, 0);
-        var dayEnd = new Date(cur); dayEnd.setHours(WORK_END, 0, 0, 0);
-        var overlapStart = cur > dayStart ? cur : dayStart;
-        var overlapEnd = e < dayEnd ? e : dayEnd;
-        if (overlapStart < overlapEnd) {
-          count += Math.round((overlapEnd - overlapStart) / 3600000);
-        }
-      }
-      cur.setDate(cur.getDate() + 1);
-      cur.setHours(0, 0, 0, 0);
+
+    var firstHourEnd = new Date(s);
+    firstHourEnd.setMinutes(60, 0, 0);
+    if (firstHourEnd > e) firstHourEnd = new Date(e);
+
+    while (cur < firstHourEnd) {
+      var day = cur.getDay(), hour = cur.getHours();
+      if (day >= 1 && day <= 5 && hour >= 8 && hour < 18) totalMinutes++;
+      cur.setTime(cur.getTime() + 60000);
     }
-    return count;
+
+    cur.setMinutes(0, 0, 0);
+    cur.setTime(cur.getTime() + 3600000);
+    while (cur.getTime() + 3600000 <= e.getTime()) {
+      var day2 = cur.getDay(), hour2 = cur.getHours();
+      if (day2 >= 1 && day2 <= 5 && hour2 >= 8 && hour2 < 18) totalMinutes += 60;
+      cur.setTime(cur.getTime() + 3600000);
+    }
+
+    var lastHourEnd = new Date(e);
+    while (cur < lastHourEnd) {
+      var day3 = cur.getDay(), hour3 = cur.getHours();
+      if (day3 >= 1 && day3 <= 5 && hour3 >= 8 && hour3 < 18) totalMinutes++;
+      cur.setTime(cur.getTime() + 60000);
+    }
+
+    return totalMinutes;
   }
 
   function formatBusinessDays(v) { return v + ' d.u.'; }
   function formatElapsedDays(v) { return v < 1 ? '< 1 dia' : v + (v === 1 ? ' dia' : ' dias'); }
+
+  function formatHHMM(totalMinutes) {
+    if (totalMinutes < 0) totalMinutes = 0;
+    var h = Math.floor(totalMinutes / 60);
+    var m = totalMinutes % 60;
+    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  }
+
   function formatWorkingHours(v) {
-    if (v < 10) return v + 'h';
-    var d = Math.floor(v / 10), h = v % 10;
-    return h > 0 ? d + 'd ' + h + 'h' : d + 'd';
+    return formatHHMM(v);
   }
   function formatElapsedHours(v) {
-    if (v < 24) return v + 'h';
-    var d = Math.floor(v / 24), h = v % 24;
-    return h > 0 ? d + 'd ' + h + 'h' : d + 'd';
+    return formatHHMM(v);
   }
 
   var FORMATTERS = {
@@ -208,23 +224,12 @@
       }
     }
 
-    var filtered = [];
-    for (var j = 0; j < stages.length; j++) {
-      var s = stages[j];
-      var duration = (s.leftAt ? s.leftAt.getTime() : Date.now()) - s.enteredAt.getTime();
-      if (duration < MIN_STAGE_MS && s.leftAt && filtered.length > 0) {
-        filtered[filtered.length - 1].leftAt = s.leftAt;
-      } else {
-        filtered.push(s);
-      }
+    if (stages.length === 1 && !stages[0].leftAt && createdAt) {
+      stages[0].enteredAt = createdAt;
     }
 
-    if (filtered.length === 1 && !filtered[0].leftAt && createdAt) {
-      filtered[0].enteredAt = createdAt;
-    }
-
-    console.log('[TIMELINE]', 'stages:', filtered.length, 'createdAt:', createdAt, 'actions:', actions.length);
-    return filtered;
+    console.log('[TIMELINE]', 'stages:', stages.length, 'createdAt:', createdAt, 'actions:', actions.length);
+    return stages;
   }
 
   function computeSegments(stages) {
@@ -240,7 +245,7 @@
         businessDays: countBusinessDays(s.enteredAt, end),
         elapsedDays: Math.floor(ms / 86400000),
         workingHours: countWorkingHours(s.enteredAt, end),
-        elapsedHours: Math.round(ms / 3600000)
+        elapsedHours: Math.round(ms / 60000)
       });
     }
     return segments;
