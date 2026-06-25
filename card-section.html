@@ -228,7 +228,6 @@
       stages[0].enteredAt = createdAt;
     }
 
-    console.log('[TIMELINE]', 'stages:', stages.length, 'createdAt:', createdAt, 'actions:', actions.length);
     return stages;
   }
 
@@ -352,7 +351,6 @@
 
   function render() {
     t.getRestApi().isAuthorized().then(function (ok) {
-      console.log('[CARD-SECTION] isAuthorized:', ok);
       if (!ok) {
         content.innerHTML =
           '<div class="msg">' +
@@ -366,7 +364,6 @@
         return;
       }
 
-      console.log('[CARD-SECTION] Iniciando busca de actions...');
       Promise.all([
         t.card('id').then(function (card) {
           return t.getRestApi().getToken().then(function (token) {
@@ -381,7 +378,6 @@
       ]).then(function (results) {
         var actions = results[0];
         var savedMode = results[1] || 'businessDays';
-        console.log('[CARD-SECTION] Actions recebidas:', Array.isArray(actions) ? actions.length : 'ERRO: ' + typeof actions, 'savedMode:', savedMode);
 
         if (!actions || !actions.length) {
           content.innerHTML = '<p class="msg">Nenhum histórico encontrado para este card.</p>';
@@ -401,7 +397,6 @@
         var totals = computeTotals(rawSegments);
 
         content.innerHTML = renderTable(merged, totals, savedMode);
-        console.log('[CARD-SECTION] Renderizado com sucesso, segments:', merged ? merged.length : 0);
 
         document.querySelectorAll('.toggle-btn').forEach(function(btn) {
           btn.addEventListener('click', function() {
@@ -411,8 +406,7 @@
         });
 
         adjustHeight();
-      }).catch(function (err) {
-        console.error('[CARD-SECTION] ERRO:', err && err.message ? err.message : String(err));
+      }).catch(function () {
         content.innerHTML = '<p class="msg">Erro ao carregar histórico do card.</p>';
         adjustHeight();
       });
