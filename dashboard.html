@@ -306,6 +306,42 @@
     }
     .etapa-popup-card:hover { background: rgba(255,207,6,0.08); text-decoration-color: #FFCF06; }
     .etapa-popup-empty { padding: 12px 14px; font-size: 12px; color: #ABABB0; text-align: center; }
+    .table-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .table-header-row h3 { margin: 0; }
+    .btn-table-download {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: transparent; border: 1px solid rgba(171,171,176,0.40);
+      color: #0A0A0A; border-radius: 6px; padding: 5px 12px;
+      font-size: 12px; font-family: inherit; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-table-download:hover {
+      background: rgba(255,207,6,0.10);
+      border-color: #FFCF06;
+    }
+    .num-input-wrap {
+      display: flex; align-items: center; gap: 2px;
+    }
+    .num-input {
+      width: 64px; padding: 4px 6px; border: 1px solid rgba(171,171,176,0.40);
+      border-radius: 4px; font-size: 14px; font-family: inherit;
+      text-align: center; color: #0A0A0A; background: #fff;
+    }
+    .num-input:focus { outline: none; border-color: #FFCF06; }
+    .num-arrow {
+      width: 26px; height: 30px; border: 1px solid rgba(171,171,176,0.40);
+      border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px;
+      display: flex; align-items: center; justify-content: center;
+      color: #0A0A0A; font-family: inherit;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .num-arrow:hover { background: rgba(255,207,6,0.15); border-color: #FFCF06; }
+    .num-arrow:active { background: rgba(255,207,6,0.30); }
     @media (max-width: 900px) {
       .kpi-grid { grid-template-columns: repeat(3, 1fr); }
     }
@@ -553,6 +589,24 @@
   }
 
   function escHtml(s) { var el = document.createElement('span'); el.appendChild(document.createTextNode(s)); return el.innerHTML; }
+
+  function downloadCSV(filename, rows) {
+    var csv = rows.map(function(row) {
+      return row.map(function(cell) {
+        var s = String(cell === null || cell === undefined ? '' : cell);
+        if (s.indexOf(';') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+          s = '"' + s.replace(/"/g, '""') + '"';
+        }
+        return s;
+      }).join(';');
+    }).join('\r\n');
+    var bom = '﻿';
+    var blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+  }
 
   function validarTitulo(nome) {
     return typeof nome === 'string' && nome.trim().length > 0;
@@ -1005,7 +1059,7 @@
     ];
 
     html += '<div class="kpi-grid">';
-    kpiCards.forEach(function(k) {
+    kpiCards.forEach(function(k, i) {
       var pct = k.tipo === 'B' ? pctTipoB(k.valor, k.meta) : pctTipoA(k.valor, k.meta);
       var cor = k.tipo === 'B' ? corTipoB(pct) : corTipoA(pct);
       html += '<div class="kpi-card">';
@@ -1013,7 +1067,7 @@
       html += '<div class="kpi-value">'+k.display+'</div>';
       html += '<div class="kpi-meta">'+k.metaLabel+'</div>';
       if (k.sub) html += '<div style="font-size:11px;color:#ABABB0;margin-top:2px;">('+k.sub+')</div>';
-      html += '<div class="kpi-bar-bg"><div class="kpi-bar-fill" style="width:'+pct+'%;background:'+cor+';"></div></div>';
+      html += '<div class="kpi-bar-bg"><div class="kpi-bar-fill" id="bar-kpi-'+i+'" style="width:0%;background:'+cor+';"></div></div>';
       html += '</div>';
     });
     html += '</div>';
@@ -1059,6 +1113,18 @@
         progressArc.style.strokeDashoffset = offset;
       }
     }, 100);
+
+    setTimeout(function() {
+      kpiCards.forEach(function(k, i) {
+        var pct = k.tipo === 'B' ? pctTipoB(k.valor, k.meta) : pctTipoA(k.valor, k.meta);
+        var cor = k.tipo === 'B' ? corTipoB(pct) : corTipoA(pct);
+        var bar = document.getElementById('bar-kpi-'+i);
+        if (bar) {
+          bar.style.width = pct + '%';
+          bar.style.background = cor;
+        }
+      });
+    }, 120);
 
     el.addEventListener('click', function(e) {
       var target = e.target.closest('.card-link');
@@ -1134,6 +1200,10 @@
     html += '<div class="summary-card"><div class="sc-value" style="color:'+(totalAboveSLA>0?'#eb5a46':'#36b37e')+'">'+totalAboveSLA+'</div><div class="sc-label">Cards acima do SLA</div></div>';
     html += '</div>';
 
+    html += '<div class="table-header-row">';
+    html += '<h3 style="font-size:15px;font-weight:700;">Etapas de produção</h3>';
+    html += '<button class="btn-table-download" id="btn-dl-funnel">⬇ Exportar tabela</button>';
+    html += '</div>';
     html += '<table class="funnel-table"><thead><tr>';
     html += '<th>Etapa</th><th>Cards agora</th><th>Acima do SLA</th><th>SLA</th><th>Saídas no mês</th><th>Status</th>';
     html += '</tr></thead><tbody>';
@@ -1172,7 +1242,10 @@
     html += '<div class="detail-flex">';
 
     html += '<div class="alerts-section">';
+    html += '<div class="table-header-row">';
     html += '<h3>Alertas ativos ('+slaAlerts.length+')</h3>';
+    html += '<button class="btn-table-download" id="btn-dl-alerts">⬇ Exportar</button>';
+    html += '</div>';
     html += '<div id="alerts-page-wrap"></div>';
     html += '</div>';
 
@@ -1187,7 +1260,10 @@
     var labelList = Object.keys(allLabels).sort();
 
     html += '<div class="rework-section">';
+    html += '<div class="table-header-row">';
     html += '<h3>🔄 Cards com mais retrabalho</h3>';
+    html += '<button class="btn-table-download" id="btn-dl-rework">⬇ Exportar</button>';
+    html += '</div>';
     html += '<div class="rework-filters">';
     html += '<div class="filter-group"><label>Etapa</label><select id="rw-filter-stage"><option value="">Todas</option>';
     FLOW_LISTS.forEach(function(n) {
@@ -1210,6 +1286,38 @@
     el.addEventListener('click', function(e) {
       var target = e.target.closest('.card-link');
       if (target) { var cid = target.getAttribute('data-card-id'); if (cid) t.showCard(cid); }
+    });
+
+    document.getElementById('btn-dl-funnel').addEventListener('click', function() {
+      var rows = [['Etapa','Cards agora','Acima do SLA','SLA','Saídas no mês','Status']];
+      FLOW_LISTS.forEach(function(n) {
+        var p = perList[n];
+        var limit = sla[n];
+        rows.push([
+          n, p.cards.length, p.aboveSLA,
+          limit >= 999 ? '—' : limit + ' d.u.',
+          throughput[n] || 0,
+          p.cards.length >= 3 && p.aboveSLA >= 1 ? 'Gargalo' :
+          p.aboveSLA >= 1 ? 'Atenção' : 'Fluindo'
+        ]);
+      });
+      downloadCSV('funil_midiatica.csv', rows);
+    });
+
+    document.getElementById('btn-dl-alerts').addEventListener('click', function() {
+      var rows = [['Card','Etapa','Dias úteis','SLA','Excesso']];
+      slaAlerts.forEach(function(a) {
+        rows.push([a.name, a.list, a.days, a.slaLimit, '+' + a.excess + 'd']);
+      });
+      downloadCSV('alertas_sla_midiatica.csv', rows);
+    });
+
+    document.getElementById('btn-dl-rework').addEventListener('click', function() {
+      var rows = [['#','Card','Etapa','Retrabalhos','Labels']];
+      reworkCards.forEach(function(c, i) {
+        rows.push([i+1, c.name, c.currentListName, c.retrabalho, (c.labels||[]).join(' | ')]);
+      });
+      downloadCSV('retrabalho_midiatica.csv', rows);
     });
 
     function fecharPopup() {
@@ -1494,6 +1602,10 @@
       if (!snapshots.length) {
         html = '<div class="history-empty"><p>O histórico será gerado automaticamente a partir do próximo acesso mensal.</p></div>';
       } else {
+        html += '<div class="table-header-row">';
+        html += '<span></span>';
+        html += '<button class="btn-table-download" id="btn-dl-history">⬇ Exportar histórico</button>';
+        html += '</div>';
         html += '<table class="history-table"><thead><tr>';
         html += '<th>Mês</th><th>Health Score</th><th>Vencidos</th><th>Rework</th><th>Lead time</th><th>Throughput</th><th>Conformidade</th><th>Cards</th>';
         html += '</tr></thead><tbody>';
@@ -1529,6 +1641,21 @@
         }
         var kpis = calcKPIs(cachedData.cards, cachedData.config);
         forceSnapshot(kpis, cachedData.config).then(function() { loadHistory(); });
+      });
+
+      var dlHist = document.getElementById('btn-dl-history');
+      if (dlHist) dlHist.addEventListener('click', function() {
+        var rows = [['Mês','Health Score','Vencidos','Rework','Lead time','Throughput','Conformidade','Cards']];
+        snapshots.forEach(function(s) {
+          rows.push([
+            monthNames[s.month]+'/'+s.year,
+            s.data.score, s.data.kpi1+'%', s.data.kpi2,
+            s.data.kpi3+' d.u.', s.data.kpi4,
+            s.data.kpi5 !== undefined ? s.data.kpi5+'%' : '—',
+            s.data.totalCards
+          ]);
+        });
+        downloadCSV('historico_midiatica.csv', rows);
       });
     });
   }
@@ -1580,10 +1707,44 @@
       var sliders = document.querySelectorAll('#cfg-content input[type=range]');
       sliders.forEach(function(sl) {
         sl.addEventListener('input', function() {
+          var numInput = document.getElementById('num-'+sl.id);
+          if (numInput) numInput.value = sl.value;
           document.getElementById('val-'+sl.id).textContent = sl.value + (sl.getAttribute('data-unit')||'');
           debouncedPesoSum();
         });
       });
+
+      document.querySelectorAll('#cfg-content .num-input').forEach(function(numInput) {
+        var targetId = numInput.id.replace('num-', '');
+        numInput.addEventListener('input', function() {
+          var slider = document.getElementById(targetId);
+          var min = parseFloat(slider.min);
+          var max = parseFloat(slider.max);
+          var val = Math.min(max, Math.max(min, parseFloat(numInput.value) || min));
+          slider.value = val;
+          numInput.value = val;
+          document.getElementById('val-'+targetId).textContent = val + (slider.getAttribute('data-unit')||'');
+          debouncedPesoSum();
+        });
+      });
+
+      document.querySelectorAll('#cfg-content .num-arrow').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var targetId = btn.getAttribute('data-target');
+          var dir = parseInt(btn.getAttribute('data-dir'));
+          var slider = document.getElementById(targetId);
+          var numInput = document.getElementById('num-'+targetId);
+          var min = parseFloat(slider.min);
+          var max = parseFloat(slider.max);
+          var current = parseFloat(slider.value) || min;
+          var novo = Math.min(max, Math.max(min, current + dir));
+          slider.value = novo;
+          if (numInput) numInput.value = novo;
+          document.getElementById('val-'+targetId).textContent = novo + (slider.getAttribute('data-unit')||'');
+          debouncedPesoSum();
+        });
+      });
+
       updatePesoSum();
 
       document.getElementById('btn-save-config').addEventListener('click', function() {
@@ -1621,9 +1782,18 @@
   }
 
   function sliderRow(id, label, value, min, max, step, unit) {
-    return '<div class="config-row"><label for="'+id+'">'+label+'</label>' +
-      '<div class="slider-row"><input type="range" id="'+id+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+value+'" data-unit="'+unit+'">' +
-      '<span class="slider-val" id="val-'+id+'">'+value+unit+'</span></div></div>';
+    return '<div class="config-row">' +
+      '<label for="'+id+'">'+label+'</label>' +
+      '<div class="slider-row">' +
+        '<input type="range" id="'+id+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+value+'" data-unit="'+unit+'" data-min="'+min+'" data-max="'+max+'" data-step="'+step+'">' +
+        '<div class="num-input-wrap">' +
+          '<button class="num-arrow" data-target="'+id+'" data-dir="-1">▼</button>' +
+          '<input type="number" class="num-input" id="num-'+id+'" value="'+value+'" min="'+min+'" max="'+max+'" step="1">' +
+          '<button class="num-arrow" data-target="'+id+'" data-dir="1">▲</button>' +
+        '</div>' +
+        '<span class="slider-val" id="val-'+id+'">'+value+unit+'</span>' +
+      '</div>' +
+    '</div>';
   }
 
   function updatePesoSum() {

@@ -1012,6 +1012,31 @@
     });
   }
 
+  function buildSections(t, missing) {
+    var sections = [];
+    if (Array.isArray(missing) && missing.length > 0) {
+      sections.push({
+        title: '⚠️ Aviso!',
+        icon: ICON,
+        content: {
+          type: 'iframe',
+          url: t.signUrl('./card-warning.html'),
+          height: 52 + (missing.length * 24)
+        }
+      });
+    }
+    sections.push({
+      title: APP_NAME,
+      icon: ICON,
+      content: {
+        type: 'iframe',
+        url: t.signUrl('./card-section.html'),
+        height: 250
+      }
+    });
+    return sections;
+  }
+
   // ═══════════════════════════════════════════════
   //  INICIALIZAÇÃO
   // ═══════════════════════════════════════════════
@@ -1029,36 +1054,52 @@
       }).catch(function () { return []; });
     },
 
-    'card-back-section': function (t) {
-      return t.get('card', 'shared', 'warningFields')
-        .catch(function() { return null; })
-        .then(function(cached) {
-          var sections = [];
+    'card-back-section': function(t) {
+      return Promise.all([
+        t.card('id', 'name', 'due', 'desc', 'labels'),
+        t.board('id'),
+        t.getRestApi().getToken(),
+        t.get('card', 'shared', 'warningFields').catch(function() { return null; })
+      ]).then(function(res) {
+        var card    = res[0];
+        var boardId = res[1].id;
+        var token   = res[2];
+        var cached  = res[3];
 
-          if (Array.isArray(cached) && cached.length > 0) {
-            sections.push({
-              title: '⚠️ Aviso!',
-              icon: ICON,
-              content: {
-                type: 'iframe',
-                url: t.signUrl('./card-warning.html'),
-                height: 52 + (cached.length * 24)
-              }
-            });
-          }
+        if (Array.isArray(cached)) {
+          return buildSections(t, cached);
+        }
 
-          sections.push({
-            title: APP_NAME,
-            icon: ICON,
-            content: {
-              type: 'iframe',
-              url: t.signUrl('./card-section.html'),
-              height: 250
-            }
-          });
-
-          return sections;
+        return Promise.all([
+          fetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
+            .then(function(r) { return r.json(); })
+            .catch(function() { return []; }),
+          getCustomFieldsCache(t, boardId, token)
+        ]).then(function(data) {
+          var cfItems = data[0];
+          var fields  = data[1];
+          var tituloOk  = validarTitulo(card.name);
+          var hasLabels = card.labels && card.labels.length > 0;
+          var hasDue    = !!card.due;
+          var hasDesc   = card.desc && card.desc.trim().length > 0;
+          var hasPrio   = fields && fields.prioridade
+            ? hasPrioridade(cfItems, fields.prioridade.fieldId)
+            : true;
+          var missing = [];
+          if (!tituloOk)  missing.push('Título não preenchido');
+          if (!hasLabels) missing.push('Etiqueta não definida');
+          if (!hasDue)    missing.push('Data de entrega não definida');
+          if (!hasDesc)   missing.push('Descrição não preenchida');
+          if (!hasPrio)   missing.push('Prioridade não definida');
+          t.set('card', 'shared', 'warningFields', missing).catch(function() {});
+          return buildSections(t, missing);
         });
+      }).catch(function() {
+        return [{
+          title: APP_NAME, icon: ICON,
+          content: { type: 'iframe', url: t.signUrl('./card-section.html'), height: 250 }
+        }];
+      });
     },
 
     'board-buttons': function (t) {
