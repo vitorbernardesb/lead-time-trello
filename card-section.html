@@ -452,19 +452,20 @@
   }
 
   var warningHtml = '';
-  var urlParams = new URLSearchParams(window.location.search);
-  var warningParam = urlParams.get('warning');
-  if (warningParam) {
-    var missingItems = warningParam.split('|');
-    warningHtml += '<div class="warning-box">';
-    warningHtml += '<div class="warning-title">⚠ Card incompleto — preencha antes de avançar</div>';
-    missingItems.forEach(function(item) {
-      warningHtml += '<div class="warning-item"><span class="warning-dot"></span>' + escapeHtml(item) + '</div>';
-    });
-    warningHtml += '</div>';
-  }
 
-  t.render(render);
+  t.get('card', 'shared', 'warningFields')
+    .catch(function() { return []; })
+    .then(function(warningFields) {
+      if (Array.isArray(warningFields) && warningFields.length > 0) {
+        warningHtml += '<div class="warning-box">';
+        warningHtml += '<div class="warning-title">⚠ Card incompleto — preencha antes de avançar</div>';
+        warningFields.forEach(function(item) {
+          warningHtml += '<div class="warning-item"><span class="warning-dot"></span>' + escapeHtml(item) + '</div>';
+        });
+        warningHtml += '</div>';
+      }
+      t.render(render);
+    });
 })();
 </script>
 </body>

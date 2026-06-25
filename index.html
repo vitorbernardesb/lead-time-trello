@@ -1038,20 +1038,19 @@
           if (!hasDesc)   missing.push('Descrição não preenchida');
           if (!hasPrio)   missing.push('Prioridade não definida');
 
-          var baseUrl = t.signUrl('./card-section.html');
-          if (missing.length > 0) {
-            baseUrl += '&warning=' + encodeURIComponent(missing.join('|'));
-          }
-
-          return {
-            title: APP_NAME,
-            icon: ICON,
-            content: {
-              type: 'iframe',
-              url: baseUrl,
-              height: missing.length > 0 ? 300 + (missing.length * 24) : 250
-            }
-          };
+          return t.set('card', 'shared', 'warningFields', missing.length > 0 ? missing : [])
+            .catch(function() {})
+            .then(function() {
+              return {
+                title: APP_NAME,
+                icon: ICON,
+                content: {
+                  type: 'iframe',
+                  url: t.signUrl('./card-section.html'),
+                  height: missing.length > 0 ? 300 + (missing.length * 24) : 250
+                }
+              };
+            });
         });
       }).catch(function() {
         return {
