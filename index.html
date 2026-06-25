@@ -1016,18 +1016,24 @@
         t.board('id'),
         t.getRestApi().getToken()
       ]).then(function(res) {
-        var card = res[0], boardId = res[1].id, token = res[2];
+        var card    = res[0];
+        var boardId = res[1].id;
+        var token   = res[2];
+
         return Promise.all([
           fetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
-            .then(function(r) { return r.json(); }),
+            .then(function(r) { return r.json(); })
+            .catch(function() { return []; }),
           getCustomFieldsCache(t, boardId, token)
         ]).then(function(data) {
-          var cfItems = data[0], fields = data[1];
-          var tituloOk = validarTitulo(card.name);
+          var cfItems = data[0];
+          var fields  = data[1];
+
+          var tituloOk  = validarTitulo(card.name);
           var hasLabels = card.labels && card.labels.length > 0;
-          var hasDue = !!card.due;
-          var hasDesc = card.desc && card.desc.trim().length > 0;
-          var hasPrio = fields && fields.prioridade
+          var hasDue    = !!card.due;
+          var hasDesc   = card.desc && card.desc.trim().length > 0;
+          var hasPrio   = fields && fields.prioridade
             ? hasPrioridade(cfItems, fields.prioridade.fieldId)
             : true;
 
@@ -1038,22 +1044,39 @@
           if (!hasDesc)   missing.push('Descrição não preenchida');
           if (!hasPrio)   missing.push('Prioridade não definida');
 
-          return t.set('card', 'shared', 'warningFields', missing.length > 0 ? missing : [])
+          return t.set('card', 'shared', 'warningFields',
+            missing.length > 0 ? missing : [])
             .catch(function() {})
             .then(function() {
-              return {
+              var sections = [];
+
+              if (missing.length > 0) {
+                sections.push({
+                  title: '⚠️ Aviso!',
+                  icon: ICON,
+                  content: {
+                    type: 'iframe',
+                    url: t.signUrl('./card-warning.html'),
+                    height: 52 + (missing.length * 24)
+                  }
+                });
+              }
+
+              sections.push({
                 title: APP_NAME,
                 icon: ICON,
                 content: {
                   type: 'iframe',
                   url: t.signUrl('./card-section.html'),
-                  height: missing.length > 0 ? 300 + (missing.length * 24) : 250
+                  height: 250
                 }
-              };
+              });
+
+              return sections;
             });
         });
       }).catch(function() {
-        return {
+        return [{
           title: APP_NAME,
           icon: ICON,
           content: {
@@ -1061,7 +1084,7 @@
             url: t.signUrl('./card-section.html'),
             height: 250
           }
-        };
+        }];
       });
     },
 
