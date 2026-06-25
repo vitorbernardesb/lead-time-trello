@@ -667,6 +667,7 @@
   }
 
   var BADGE_CACHE_TTL = 300000;
+  var BADGE_ERROR_TTL = 60000;
 
   function fetchAndComputeBadges(t) {
     return Promise.all([
@@ -683,9 +684,9 @@
 
       return Promise.all([
         fetch(apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
-          .then(function(r){ return r.json(); }),
+          .then(function(r){ if (!r.ok) throw new Error('API ' + r.status); return r.json(); }),
         fetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
-          .then(function(r){ return r.json(); }),
+          .then(function(r){ if (!r.ok) throw new Error('API ' + r.status); return r.json(); }),
         getCustomFieldsCache(boardId, token)
       ]).then(function(data) {
           var actions = data[0], cfItems = data[1], fields = data[2];
@@ -732,6 +733,9 @@
           t.set('card', 'private', 'badgeCache', { badges: badges, cachedAt: Date.now() });
           return badges;
         });
+    }).catch(function() {
+      t.set('card', 'private', 'badgeCache', { badges: [], cachedAt: Date.now() - BADGE_CACHE_TTL + BADGE_ERROR_TTL });
+      return [];
     });
   }
 
@@ -745,11 +749,10 @@
         if (!ok) return [];
         return t.get('card', 'private', 'badgeCache').then(function(cached) {
           if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
-            console.log('[Badge] HIT – using cache');
             return cached.badges;
           }
           return fetchAndComputeBadges(t);
-        }).catch(function() { return fetchAndComputeBadges(t); });
+        }).catch(function() { return []; });
       }).catch(function () { return []; });
     },
 
