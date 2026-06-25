@@ -429,7 +429,7 @@
         var merged = mergeByStage(rawSegments);
         var totals = computeTotals(rawSegments);
 
-        content.innerHTML = renderTable(merged, totals, savedMode);
+        content.innerHTML = warningHtml + renderTable(merged, totals, savedMode);
 
         document.querySelectorAll('.toggle-btn').forEach(function(btn) {
           btn.addEventListener('click', function() {
@@ -446,18 +446,17 @@
     });
   }
 
+  var warningHtml = '';
   var urlParams = new URLSearchParams(window.location.search);
   var warningParam = urlParams.get('warning');
   if (warningParam) {
     var missingItems = warningParam.split('|');
-    var warningHtml = '<div class="warning-box">';
+    warningHtml += '<div class="warning-box">';
     warningHtml += '<div class="warning-title">⚠ Card incompleto — preencha antes de avançar</div>';
     missingItems.forEach(function(item) {
       warningHtml += '<div class="warning-item"><span class="warning-dot"></span>' + escapeHtml(item) + '</div>';
     });
     warningHtml += '</div>';
-    content.innerHTML = warningHtml;
-    adjustHeight();
   }
 
   t.render(render);
