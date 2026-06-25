@@ -913,7 +913,9 @@
       var currentListName = currentList ? currentList.name.trim() : '';
       var isConcluido = currentListName === 'Concluído 🏆';
       console.log('[BADGE] card:', card.id, 'token obtido:', !!token, 'lists count:', lists.length, 'currentListName:', currentListName);
+      console.log('[BADGE] Dados carregados:', 'cardId:', card ? card.id : 'UNDEFINED', 'boardId:', boardId ? boardId : 'UNDEFINED', 'token:', token ? 'ok' : 'UNDEFINED', 'lists count:', lists ? lists.length : 'UNDEFINED', 'cfg:', cfg ? 'ok' : 'null');
 
+      console.log('[BADGE] Iniciando fetch de actions e campos...');
       return Promise.all([
         fetch(apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
           .then(function(r){ if (!r.ok) throw new Error('API ' + r.status); return r.json(); }),
@@ -923,6 +925,7 @@
         getLabelsCache(t, boardId, token)
       ]).then(function(data) {
           var actions = data[0], cfItems = data[1], fields = data[2], labelsCache = data[3];
+          console.log('[BADGE] Fetch concluído:', 'actions:', Array.isArray(actions) ? actions.length : 'ERRO:'+typeof actions, 'cfItems:', Array.isArray(cfItems) ? cfItems.length : 'ERRO:'+typeof cfItems, 'fields:', fields ? JSON.stringify(Object.keys(fields)) : 'null');
           var badges = [];
           var tl = buildTimeline(actions);
 
@@ -982,7 +985,8 @@
           return badges;
         });
     }).catch(function(err) {
-      console.error('[BADGE] ERRO em fetchAndComputeBadges:', err && err.message ? err.message : err);
+      console.error('[BADGE] ERRO FATAL:', err && err.message ? err.message : String(err));
+      console.error('[BADGE] Stack:', err && err.stack ? err.stack : 'sem stack');
       t.set('card', 'private', 'badgeCache', { badges: [], cachedAt: Date.now() - BADGE_CACHE_TTL + BADGE_ERROR_TTL });
       return [];
     });
