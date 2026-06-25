@@ -681,6 +681,7 @@
       var currentList = lists.find(function(l) { return l.id === card.idList; });
       var currentListName = currentList ? currentList.name.trim() : '';
       var isConcluido = currentListName === 'Concluído 🏆';
+      console.log('[BADGE] card:', card.id, 'token obtido:', !!token, 'lists count:', lists.length, 'currentListName:', currentListName);
 
       return Promise.all([
         fetch(apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
@@ -730,10 +731,12 @@
             }
           }
 
+          console.log('[BADGE] actions count:', Array.isArray(actions) ? actions.length : 'ERRO: '+typeof actions, 'cfItems:', Array.isArray(cfItems) ? cfItems.length : 'ERRO: '+typeof cfItems, 'fields:', fields ? 'ok' : 'null', 'badges gerados:', badges.length);
           t.set('card', 'private', 'badgeCache', { badges: badges, cachedAt: Date.now() });
           return badges;
         });
-    }).catch(function() {
+    }).catch(function(err) {
+      console.error('[BADGE] ERRO em fetchAndComputeBadges:', err && err.message ? err.message : err);
       t.set('card', 'private', 'badgeCache', { badges: [], cachedAt: Date.now() - BADGE_CACHE_TTL + BADGE_ERROR_TTL });
       return [];
     });
@@ -746,6 +749,7 @@
   TrelloPowerUp.initialize({
     'card-badges': function (t) {
       return t.getRestApi().isAuthorized().then(function (ok) {
+        console.log('[BADGE] isAuthorized:', ok);
         if (!ok) return [];
         return t.get('card', 'private', 'badgeCache').then(function(cached) {
           if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
