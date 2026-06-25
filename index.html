@@ -18,6 +18,17 @@
      incompleto. Preencha: etiqueta, data de entrega, descrição
      e prioridade. O campo Status de conformidade será atualizado
      automaticamente pelo Power-Up ao recarregar o board."
+
+  AUTOMAÇÕES DO POWER-UP (executadas no card-badges):
+  1. dueComplete=true + fora de Concluído → mover p/ Concluído
+  2. Em Concluído + !dueComplete → marcar como concluído
+  3. Sem etiquetas + fora de Planejamento → mover p/ Planejamento
+  4. Criado há <10min + fora de Planejamento → mover p/ Planejamento
+  5. Sem data de entrega + fora de Planejamento → mover p/ Planejamento
+  6. Saiu de Captação de Imagem (últimos 10min) → add label "CAPTAÇÃO REALIZADA"
+  7. Entrou em Alterações (últimos 10min) → incrementar Retrabalhos +1
+  8. Entrou em Revisões em Atraso (últimos 10min) → Prioridade = "ALTO"
+  9. Entrou em Alterações (últimos 10min) → definir data de início = agora
 */
 (function () {
   var APP_KEY = '35b840777660fac1ae7823df3d2398f6';
@@ -93,6 +104,13 @@
     return typeof nome === 'string' && nome.trim().length > 0;
   }
 
+  function getListId(lists, name) {
+    for (var i = 0; i < lists.length; i++) {
+      if (lists[i].name.trim() === name) return lists[i].id;
+    }
+    return null;
+  }
+
   function apiUrl(path, token) {
     return 'https://api.trello.com/1'+path+(path.indexOf('?')>=0?'&':'?')+'key='+APP_KEY+'&token='+token;
   }
@@ -102,7 +120,7 @@
       .then(function(r) { return r.json(); })
       .then(function(fields) {
         if (!Array.isArray(fields)) return null;
-        var result = { conformidade: null, prioridade: null, savedAt: Date.now() };
+        var result = { conformidade: null, prioridade: null, retrabalho: null, savedAt: Date.now() };
         fields.forEach(function(field) {
           if (field.name === 'Status de conformidade') {
             var options = {};
@@ -114,7 +132,16 @@
             result.conformidade = { fieldId: field.id, options: options };
           }
           if (field.name === 'Prioridade') {
-            result.prioridade = { fieldId: field.id };
+            var pOpts = {};
+            if (Array.isArray(field.options)) {
+              field.options.forEach(function(opt) {
+                if (opt.value && opt.value.text) pOpts[opt.value.text] = opt.id;
+              });
+            }
+            result.prioridade = { fieldId: field.id, options: pOpts };
+          }
+          if (field.name === 'Retrabalhos') {
+            result.retrabalho = { fieldId: field.id };
           }
         });
         t.set('board', 'private', 'customFieldsCache', result).catch(function() {});
@@ -666,18 +693,182 @@
       });
   }
 
+  // ═══════════════════════════════════════════════
+  //  LABELS CACHE
+  // ═══════════════════════════════════════════════
+
+  function getLabelsCache(t, boardId, token) {
+    return t.get('board', 'private', 'labelsCache')
+      .catch(function() { return null; })
+      .then(function(cache) {
+        if (cache && cache.savedAt && Date.now() - cache.savedAt < 86400000) return cache;
+        return fetch(apiUrl('/boards/' + boardId + '/labels', token))
+          .then(function(r) { return r.json(); })
+          .then(function(labels) {
+            var result = { labels: Array.isArray(labels) ? labels : [], savedAt: Date.now() };
+            t.set('board', 'private', 'labelsCache', result).catch(function() {});
+            return result;
+          });
+      });
+  }
+
+  // ═══════════════════════════════════════════════
+  //  AUTOMAÇÕES
+  // ═══════════════════════════════════════════════
+
+  var AUTO_COOLDOWN = 600000;
+
+  function runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache) {
+    var now = Date.now();
+    if (!autoCache) autoCache = {};
+    var changed = false;
+
+    function cooled(key) { return !autoCache[key] || (now - autoCache[key] > AUTO_COOLDOWN); }
+    function mark(key) { autoCache[key] = now; changed = true; }
+
+    var currentList = lists.find(function(l) { return l.id === card.idList; });
+    var currentListName = currentList ? currentList.name.trim() : '';
+    var concluidoId = getListId(lists, 'Concluído 🏆');
+    var planejamentoId = getListId(lists, 'Planejamento');
+
+    // 1. dueComplete + fora de Concluído → mover p/ Concluído
+    if (card.dueComplete && currentListName !== 'Concluído 🏆' && concluidoId && cooled('moveConcluido')) {
+      fetch(apiUrl('/cards/' + card.id, token), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idList: concluidoId })
+      }).catch(function() {});
+      mark('moveConcluido');
+    }
+
+    // 2. Em Concluído + !dueComplete → marcar concluído
+    if (currentListName === 'Concluído 🏆' && !card.dueComplete && cooled('markComplete')) {
+      fetch(apiUrl('/cards/' + card.id, token), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dueComplete: true })
+      }).catch(function() {});
+      mark('markComplete');
+    }
+
+    // 6. Saiu de Captação de Imagem (últimos 10min) → add label CAPTAÇÃO REALIZADA
+    if (cooled('labelCaptacao') && labelsCache && Array.isArray(labelsCache.labels)) {
+      var leftCaptacao = false;
+      for (var i = 0; i < actions.length; i++) {
+        if (actions[i].type === 'updateCard' && actions[i].data.listBefore &&
+            actions[i].data.listBefore.name.trim() === 'Captação de Imagem 🎥' &&
+            (now - new Date(actions[i].date).getTime()) < AUTO_COOLDOWN) {
+          leftCaptacao = true; break;
+        }
+      }
+      if (leftCaptacao) {
+        var captLabel = labelsCache.labels.find(function(l) { return l.name === 'CAPTAÇÃO REALIZADA'; });
+        var alreadyHas = card.labels && card.labels.some(function(l) { return l.name === 'CAPTAÇÃO REALIZADA'; });
+        if (captLabel && !alreadyHas) {
+          fetch(apiUrl('/cards/' + card.id + '/idLabels', token), {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: captLabel.id })
+          }).catch(function() {});
+          mark('labelCaptacao');
+        }
+      }
+    }
+
+    // 7+9. Entrou em Alterações (últimos 10min) → Retrabalhos +1 AND start = agora
+    if (cooled('retrabalhoAlt')) {
+      var enteredAlt = false;
+      for (var j = 0; j < actions.length; j++) {
+        if (actions[j].type === 'updateCard' && actions[j].data.listAfter &&
+            actions[j].data.listAfter.name.trim() === 'Alterações ✏️' &&
+            (now - new Date(actions[j].date).getTime()) < AUTO_COOLDOWN) {
+          enteredAlt = true; break;
+        }
+      }
+      if (enteredAlt) {
+        // Increment Retrabalhos
+        if (fields && fields.retrabalho) {
+          var rwVal = 0;
+          if (Array.isArray(cfItems)) {
+            for (var ri = 0; ri < cfItems.length; ri++) {
+              if (cfItems[ri].idCustomField === fields.retrabalho.fieldId) {
+                var v = cfItems[ri].value;
+                rwVal = v ? (Number(v.number) || 0) : 0;
+                break;
+              }
+            }
+          }
+          fetch('https://api.trello.com/1/card/' + card.id + '/customField/' + fields.retrabalho.fieldId + '/item?key=' + APP_KEY + '&token=' + token, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: { number: String(rwVal + 1) } })
+          }).catch(function() {});
+        }
+        // Set start date
+        fetch(apiUrl('/cards/' + card.id, token), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ start: new Date().toISOString() })
+        }).catch(function() {});
+        mark('retrabalhoAlt');
+      }
+    }
+
+    // 8. Entrou em Revisões em Atraso (últimos 10min) → Prioridade = ALTO
+    if (cooled('prioAlto') && fields && fields.prioridade && fields.prioridade.options) {
+      var enteredRev = false;
+      for (var k = 0; k < actions.length; k++) {
+        if (actions[k].type === 'updateCard' && actions[k].data.listAfter &&
+            actions[k].data.listAfter.name.trim() === 'Revisões em Atraso ⏰' &&
+            (now - new Date(actions[k].date).getTime()) < AUTO_COOLDOWN) {
+          enteredRev = true; break;
+        }
+      }
+      if (enteredRev) {
+        var altoId = fields.prioridade.options['ALTO'];
+        if (altoId) {
+          fetch('https://api.trello.com/1/card/' + card.id + '/customField/' + fields.prioridade.fieldId + '/item?key=' + APP_KEY + '&token=' + token, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idValue: altoId })
+          }).catch(function() {});
+          mark('prioAlto');
+        }
+      }
+    }
+
+    // 3+4+5. (Sem etiquetas OR criado<10min OR sem due) + fora de Planejamento → mover p/ Planejamento
+    if (currentListName !== 'Planejamento' && planejamentoId && cooled('movePlanej')) {
+      var noLabels = !card.labels || card.labels.length === 0;
+      var noDue = !card.due;
+      var recentCreate = false;
+      for (var m = 0; m < actions.length; m++) {
+        if ((actions[m].type === 'createCard' || actions[m].type === 'copyCard') &&
+            (now - new Date(actions[m].date).getTime()) < AUTO_COOLDOWN) {
+          recentCreate = true; break;
+        }
+      }
+      if (noLabels || noDue || recentCreate) {
+        fetch(apiUrl('/cards/' + card.id, token), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idList: planejamentoId })
+        }).catch(function() {});
+        mark('movePlanej');
+      }
+    }
+
+    if (changed) {
+      t.set('card', 'private', 'automationCache', autoCache).catch(function() {});
+    }
+  }
+
   var BADGE_CACHE_TTL = 300000;
   var BADGE_ERROR_TTL = 60000;
 
   function fetchAndComputeBadges(t) {
     return Promise.all([
-      t.card('id', 'name', 'due', 'desc', 'labels', 'idList'),
+      t.card('id', 'name', 'due', 'desc', 'labels', 'idList', 'dueComplete', 'start'),
       t.board('id'),
       t.getRestApi().getToken(),
       t.lists('id', 'name'),
-      t.get('board', 'shared', 'healthConfig')
+      t.get('board', 'shared', 'healthConfig'),
+      t.get('card', 'private', 'automationCache').catch(function() { return null; })
     ]).then(function(res) {
-      var card = res[0], boardId = res[1].id, token = res[2], lists = res[3], cfg = res[4];
+      var card = res[0], boardId = res[1].id, token = res[2], lists = res[3], cfg = res[4], autoCache = res[5];
       var currentList = lists.find(function(l) { return l.id === card.idList; });
       var currentListName = currentList ? currentList.name.trim() : '';
       var isConcluido = currentListName === 'Concluído 🏆';
@@ -688,9 +879,10 @@
           .then(function(r){ if (!r.ok) throw new Error('API ' + r.status); return r.json(); }),
         fetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
           .then(function(r){ if (!r.ok) throw new Error('API ' + r.status); return r.json(); }),
-        getCustomFieldsCache(t, boardId, token)
+        getCustomFieldsCache(t, boardId, token),
+        getLabelsCache(t, boardId, token)
       ]).then(function(data) {
-          var actions = data[0], cfItems = data[1], fields = data[2];
+          var actions = data[0], cfItems = data[1], fields = data[2], labelsCache = data[3];
           var badges = [];
           var tl = buildTimeline(actions);
 
@@ -733,6 +925,9 @@
 
           console.log('[BADGE] actions count:', Array.isArray(actions) ? actions.length : 'ERRO: '+typeof actions, 'cfItems:', Array.isArray(cfItems) ? cfItems.length : 'ERRO: '+typeof cfItems, 'fields:', fields ? 'ok' : 'null', 'badges gerados:', badges.length);
           t.set('card', 'private', 'badgeCache', { badges: badges, cachedAt: Date.now() });
+
+          try { runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache); } catch(e) {}
+
           return badges;
         });
     }).catch(function(err) {
