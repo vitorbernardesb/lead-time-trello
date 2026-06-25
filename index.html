@@ -29,12 +29,19 @@
   7. Entrou em Alterações (últimos 10min) → incrementar Retrabalhos +1
   8. Entrou em Revisões em Atraso (últimos 10min) → Prioridade = "ALTO"
   9. Entrou em Alterações (últimos 10min) → definir data de início = agora
+  10. Não conforme em Captação/A fazer/Em andamento → reverter p/ Planejamento + comentário
 */
 (function () {
   var APP_KEY = '35b840777660fac1ae7823df3d2398f6';
   var APP_NAME = 'Lead Time Midiática';
   var MIN_STAGE_MS = 600000;
   var ICON = 'https://vitorbernardesb.github.io/lead-time-trello/icon.svg';
+
+  var LISTAS_REVERTER_CONFORMIDADE = [
+    'Captação de Imagem 🎥',
+    'A fazer 👇',
+    'Em andamento 💪'
+  ];
 
   var FLOW_LISTS = [
     'Planejamento',
@@ -718,7 +725,7 @@
 
   var AUTO_COOLDOWN = 600000;
 
-  function runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache) {
+  function runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache, isConforme, missingItems) {
     var now = Date.now();
     if (!autoCache) autoCache = {};
     var changed = false;
@@ -831,6 +838,39 @@
       }
     }
 
+    // 10. Não conforme nas listas de reversão → mover p/ topo de Planejamento + comentário
+    var cooldownConformidade = 300000;
+    var nasListasDeReversao = LISTAS_REVERTER_CONFORMIDADE.indexOf(currentListName) !== -1;
+    var podReverter = !autoCache.lastRevertedConformidade ||
+      (now - autoCache.lastRevertedConformidade > cooldownConformidade);
+
+    if (nasListasDeReversao && !isConforme && planejamentoId && podReverter) {
+      var commentText = '🚨 CARD DEVOLVIDO PARA PLANEJAMENTO 🚨\n\n' +
+        'Este card foi movido de volta automaticamente ' +
+        'porque está com campos obrigatórios incompletos.\n\n' +
+        '❌ O QUE ESTÁ FALTANDO:\n' +
+        missingItems.map(function(i) { return '• ' + i; }).join('\n') +
+        '\n\n✅ COMO AVANÇAR:\n' +
+        'Preencha todos os campos acima e mova o card ' +
+        'novamente para a próxima etapa.\n\n' +
+        '⚠️ O card será devolvido automaticamente ' +
+        'enquanto os campos obrigatórios não forem preenchidos.';
+
+      fetch(apiUrl('/cards/' + card.id, token), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idList: planejamentoId, pos: 'top' })
+      }).then(function() {
+        return fetch(apiUrl('/cards/' + card.id + '/actions/comments', token), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: commentText })
+        });
+      }).then(function() {
+        autoCache.lastRevertedConformidade = now;
+        return t.set('card', 'private', 'automationCache', autoCache).catch(function() {});
+      }).catch(function() {});
+      changed = true;
+    }
+
     // 3+4+5. (Sem etiquetas OR criado<10min OR sem due) + fora de Planejamento → mover p/ Planejamento
     if (currentListName !== 'Planejamento' && planejamentoId && cooled('movePlanej')) {
       var noLabels = !card.labels || card.labels.length === 0;
@@ -889,18 +929,29 @@
           var ltBadge = badgeFromActions(actions);
           if (ltBadge) badges.push(ltBadge);
 
+          var tituloOk = validarTitulo(card.name);
+          var hasLabels = card.labels && card.labels.length > 0;
+          var hasDue = !!card.due;
+          var hasDesc = card.desc && card.desc.trim().length > 0;
+          var hasPrio = fields && fields.prioridade
+            ? hasPrioridade(cfItems, fields.prioridade.fieldId)
+            : true;
+          var isConforme = tituloOk && hasLabels && hasDue && hasDesc && hasPrio;
+
+          var missingItems = [];
+          if (!tituloOk)  missingItems.push('Título não preenchido');
+          if (!hasLabels) missingItems.push('Etiqueta não definida');
+          if (!hasDue)    missingItems.push('Data de entrega não definida');
+          if (!hasDesc)   missingItems.push('Descrição não preenchida');
+          if (!hasPrio)   missingItems.push('Prioridade não definida');
+
           if (!isConcluido) {
-            var tituloOk = validarTitulo(card.name);
-            var hasLabels = card.labels && card.labels.length > 0;
-            var hasDue = !!card.due;
-            var hasDesc = card.desc && card.desc.trim().length > 0;
-            var hasPrio = fields && fields.prioridade
-              ? hasPrioridade(cfItems, fields.prioridade.fieldId)
-              : true;
+            var nasListasDeReversao = LISTAS_REVERTER_CONFORMIDADE.indexOf(currentListName) !== -1;
 
-            var isConforme = tituloOk && hasLabels && hasDue && hasDesc && hasPrio;
-
-            if (!isConforme) {
+            if (!isConforme && nasListasDeReversao) {
+              badges.push({ text: '🚨 BLOQUEADO', color: 'red', title: 'Card incompleto — será devolvido para Planejamento' });
+              badges.push({ text: '⚠ incompleto', color: 'red', title: 'Campos faltando: ' + missingItems.join(', ') });
+            } else if (!isConforme) {
               badges.push({ text: '⚠ incompleto', color: 'red', title: 'Card sem campos obrigatórios preenchidos' });
             }
 
@@ -926,7 +977,7 @@
           console.log('[BADGE] actions count:', Array.isArray(actions) ? actions.length : 'ERRO: '+typeof actions, 'cfItems:', Array.isArray(cfItems) ? cfItems.length : 'ERRO: '+typeof cfItems, 'fields:', fields ? 'ok' : 'null', 'badges gerados:', badges.length);
           t.set('card', 'private', 'badgeCache', { badges: badges, cachedAt: Date.now() });
 
-          try { runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache); } catch(e) {}
+          try { runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache, isConforme, missingItems); } catch(e) {}
 
           return badges;
         });
