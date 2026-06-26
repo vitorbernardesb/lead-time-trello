@@ -8,6 +8,16 @@
 <body>
 <script>
 /*
+  ═══════════════════════════════════════════════════════
+  DEPLOY — após publicar esta versão:
+  1. Vá em Power-Ups → Lead Time Midiática → Desativar
+  2. Reative o Power-Up (on-enable pedirá scope read,write)
+  3. Peça a cada membro do board para abrir qualquer card
+     — o authorization-status detectará token antigo e
+     exibirá o botão "Autorizar" automaticamente.
+  ═══════════════════════════════════════════════════════
+*/
+/*
   REGRA BUTLER — Bloquear movimentação de cards incompletos
 
   Gatilho: Quando um card é movido para fora de "Planejamento"
@@ -218,6 +228,48 @@
     var f = ignoreZeros ? arr.filter(function(v){return v>0;}) : arr.filter(function(v){return v!=null;});
     if (!f.length) return 0;
     return Math.round(f.reduce(function(a,b){return a+b;},0)/f.length*10)/10;
+  }
+
+  // ═══════════════════════════════════════════════
+  //  RATE LIMITING — queuedFetch
+  // ═══════════════════════════════════════════════
+
+  var _API_QUEUE = [];
+  var _API_RUNNING = 0;
+  var _API_CONCURRENCY = 3;
+  var _API_DELAY = 200;
+
+  function drainQueue() {
+    while (_API_QUEUE.length > 0 && _API_RUNNING < _API_CONCURRENCY) {
+      (function() {
+        var item = _API_QUEUE.shift();
+        _API_RUNNING++;
+        var delay = _API_RUNNING > 1 ? _API_DELAY : 0;
+        setTimeout(function() {
+          fetch(item.url, item.opts)
+            .then(function(resp) {
+              if (resp.status === 429) {
+                return new Promise(function(resolve) {
+                  setTimeout(function() {
+                    resolve(fetch(item.url, item.opts));
+                  }, 2000);
+                });
+              }
+              return resp;
+            })
+            .then(function(resp) { item.resolve(resp); })
+            .catch(function(err) { item.reject(err); })
+            .then(function() { _API_RUNNING--; drainQueue(); });
+        }, delay);
+      })();
+    }
+  }
+
+  function queuedFetch(url, opts) {
+    return new Promise(function(resolve, reject) {
+      _API_QUEUE.push({ url: url, opts: opts, resolve: resolve, reject: reject });
+      drainQueue();
+    });
   }
 
   // ═══════════════════════════════════════════════
@@ -753,7 +805,7 @@
 
     // 1. dueComplete + fora de Concluído → mover p/ Concluído
     if (card.dueComplete && currentListName !== 'Concluído 🏆' && concluidoId && cooled('moveConcluido')) {
-      fetch(apiUrl('/cards/' + card.id, token), {
+      queuedFetch(apiUrl('/cards/' + card.id, token), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idList: concluidoId })
       }).catch(function() {});
@@ -762,7 +814,7 @@
 
     // 2. Em Concluído + !dueComplete → marcar concluído
     if (currentListName === 'Concluído 🏆' && !card.dueComplete && cooled('markComplete')) {
-      fetch(apiUrl('/cards/' + card.id, token), {
+      queuedFetch(apiUrl('/cards/' + card.id, token), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dueComplete: true })
       }).catch(function() {});
@@ -783,7 +835,7 @@
         var captLabel = labelsCache.labels.find(function(l) { return l.name === 'CAPTAÇÃO REALIZADA'; });
         var alreadyHas = card.labels && card.labels.some(function(l) { return l.name === 'CAPTAÇÃO REALIZADA'; });
         if (captLabel && !alreadyHas) {
-          fetch(apiUrl('/cards/' + card.id + '/idLabels', token), {
+          queuedFetch(apiUrl('/cards/' + card.id + '/idLabels', token), {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ value: captLabel.id })
           }).catch(function() {});
@@ -815,13 +867,13 @@
               }
             }
           }
-          fetch('https://api.trello.com/1/card/' + card.id + '/customField/' + fields.retrabalho.fieldId + '/item?key=' + APP_KEY + '&token=' + token, {
+          queuedFetch('https://api.trello.com/1/card/' + card.id + '/customField/' + fields.retrabalho.fieldId + '/item?key=' + APP_KEY + '&token=' + token, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ value: { number: String(rwVal + 1) } })
           }).catch(function() {});
         }
         // Set start date
-        fetch(apiUrl('/cards/' + card.id, token), {
+        queuedFetch(apiUrl('/cards/' + card.id, token), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ start: new Date().toISOString() })
         }).catch(function() {});
@@ -842,7 +894,7 @@
       if (enteredRev) {
         var altoId = fields.prioridade.options['ALTO'];
         if (altoId) {
-          fetch('https://api.trello.com/1/card/' + card.id + '/customField/' + fields.prioridade.fieldId + '/item?key=' + APP_KEY + '&token=' + token, {
+          queuedFetch('https://api.trello.com/1/card/' + card.id + '/customField/' + fields.prioridade.fieldId + '/item?key=' + APP_KEY + '&token=' + token, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ idValue: altoId })
           }).catch(function() {});
@@ -869,11 +921,11 @@
         '⚠️ O card será devolvido automaticamente ' +
         'enquanto os campos obrigatórios não forem preenchidos.';
 
-      fetch(apiUrl('/cards/' + card.id, token), {
+      queuedFetch(apiUrl('/cards/' + card.id, token), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idList: planejamentoId, pos: 'top' })
       }).then(function() {
-        return fetch(apiUrl('/cards/' + card.id + '/actions/comments', token), {
+        return queuedFetch(apiUrl('/cards/' + card.id + '/actions/comments', token), {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: commentText })
         });
@@ -896,7 +948,7 @@
         }
       }
       if (noLabels || noDue || recentCreate) {
-        fetch(apiUrl('/cards/' + card.id, token), {
+        queuedFetch(apiUrl('/cards/' + card.id, token), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ idList: planejamentoId })
         }).catch(function() {});
@@ -941,9 +993,9 @@
       var isConcluido = currentListName === 'Concluído 🏆';
 
       return Promise.all([
-        fetch(apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
+        queuedFetch(apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
           .then(function(r){ if (!r.ok) throw new Error('API ' + r.status); return r.json(); }),
-        fetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
+        queuedFetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
           .then(function(r){ if (!r.ok) throw new Error('API ' + r.status); return r.json(); }),
         getCustomFieldsCache(t, boardId, token),
         getLabelsCache(t, boardId, token)
@@ -1125,7 +1177,13 @@
 
     'authorization-status': function (t) {
       return t.getRestApi().isAuthorized().then(function (ok) {
-        return { authorized: ok };
+        if (!ok) return { authorized: false };
+        return t.getRestApi().getToken().then(function (token) {
+          if (!token || token.indexOf('ATTA') !== 0 || token.length <= 60) {
+            return { authorized: false };
+          }
+          return { authorized: true };
+        }).catch(function () { return { authorized: false }; });
       });
     },
 
