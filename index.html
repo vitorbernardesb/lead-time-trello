@@ -1146,51 +1146,46 @@
     },
 
     'card-back-section': function(t) {
-      return Promise.all([
-        t.card('id', 'name', 'due', 'desc', 'labels'),
-        t.board('id'),
-        getValidToken(t),
-        t.get('card', 'shared', 'warningFields').catch(function() { return null; })
-      ]).then(function(res) {
-        var card    = res[0];
-        var boardId = res[1].id;
-        var token   = res[2];
-        var cached  = res[3];
-
-        if (Array.isArray(cached)) {
-          return buildSections(t, cached);
-        }
-
-        return Promise.all([
-          fetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
-            .then(function(r) { return r.json(); })
-            .catch(function() { return []; }),
-          getCustomFieldsCache(t, boardId, token)
-        ]).then(function(data) {
-          var cfItems = data[0];
-          var fields  = data[1];
-          var tituloOk  = validarTitulo(card.name);
-          var hasLabels = card.labels && card.labels.length > 0;
-          var hasDue    = !!card.due;
-          var hasDesc   = card.desc && card.desc.trim().length > 0;
-          var hasPrio   = fields && fields.prioridade
-            ? hasPrioridade(cfItems, fields.prioridade.fieldId)
-            : true;
-          var missing = [];
-          if (!tituloOk)  missing.push('Título não preenchido');
-          if (!hasLabels) missing.push('Etiqueta não definida');
-          if (!hasDue)    missing.push('Data de entrega não definida');
-          if (!hasDesc)   missing.push('Descrição não preenchida');
-          if (!hasPrio)   missing.push('Prioridade não definida');
-          t.set('card', 'shared', 'warningFields', missing).catch(function() {});
-          return buildSections(t, missing);
+      return t.get('card', 'shared', 'warningFields')
+        .catch(function() { return null; })
+        .then(function(cached) {
+          if (Array.isArray(cached)) {
+            return buildSections(t, cached);
+          }
+          return Promise.all([
+            t.card('id', 'name', 'due', 'desc', 'labels'),
+            t.board('id'),
+            t.getRestApi().getToken()
+          ]).then(function(res) {
+            var card = res[0], boardId = res[1].id, token = res[2];
+            if (!token) return buildSections(t, []);
+            return Promise.all([
+              queuedFetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
+                .then(function(r) { return r.json(); })
+                .catch(function() { return []; }),
+              getCustomFieldsCache(t, boardId, token)
+            ]).then(function(data) {
+              var cfItems = data[0], fields = data[1];
+              var tituloOk  = validarTitulo(card.name);
+              var hasLabels = card.labels && card.labels.length > 0;
+              var hasDue    = !!card.due;
+              var hasDesc   = card.desc && card.desc.trim().length > 0;
+              var hasPrio   = fields && fields.prioridade
+                ? hasPrioridade(cfItems, fields.prioridade.fieldId)
+                : true;
+              var missing = [];
+              if (!tituloOk)  missing.push('Título não preenchido');
+              if (!hasLabels) missing.push('Etiqueta não definida');
+              if (!hasDue)    missing.push('Data de entrega não definida');
+              if (!hasDesc)   missing.push('Descrição não preenchida');
+              if (!hasPrio)   missing.push('Prioridade não definida');
+              t.set('card', 'shared', 'warningFields', missing).catch(function() {});
+              return buildSections(t, missing);
+            });
+          });
+        }).catch(function() {
+          return buildSections(t, []);
         });
-      }).catch(function() {
-        return [{
-          title: APP_NAME, icon: ICON,
-          content: { type: 'iframe', url: t.signUrl('./card-section.html'), height: 250 }
-        }];
-      });
     },
 
     'board-buttons': function (t) {
