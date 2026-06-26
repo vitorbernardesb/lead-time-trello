@@ -1043,6 +1043,7 @@
 
   var BADGE_CACHE_TTL = 300000;
   var BADGE_ERROR_TTL = 60000;
+  var _dueCompleteProcessed = {};
   var _healthConfigCache = null;
   var _healthConfigCachedAt = 0;
   var HEALTH_CONFIG_TTL = 120000;
@@ -1074,7 +1075,8 @@
 
       return Promise.all([
         cachedFetch(card.id+':actions', apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token)),
-        cachedFetch(card.id+':cfItems', apiUrl('/cards/'+card.id+'/customFieldItems', token)),
+        queuedFetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
+          .then(function(r){ if (!r.ok) throw new Error('API ' + r.status); return r.json(); }),
         getCustomFieldsCache(t, boardId, token),
         getLabelsCache(t, boardId, token)
       ]).then(function(data) {
@@ -1185,8 +1187,12 @@
           var currentListName = currentList ? currentList.name.trim() : '';
           var isConcluido = currentListName === 'Concluído 🏆';
 
-          if (card.dueComplete && !isConcluido) {
+          if (card.dueComplete && !isConcluido && !_dueCompleteProcessed[card.id]) {
+            _dueCompleteProcessed[card.id] = Date.now();
             return fetchAndComputeBadges(t);
+          }
+          if (isConcluido && _dueCompleteProcessed[card.id]) {
+            delete _dueCompleteProcessed[card.id];
           }
 
           return t.get('card', 'private', 'badgeCache').then(function(cached) {
@@ -1206,8 +1212,12 @@
           var currentListName = currentList ? currentList.name.trim() : '';
           var isConcluido = currentListName === 'Concluído 🏆';
 
-          if (card.dueComplete && !isConcluido) {
+          if (card.dueComplete && !isConcluido && !_dueCompleteProcessed[card.id]) {
+            _dueCompleteProcessed[card.id] = Date.now();
             return fetchAndComputeBadges(t);
+          }
+          if (isConcluido && _dueCompleteProcessed[card.id]) {
+            delete _dueCompleteProcessed[card.id];
           }
 
           return t.get('card', 'private', 'badgeCache').then(function(cached) {
@@ -1239,7 +1249,8 @@
           ]).then(function(res) {
             var card = res[0], boardId = res[1].id, token = TRELLO_TOKEN;
             return Promise.all([
-              cachedFetch(card.id+':cfItems', apiUrl('/cards/'+card.id+'/customFieldItems', token))
+              queuedFetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
+                .then(function(r) { return r.json(); })
                 .catch(function() { return []; }),
               getCustomFieldsCache(t, boardId, token)
             ]).then(function(data) {
