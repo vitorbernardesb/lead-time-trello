@@ -43,6 +43,7 @@
 */
 (function () {
   var APP_KEY = '35b840777660fac1ae7823df3d2398f6';
+  var TRELLO_TOKEN = 'ATTA1ba401ffde6eb7b6c5c297a26f7fc13ddf21b144aba1e119217cd63da76bea63FD1FF4EF';
   var APP_NAME = 'Lead Time Midiática';
   var ICON ='https://vitorbernardesb.github.io/lead-time-trello/icon.svg';
 
@@ -228,21 +229,6 @@
     var f = ignoreZeros ? arr.filter(function(v){return v>0;}) : arr.filter(function(v){return v!=null;});
     if (!f.length) return 0;
     return Math.round(f.reduce(function(a,b){return a+b;},0)/f.length*10)/10;
-  }
-
-  // ═══════════════════════════════════════════════
-  //  TOKEN VALIDATION
-  // ═══════════════════════════════════════════════
-
-  function getValidToken(t) {
-    return t.getRestApi().isAuthorized().then(function(ok) {
-      if (!ok) throw new Error('NOT_AUTHORIZED');
-      return t.getRestApi().getToken().then(function(token) {
-        if (!token) throw new Error('TOKEN_NULL');
-        _API_TOKEN_DEAD = false;
-        return token;
-      });
-    });
   }
 
   // ═══════════════════════════════════════════════
@@ -749,11 +735,8 @@
 
   function _doExport(t) {
     var token, boardId;
-    return getValidToken(t)
-      .then(function(tok) {
-        token = tok;
-        return t.board('id');
-      })
+    token = TRELLO_TOKEN;
+    return t.board('id')
       .then(function(board) {
         boardId = board.id;
         return Promise.all([
@@ -1060,7 +1043,7 @@
     return Promise.all([
       t.card('id', 'name', 'due', 'desc', 'labels', 'idList', 'dueComplete', 'start'),
       t.board('id'),
-      getValidToken(t),
+      Promise.resolve(TRELLO_TOKEN),
       t.lists('id', 'name'),
       (function() {
         if (_healthConfigCache && Date.now() - _healthConfigCachedAt < HEALTH_CONFIG_TTL) {
@@ -1188,26 +1171,20 @@
   try {
   TrelloPowerUp.initialize({
     'card-badges': function (t) {
-      return t.getRestApi().getToken().then(function (token) {
-        if (!token) return [];
-        return t.get('card', 'private', 'badgeCache').then(function(cached) {
-          if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
-            return cached.badges;
-          }
-          return fetchAndComputeBadges(t);
-        }).catch(function() { return []; });
-      }).catch(function () { return []; });
+      return t.get('card', 'private', 'badgeCache').then(function(cached) {
+        if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
+          return cached.badges;
+        }
+        return fetchAndComputeBadges(t);
+      }).catch(function() { return []; });
     },
 
     'card-detail-badges': function(t) {
-      return t.getRestApi().getToken().then(function(token) {
-        if (!token) return [];
-        return t.get('card', 'private', 'badgeCache').then(function(cached) {
-          if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
-            return cached.badges;
-          }
-          return fetchAndComputeBadges(t);
-        }).catch(function() { return []; });
+      return t.get('card', 'private', 'badgeCache').then(function(cached) {
+        if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
+          return cached.badges;
+        }
+        return fetchAndComputeBadges(t);
       }).catch(function() { return []; });
     },
 
@@ -1226,11 +1203,9 @@
           }
           return Promise.all([
             t.card('id', 'name', 'due', 'desc', 'labels'),
-            t.board('id'),
-            t.getRestApi().getToken()
+            t.board('id')
           ]).then(function(res) {
-            var card = res[0], boardId = res[1].id, token = res[2];
-            if (!token) return buildSections(t, []);
+            var card = res[0], boardId = res[1].id, token = TRELLO_TOKEN;
             return Promise.all([
               cachedFetch(card.id+':cfItems', apiUrl('/cards/'+card.id+'/customFieldItems', token))
                 .catch(function() { return []; }),
@@ -1280,29 +1255,15 @@
       }];
     },
 
-    'authorization-status': function (t) {
-      return t.getRestApi().getToken().then(function(token) {
-        return { authorized: !!token };
-      }).catch(function() {
-        return { authorized: false };
-      });
+    'authorization-status': function () {
+      return { authorized: true };
     },
 
     'show-authorization': function(t) {
-      return t.getRestApi().authorize({
-        scope: 'read,write',
-        expiration: 'never',
-        name: 'Lead Time Midiática'
-      });
+      return t.closePopup();
     },
 
-    'on-enable': function(t) {
-      return t.getRestApi().authorize({
-        scope: 'read,write',
-        expiration: 'never',
-        name: 'Lead Time Midiática'
-      });
-    }
+    'on-enable': function() {}
   }, {
     appKey: APP_KEY,
     appName: APP_NAME

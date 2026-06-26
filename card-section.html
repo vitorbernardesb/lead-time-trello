@@ -81,6 +81,7 @@
 <script>
 (function () {
   var APP_KEY = '35b840777660fac1ae7823df3d2398f6';
+  var TRELLO_TOKEN = 'ATTA1ba401ffde6eb7b6c5c297a26f7fc13ddf21b144aba1e119217cd63da76bea63FD1FF4EF';
   var t = TrelloPowerUp.iframe({ appKey: APP_KEY, appName: 'Lead Time Midiática' });
   var content = document.getElementById('content');
 
@@ -350,88 +351,60 @@
   }
 
   function render() {
-    t.getRestApi().isAuthorized().then(function (ok) {
-      if (!ok) {
-        content.innerHTML =
-          '<div class="msg">' +
-          '<p>Autorize o Power-Up para ver o lead time.</p>' +
-          '<button class="auth-btn" id="auth-btn">Autorizar</button>' +
-          '</div>';
-        document.getElementById('auth-btn').addEventListener('click', function () {
-          t.getRestApi().authorize({ scope: 'read,write', expiration: 'never' }).then(render);
+    Promise.all([
+      t.card('id').then(function (card) {
+        return fetch(
+          'https://api.trello.com/1/cards/' + card.id +
+          '/actions?filter=updateCard:idList,createCard,copyCard&limit=1000' +
+          '&key=' + APP_KEY + '&token=' + TRELLO_TOKEN
+        ).then(function (r) {
+          if (r.status === 401) {
+            console.error('[CARD-SECTION] 401 Unauthorized — token expirado');
+            throw new Error('TOKEN_EXPIRED');
+          }
+          if (r.status === 429) {
+            console.warn('[CARD-SECTION] 429 Rate limited');
+          }
+          return r.json();
         });
+      }),
+      t.get('card', 'shared', 'leadTimeViewMode').catch(function() { return null; })
+    ]).then(function (results) {
+      var actions = results[0];
+      var savedMode = results[1] || 'businessDays';
+
+      if (!actions || !actions.length) {
+        content.innerHTML = '<p class="msg">Nenhum histórico encontrado para este card.</p>';
         adjustHeight();
         return;
       }
 
-      Promise.all([
-        t.card('id').then(function (card) {
-          return t.getRestApi().getToken().then(function (token) {
-            return fetch(
-              'https://api.trello.com/1/cards/' + card.id +
-              '/actions?filter=updateCard:idList,createCard,copyCard&limit=1000' +
-              '&key=' + APP_KEY + '&token=' + token
-            ).then(function (r) {
-              if (r.status === 401) {
-                console.error('[CARD-SECTION] 401 Unauthorized — token expirado');
-                throw new Error('TOKEN_EXPIRED');
-              }
-              if (r.status === 429) {
-                console.warn('[CARD-SECTION] 429 Rate limited');
-              }
-              return r.json();
-            });
-          });
-        }),
-        t.get('card', 'shared', 'leadTimeViewMode').catch(function() { return null; })
-      ]).then(function (results) {
-        var actions = results[0];
-        var savedMode = results[1] || 'businessDays';
+      var stages = buildTimeline(actions);
+      if (!stages.length) {
+        content.innerHTML = '<p class="msg">Nenhuma movimentação encontrada.</p>';
+        adjustHeight();
+        return;
+      }
 
-        if (!actions || !actions.length) {
-          content.innerHTML = '<p class="msg">Nenhum histórico encontrado para este card.</p>';
+      var rawSegments = computeSegments(stages);
+      var merged = mergeByStage(rawSegments);
+      var totals = computeTotals(rawSegments);
+
+      content.innerHTML = renderTable(merged, totals, savedMode);
+
+      document.querySelectorAll('.toggle-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          switchMode(btn.getAttribute('data-mode'));
           adjustHeight();
-          return;
-        }
-
-        var stages = buildTimeline(actions);
-        if (!stages.length) {
-          content.innerHTML = '<p class="msg">Nenhuma movimentação encontrada.</p>';
-          adjustHeight();
-          return;
-        }
-
-        var rawSegments = computeSegments(stages);
-        var merged = mergeByStage(rawSegments);
-        var totals = computeTotals(rawSegments);
-
-        content.innerHTML = renderTable(merged, totals, savedMode);
-
-        document.querySelectorAll('.toggle-btn').forEach(function(btn) {
-          btn.addEventListener('click', function() {
-            switchMode(btn.getAttribute('data-mode'));
-            adjustHeight();
-          });
         });
-
-        adjustHeight();
-      }).catch(function (err) {
-        var msg = err && err.message ? err.message : String(err);
-        console.error('[CARD-SECTION] ERRO:', msg);
-        if (msg === 'TOKEN_EXPIRED') {
-          content.innerHTML =
-            '<div class="msg">' +
-            '<p>Token expirado. Reautorize o Power-Up.</p>' +
-            '<button class="auth-btn" id="reauth-btn">Autorizar</button>' +
-            '</div>';
-          document.getElementById('reauth-btn').addEventListener('click', function () {
-            t.getRestApi().authorize({ scope: 'read,write', expiration: 'never' }).then(render);
-          });
-        } else {
-          content.innerHTML = '<p class="msg">Erro ao carregar histórico do card.</p>';
-        }
-        adjustHeight();
       });
+
+      adjustHeight();
+    }).catch(function (err) {
+      var msg = err && err.message ? err.message : String(err);
+      console.error('[CARD-SECTION] ERRO:', msg);
+      content.innerHTML = '<p class="msg">Erro ao carregar histórico do card.</p>';
+      adjustHeight();
     });
   }
 
