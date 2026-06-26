@@ -155,7 +155,7 @@
   }
 
   function buscarCustomFields(t, boardId, token) {
-    return fetch(apiUrl('/boards/'+boardId+'/customFields', token))
+    return queuedFetch(apiUrl('/boards/'+boardId+'/customFields', token))
       .then(function(r) { return r.json(); })
       .then(function(fields) {
         if (!Array.isArray(fields)) return null;
@@ -212,7 +212,7 @@
     var valorDesejado = isConforme ? 'Completo' : 'Incompleto';
     var optionId = conformidadeField.options[valorDesejado];
     if (!optionId) return;
-    fetch(
+    queuedFetch(
       'https://api.trello.com/1/card/' + cardId +
       '/customField/' + conformidadeField.fieldId + '/item' +
       '?key=' + APP_KEY + '&token=' + token,
@@ -231,6 +231,20 @@
   }
 
   // ═══════════════════════════════════════════════
+  //  TOKEN VALIDATION
+  // ═══════════════════════════════════════════════
+
+  function getValidToken(t) {
+    return t.getRestApi().isAuthorized().then(function(ok) {
+      if (!ok) throw new Error('NOT_AUTHORIZED');
+      return t.getRestApi().getToken().then(function(token) {
+        if (!token) throw new Error('TOKEN_NULL');
+        return token;
+      });
+    });
+  }
+
+  // ═══════════════════════════════════════════════
   //  RATE LIMITING — queuedFetch
   // ═══════════════════════════════════════════════
 
@@ -238,6 +252,7 @@
   var _API_RUNNING = 0;
   var _API_CONCURRENCY = 3;
   var _API_DELAY = 200;
+  var _API_MAX_RETRIES = 3;
 
   function drainQueue() {
     while (_API_QUEUE.length > 0 && _API_RUNNING < _API_CONCURRENCY) {
@@ -248,18 +263,37 @@
         setTimeout(function() {
           fetch(item.url, item.opts)
             .then(function(resp) {
-              if (resp.status === 429) {
-                return new Promise(function(resolve) {
-                  setTimeout(function() {
-                    resolve(fetch(item.url, item.opts));
-                  }, 2000);
-                });
+              if (resp.status === 429 && item.attempt < _API_MAX_RETRIES) {
+                item.attempt++;
+                var backoff = Math.min(1000 * Math.pow(2, item.attempt), 8000);
+                console.warn('[API] 429 rate limited, retry', item.attempt, 'in', backoff + 'ms');
+                setTimeout(function() {
+                  _API_RUNNING--;
+                  _API_QUEUE.unshift(item);
+                  drainQueue();
+                }, backoff);
+                return;
               }
-              return resp;
+              if (resp.status === 401) {
+                console.error('[API] 401 Unauthorized — token expirado ou revogado, url:', item.url.substring(0, 80));
+              }
+              _API_RUNNING--;
+              item.resolve(resp);
+              drainQueue();
             })
-            .then(function(resp) { item.resolve(resp); })
-            .catch(function(err) { item.reject(err); })
-            .then(function() { _API_RUNNING--; drainQueue(); });
+            .catch(function(err) {
+              _API_RUNNING--;
+              if (item.attempt < _API_MAX_RETRIES) {
+                item.attempt++;
+                console.warn('[API] Network error, retry', item.attempt, ':', err.message || String(err));
+                _API_QUEUE.unshift(item);
+                drainQueue();
+              } else {
+                console.error('[API] Failed after', _API_MAX_RETRIES, 'retries:', err.message || String(err));
+                item.reject(err);
+              }
+              drainQueue();
+            });
         }, delay);
       })();
     }
@@ -267,7 +301,7 @@
 
   function queuedFetch(url, opts) {
     return new Promise(function(resolve, reject) {
-      _API_QUEUE.push({ url: url, opts: opts, resolve: resolve, reject: reject });
+      _API_QUEUE.push({ url: url, opts: opts, resolve: resolve, reject: reject, attempt: 0 });
       drainQueue();
     });
   }
@@ -660,7 +694,7 @@
 
   function _doExport(t) {
     var token, boardId;
-    return t.getRestApi().getToken()
+    return getValidToken(t)
       .then(function(tok) {
         token = tok;
         return t.board('id');
@@ -774,7 +808,7 @@
       .catch(function() { return null; })
       .then(function(cache) {
         if (cache && cache.savedAt && Date.now() - cache.savedAt < 86400000) return cache;
-        return fetch(apiUrl('/boards/' + boardId + '/labels', token))
+        return queuedFetch(apiUrl('/boards/' + boardId + '/labels', token))
           .then(function(r) { return r.json(); })
           .then(function(labels) {
             var result = { labels: Array.isArray(labels) ? labels : [], savedAt: Date.now() };
@@ -971,7 +1005,7 @@
     return Promise.all([
       t.card('id', 'name', 'due', 'desc', 'labels', 'idList', 'dueComplete', 'start'),
       t.board('id'),
-      t.getRestApi().getToken(),
+      getValidToken(t),
       t.lists('id', 'name'),
       (function() {
         if (_healthConfigCache && Date.now() - _healthConfigCachedAt < HEALTH_CONFIG_TTL) {
@@ -1054,11 +1088,16 @@
 
           t.set('card', 'private', 'badgeCache', { badges: badges, cachedAt: Date.now() });
 
-          try { runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache, isConforme, missingItems); } catch(e) {}
+          try {
+            runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache, isConforme, missingItems);
+          } catch(e) {
+            console.error('[AUTOMATIONS] Erro:', e && e.message ? e.message : String(e));
+          }
 
           return badges;
         });
-    }).catch(function() {
+    }).catch(function(err) {
+      console.error('[BADGE] ERRO FATAL:', err && err.message ? err.message : String(err));
       t.set('card', 'private', 'badgeCache', { badges: [], cachedAt: Date.now() - BADGE_CACHE_TTL + BADGE_ERROR_TTL });
       return [];
     });
@@ -1110,7 +1149,7 @@
       return Promise.all([
         t.card('id', 'name', 'due', 'desc', 'labels'),
         t.board('id'),
-        t.getRestApi().getToken(),
+        getValidToken(t),
         t.get('card', 'shared', 'warningFields').catch(function() { return null; })
       ]).then(function(res) {
         var card    = res[0];
@@ -1176,7 +1215,11 @@
     },
 
     'authorization-status': function (t) {
-      return { authorized: false };
+      return t.getRestApi().isAuthorized().then(function(ok) {
+        return { authorized: ok };
+      }).catch(function() {
+        return { authorized: false };
+      });
     },
 
     'show-authorization': function(t) {

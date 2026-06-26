@@ -371,7 +371,16 @@
               'https://api.trello.com/1/cards/' + card.id +
               '/actions?filter=updateCard:idList,createCard,copyCard&limit=1000' +
               '&key=' + APP_KEY + '&token=' + token
-            ).then(function (r) { return r.json(); });
+            ).then(function (r) {
+              if (r.status === 401) {
+                console.error('[CARD-SECTION] 401 Unauthorized — token expirado');
+                throw new Error('TOKEN_EXPIRED');
+              }
+              if (r.status === 429) {
+                console.warn('[CARD-SECTION] 429 Rate limited');
+              }
+              return r.json();
+            });
           });
         }),
         t.get('card', 'shared', 'leadTimeViewMode').catch(function() { return null; })
@@ -406,8 +415,21 @@
         });
 
         adjustHeight();
-      }).catch(function () {
-        content.innerHTML = '<p class="msg">Erro ao carregar histórico do card.</p>';
+      }).catch(function (err) {
+        var msg = err && err.message ? err.message : String(err);
+        console.error('[CARD-SECTION] ERRO:', msg);
+        if (msg === 'TOKEN_EXPIRED') {
+          content.innerHTML =
+            '<div class="msg">' +
+            '<p>Token expirado. Reautorize o Power-Up.</p>' +
+            '<button class="auth-btn" id="reauth-btn">Autorizar</button>' +
+            '</div>';
+          document.getElementById('reauth-btn').addEventListener('click', function () {
+            t.getRestApi().authorize({ scope: 'read,write', expiration: 'never' }).then(render);
+          });
+        } else {
+          content.innerHTML = '<p class="msg">Erro ao carregar histórico do card.</p>';
+        }
         adjustHeight();
       });
     });
