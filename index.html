@@ -246,6 +246,26 @@
   }
 
   // ═══════════════════════════════════════════════
+  //  CACHE DUAL-TTL (resposta API)
+  // ═══════════════════════════════════════════════
+
+  var _apiCache = {};
+  var CACHE_TTL_OK  = 1800000;
+  var CACHE_TTL_ERR =  600000;
+
+  function cacheGet(key) {
+    var entry = _apiCache[key];
+    if (!entry) return null;
+    var ttl = entry.error ? CACHE_TTL_ERR : CACHE_TTL_OK;
+    if (Date.now() - entry.ts > ttl) { delete _apiCache[key]; return null; }
+    return entry;
+  }
+
+  function cacheSet(key, value, isError) {
+    _apiCache[key] = { value: value, ts: Date.now(), error: !!isError };
+  }
+
+  // ═══════════════════════════════════════════════
   //  RATE LIMITING — queuedFetch
   // ═══════════════════════════════════════════════
 
@@ -319,6 +339,25 @@
     return new Promise(function(resolve, reject) {
       _API_QUEUE.push({ url: url, opts: opts, resolve: resolve, reject: reject, attempt: 0 });
       drainQueue();
+    });
+  }
+
+  function cachedFetch(cacheKey, url, opts) {
+    var hit = cacheGet(cacheKey);
+    if (hit) {
+      return hit.error
+        ? Promise.reject(new Error('CACHED_ERROR'))
+        : Promise.resolve(hit.value);
+    }
+    return queuedFetch(url, opts).then(function(r) {
+      if (!r.ok) throw new Error('API ' + r.status);
+      return r.json();
+    }).then(function(data) {
+      cacheSet(cacheKey, data, false);
+      return data;
+    }).catch(function(err) {
+      cacheSet(cacheKey, null, true);
+      throw err;
     });
   }
 
@@ -1043,10 +1082,8 @@
       var isConcluido = currentListName === 'Concluído 🏆';
 
       return Promise.all([
-        queuedFetch(apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
-          .then(function(r){ if (!r.ok) throw new Error('API ' + r.status); return r.json(); }),
-        queuedFetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
-          .then(function(r){ if (!r.ok) throw new Error('API ' + r.status); return r.json(); }),
+        cachedFetch(card.id+':actions', apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token)),
+        cachedFetch(card.id+':cfItems', apiUrl('/cards/'+card.id+'/customFieldItems', token)),
         getCustomFieldsCache(t, boardId, token),
         getLabelsCache(t, boardId, token)
       ]).then(function(data) {
@@ -1148,10 +1185,11 @@
   //  INICIALIZAÇÃO
   // ═══════════════════════════════════════════════
 
+  try {
   TrelloPowerUp.initialize({
     'card-badges': function (t) {
-      return t.getRestApi().isAuthorized().then(function (ok) {
-        if (!ok) return [];
+      return t.getRestApi().getToken().then(function (token) {
+        if (!token) return [];
         return t.get('card', 'private', 'badgeCache').then(function(cached) {
           if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
             return cached.badges;
@@ -1162,8 +1200,8 @@
     },
 
     'card-detail-badges': function(t) {
-      return t.getRestApi().isAuthorized().then(function(ok) {
-        if (!ok) return [];
+      return t.getRestApi().getToken().then(function(token) {
+        if (!token) return [];
         return t.get('card', 'private', 'badgeCache').then(function(cached) {
           if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
             return cached.badges;
@@ -1174,6 +1212,10 @@
     },
 
     'card-buttons': function() { return []; },
+
+    'attachment-sections': function() { return []; },
+
+    'attachment-thumbnail': function() { return null; },
 
     'card-back-section': function(t) {
       return t.get('card', 'shared', 'warningFields')
@@ -1190,8 +1232,7 @@
             var card = res[0], boardId = res[1].id, token = res[2];
             if (!token) return buildSections(t, []);
             return Promise.all([
-              queuedFetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
-                .then(function(r) { return r.json(); })
+              cachedFetch(card.id+':cfItems', apiUrl('/cards/'+card.id+'/customFieldItems', token))
                 .catch(function() { return []; }),
               getCustomFieldsCache(t, boardId, token)
             ]).then(function(data) {
@@ -1240,8 +1281,8 @@
     },
 
     'authorization-status': function (t) {
-      return t.getRestApi().isAuthorized().then(function(ok) {
-        return { authorized: ok };
+      return t.getRestApi().getToken().then(function(token) {
+        return { authorized: !!token };
       }).catch(function() {
         return { authorized: false };
       });
@@ -1266,6 +1307,9 @@
     appKey: APP_KEY,
     appName: APP_NAME
   });
+  } catch(e) {
+    console.error('[LeadTime] Erro na inicialização:', e);
+  }
 })();
 </script>
 </body>
