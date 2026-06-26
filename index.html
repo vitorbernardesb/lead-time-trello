@@ -239,6 +239,7 @@
       if (!ok) throw new Error('NOT_AUTHORIZED');
       return t.getRestApi().getToken().then(function(token) {
         if (!token) throw new Error('TOKEN_NULL');
+        _API_TOKEN_DEAD = false;
         return token;
       });
     });
@@ -253,8 +254,18 @@
   var _API_CONCURRENCY = 3;
   var _API_DELAY = 200;
   var _API_MAX_RETRIES = 3;
+  var _API_TOKEN_DEAD = false;
+
+  function _flushQueueOnDeadToken() {
+    var err = new Error('TOKEN_EXPIRED');
+    while (_API_QUEUE.length > 0) {
+      var item = _API_QUEUE.shift();
+      item.reject(err);
+    }
+  }
 
   function drainQueue() {
+    if (_API_TOKEN_DEAD) { _flushQueueOnDeadToken(); return; }
     while (_API_QUEUE.length > 0 && _API_RUNNING < _API_CONCURRENCY) {
       (function() {
         var item = _API_QUEUE.shift();
@@ -275,7 +286,12 @@
                 return;
               }
               if (resp.status === 401) {
-                console.error('[API] 401 Unauthorized — token expirado ou revogado, url:', item.url.substring(0, 80));
+                console.error('[API] 401 Unauthorized — token expirado ou revogado');
+                _API_TOKEN_DEAD = true;
+                _API_RUNNING--;
+                item.reject(new Error('TOKEN_EXPIRED'));
+                _flushQueueOnDeadToken();
+                return;
               }
               _API_RUNNING--;
               item.resolve(resp);
@@ -1144,6 +1160,20 @@
         }).catch(function() { return []; });
       }).catch(function () { return []; });
     },
+
+    'card-detail-badges': function(t) {
+      return t.getRestApi().isAuthorized().then(function(ok) {
+        if (!ok) return [];
+        return t.get('card', 'private', 'badgeCache').then(function(cached) {
+          if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
+            return cached.badges;
+          }
+          return fetchAndComputeBadges(t);
+        }).catch(function() { return []; });
+      }).catch(function() { return []; });
+    },
+
+    'card-buttons': function() { return []; },
 
     'card-back-section': function(t) {
       return t.get('card', 'shared', 'warningFields')
