@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Autorizar Lead Time</title>
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+</head>
+<body>
+  <script>
+    var t = TrelloPowerUp.iframe();
+    var hash = window.location.hash;
+
+    if (hash && hash.indexOf('token=') !== -1) {
+      var token = hash.replace('#token=', '');
+      t.getRestApi().setToken(token).then(function() {
+        t.closePopup();
+      });
+    } else {
+      window.location.href = 'https://trello.com/1/authorize'
+        + '?expiration=never'
+        + '&scope=read%2Cwrite'
+        + '&response_type=token'
+        + '&key=35b840777660fac1ae7823df3d2398f6'
+        + '&callback_method=fragment'
+        + '&return_url=https://vitorbernardesb.github.io/lead-time-trello/authorize.html';
+    }
+  </script>
+</body>
+</html>
