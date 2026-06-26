@@ -358,7 +358,7 @@
           '<button class="auth-btn" id="auth-btn">Autorizar</button>' +
           '</div>';
         document.getElementById('auth-btn').addEventListener('click', function () {
-          t.getRestApi().authorize({ scope: 'read', expiration: 'never' }).then(render);
+          t.getRestApi().authorize({ scope: 'read,write', expiration: 'never' }).then(render);
         });
         adjustHeight();
         return;

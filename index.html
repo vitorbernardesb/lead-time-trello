@@ -1176,15 +1176,7 @@
     },
 
     'authorization-status': function (t) {
-      return t.getRestApi().isAuthorized().then(function (ok) {
-        if (!ok) return { authorized: false };
-        return t.getRestApi().getToken().then(function (token) {
-          if (!token || token.indexOf('ATTA') !== 0 || token.length <= 60) {
-            return { authorized: false };
-          }
-          return { authorized: true };
-        }).catch(function () { return { authorized: false }; });
-      });
+      return { authorized: false };
     },
 
     'show-authorization': function(t) {
