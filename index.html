@@ -1129,8 +1129,20 @@
       });
     },
 
-    'show-authorization': function (t) {
-      return t.getRestApi().authorize({ scope: 'read,write', expiration: 'never' });
+    'show-authorization': function(t) {
+      return t.getRestApi().authorize({
+        scope: 'read,write',
+        expiration: 'never',
+        name: 'Lead Time Midiática'
+      });
+    },
+
+    'on-enable': function(t) {
+      return t.getRestApi().authorize({
+        scope: 'read,write',
+        expiration: 'never',
+        name: 'Lead Time Midiática'
+      });
     }
   }, {
     appKey: APP_KEY,
