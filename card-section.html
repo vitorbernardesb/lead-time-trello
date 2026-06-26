@@ -350,23 +350,32 @@
     try { t.set('card', 'shared', 'leadTimeViewMode', newMode); } catch(e) {}
   }
 
+  function fetchWithRetry(url, retries, delay) {
+    return fetch(url).then(function(r) {
+      if (r.status === 401) {
+        throw new Error('TOKEN_EXPIRED');
+      }
+      if (r.status === 429 && retries > 0) {
+        return new Promise(function(resolve) {
+          setTimeout(function() {
+            resolve(fetchWithRetry(url, retries - 1, delay * 2));
+          }, delay);
+        });
+      }
+      if (!r.ok) throw new Error('API ' + r.status);
+      return r.json();
+    });
+  }
+
   function render() {
     Promise.all([
       t.card('id').then(function (card) {
-        return fetch(
+        return fetchWithRetry(
           'https://api.trello.com/1/cards/' + card.id +
           '/actions?filter=updateCard:idList,createCard,copyCard&limit=1000' +
-          '&key=' + APP_KEY + '&token=' + TRELLO_TOKEN
-        ).then(function (r) {
-          if (r.status === 401) {
-            console.error('[CARD-SECTION] 401 Unauthorized — token expirado');
-            throw new Error('TOKEN_EXPIRED');
-          }
-          if (r.status === 429) {
-            console.warn('[CARD-SECTION] 429 Rate limited');
-          }
-          return r.json();
-        });
+          '&key=' + APP_KEY + '&token=' + TRELLO_TOKEN,
+          3, 1000
+        );
       }),
       t.get('card', 'shared', 'leadTimeViewMode').catch(function() { return null; })
     ]).then(function (results) {
