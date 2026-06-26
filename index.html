@@ -1170,21 +1170,45 @@
 
   try {
   TrelloPowerUp.initialize({
-    'card-badges': function (t) {
-      return t.get('card', 'private', 'badgeCache').then(function(cached) {
-        if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
-          return cached.badges;
-        }
-        return fetchAndComputeBadges(t);
+    'card-badges': function(t) {
+      return t.card('id', 'dueComplete', 'idList').then(function(card) {
+        return t.lists('id', 'name').then(function(lists) {
+          var currentList = lists.find(function(l) { return l.id === card.idList; });
+          var currentListName = currentList ? currentList.name.trim() : '';
+          var isConcluido = currentListName === 'Concluído 🏆';
+
+          if (card.dueComplete && !isConcluido) {
+            return fetchAndComputeBadges(t);
+          }
+
+          return t.get('card', 'private', 'badgeCache').then(function(cached) {
+            if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
+              return cached.badges;
+            }
+            return fetchAndComputeBadges(t);
+          }).catch(function() { return []; });
+        });
       }).catch(function() { return []; });
     },
 
     'card-detail-badges': function(t) {
-      return t.get('card', 'private', 'badgeCache').then(function(cached) {
-        if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
-          return cached.badges;
-        }
-        return fetchAndComputeBadges(t);
+      return t.card('id', 'dueComplete', 'idList').then(function(card) {
+        return t.lists('id', 'name').then(function(lists) {
+          var currentList = lists.find(function(l) { return l.id === card.idList; });
+          var currentListName = currentList ? currentList.name.trim() : '';
+          var isConcluido = currentListName === 'Concluído 🏆';
+
+          if (card.dueComplete && !isConcluido) {
+            return fetchAndComputeBadges(t);
+          }
+
+          return t.get('card', 'private', 'badgeCache').then(function(cached) {
+            if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
+              return cached.badges;
+            }
+            return fetchAndComputeBadges(t);
+          }).catch(function() { return []; });
+        });
       }).catch(function() { return []; });
     },
 
