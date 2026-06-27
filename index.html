@@ -210,6 +210,14 @@
   }
 
   var _conformidadeCache = {};
+  var _cacheMaxSize = 200;
+
+  function pruneCache(cache) {
+    var keys = Object.keys(cache);
+    if (keys.length > _cacheMaxSize) {
+      keys.slice(0, keys.length - _cacheMaxSize).forEach(function(k) { delete cache[k]; });
+    }
+  }
 
   function atualizarStatusConformidade(cardId, isConforme, conformidadeField, cfItems, token) {
     var valorDesejado = isConforme ? 'Completo' : 'Incompleto';
@@ -238,7 +246,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idValue: optionId })
       }
-    ).catch(function() {});
+    ).catch(function() { delete _conformidadeCache[cardId]; });
   }
 
   function avg(arr, ignoreZeros) {
@@ -252,8 +260,8 @@
   // ═══════════════════════════════════════════════
 
   var _apiCache = {};
-  var CACHE_TTL_OK  = 1800000;
-  var CACHE_TTL_ERR =  600000;
+  var CACHE_TTL_OK  = 60000;
+  var CACHE_TTL_ERR = 30000;
 
   function cacheGet(key) {
     var entry = _apiCache[key];
@@ -310,6 +318,7 @@
               if (resp.status === 401) {
                 console.error('[API] 401 Unauthorized — token expirado ou revogado');
                 _API_TOKEN_DEAD = true;
+                setTimeout(function() { _API_TOKEN_DEAD = false; }, 60000);
                 _API_RUNNING--;
                 item.reject(new Error('TOKEN_EXPIRED'));
                 _flushQueueOnDeadToken();
@@ -756,8 +765,8 @@
       .then(function(board) {
         boardId = board.id;
         return Promise.all([
-          fetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(function(r){return r.json();}),
-          fetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){return r.json();}),
+          queuedFetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(function(r){return r.json();}),
+          queuedFetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){return r.json();}),
           t.get('board', 'shared', 'healthConfig')
         ]);
       })
@@ -782,7 +791,7 @@
           return t.alert({message:'Nenhuma lista do fluxo encontrada.', display:'warning', duration:6});
 
         return Promise.all(flowLists.map(function(l) {
-          return fetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList,desc,dueComplete', token))
+          return queuedFetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList,desc,dueComplete', token))
             .then(function(r){return r.json();});
         })).then(function(cardArrays) {
           var cards = [];
@@ -806,13 +815,13 @@
         }
 
         var actionPromises = cards.map(function(c){
-          return fetch(apiUrl('/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
+          return queuedFetch(apiUrl('/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
             .then(function(r){return r.json();});
         });
 
         var cfPromises = cards.map(function(c){
           if (!retrabalhoField) return Promise.resolve([]);
-          return fetch(apiUrl('/cards/'+c.id+'/customFieldItems', token))
+          return queuedFetch(apiUrl('/cards/'+c.id+'/customFieldItems', token))
             .then(function(r){return r.json();});
         });
 
@@ -877,8 +886,13 @@
   // ═══════════════════════════════════════════════
 
   var AUTO_COOLDOWN = 600000;
+  var _automationLock = {};
 
   function runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache, isConforme, missingItems) {
+    if (_automationLock[card.id]) return;
+    _automationLock[card.id] = true;
+    setTimeout(function() { delete _automationLock[card.id]; }, 5000);
+
     var now = Date.now();
     if (!autoCache) autoCache = {};
     var changed = false;
@@ -1024,18 +1038,15 @@
       }).catch(function() {});
     }
 
-    // 3+4+5. (Sem etiquetas OR criado<10min OR sem due) + fora de Planejamento → mover p/ Planejamento
-    if (currentListName !== 'Planejamento' && planejamentoId && cooled('movePlanej')) {
+    // 3+4+5. (Sem etiquetas OR sem due) + fora de Planejamento/finais → mover p/ Planejamento
+    var LISTAS_PROTEGIDAS_345 = [
+      'Planejamento', 'Concluído 🏆', 'Revisão Interna 🔎',
+      'Revisão Externa 🧐', 'Revisões em Atraso ⏰'
+    ];
+    if (LISTAS_PROTEGIDAS_345.indexOf(currentListName) === -1 && planejamentoId && cooled('movePlanej')) {
       var noLabels = !card.labels || card.labels.length === 0;
       var noDue = !card.due;
-      var recentCreate = false;
-      for (var m = 0; m < actions.length; m++) {
-        if ((actions[m].type === 'createCard' || actions[m].type === 'copyCard') &&
-            (now - new Date(actions[m].date).getTime()) < AUTO_COOLDOWN) {
-          recentCreate = true; break;
-        }
-      }
-      if (noLabels || noDue || recentCreate) {
+      if (noLabels || noDue) {
         queuedFetch(apiUrl('/cards/' + card.id, token), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ idList: planejamentoId })
@@ -1057,6 +1068,9 @@
   var HEALTH_CONFIG_TTL = 120000;
 
   function fetchAndComputeBadges(t) {
+    pruneCache(_conformidadeCache);
+    pruneCache(_dueCompleteProcessed);
+    pruneCache(_automationLock);
     return Promise.all([
       t.card('id', 'name', 'due', 'desc', 'labels', 'idList', 'dueComplete', 'start'),
       t.board('id'),
@@ -1222,27 +1236,11 @@
     },
 
     'card-detail-badges': function(t) {
-      return t.card('id', 'dueComplete', 'idList').then(function(card) {
-        return t.lists('id', 'name').then(function(lists) {
-          var currentList = lists.find(function(l) { return l.id === card.idList; });
-          var currentListName = currentList ? currentList.name.trim() : '';
-          var isConcluido = currentListName === 'Concluído 🏆';
-
-          if (card.dueComplete && !isConcluido && !_dueCompleteProcessed[card.id]) {
-            _dueCompleteProcessed[card.id] = Date.now();
-            return fetchAndComputeBadges(t);
-          }
-          if (isConcluido && _dueCompleteProcessed[card.id]) {
-            delete _dueCompleteProcessed[card.id];
-          }
-
-          return t.get('card', 'private', 'badgeCache').then(function(cached) {
-            if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
-              return cached.badges;
-            }
-            return fetchAndComputeBadges(t);
-          }).catch(function() { return []; });
-        });
+      return t.get('card', 'private', 'badgeCache').then(function(cached) {
+        if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
+          return cached.badges;
+        }
+        return fetchAndComputeBadges(t);
       }).catch(function() { return []; });
     },
 
@@ -1259,8 +1257,7 @@
       ]).then(function(res) {
         var card = res[0], boardId = res[1].id, token = TRELLO_TOKEN;
         return Promise.all([
-          queuedFetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
-            .then(function(r) { return r.json(); })
+          cachedFetch(card.id+':cfItems', apiUrl('/cards/'+card.id+'/customFieldItems', token))
             .catch(function() { return []; }),
           getCustomFieldsCache(t, boardId, token)
         ]).then(function(data) {

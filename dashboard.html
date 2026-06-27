@@ -668,10 +668,10 @@
             console.error('[DASHBOARD] 401 Unauthorized — token expirado, url:', url.substring(0, 60));
             throw new Error('401_UNAUTHORIZED');
           }
-          if (r.status === 429 && attempt < maxRetries) {
+          if ((r.status === 429 || r.status >= 500) && attempt < maxRetries) {
             attempt++;
             var backoff = Math.min(1000 * Math.pow(2, attempt), 8000);
-            console.warn('[DASHBOARD] 429 rate limited, retry', attempt, 'in', backoff + 'ms');
+            console.warn('[DASHBOARD] ' + r.status + ' retry', attempt, 'in', backoff + 'ms');
             return new Promise(function(resolve) { setTimeout(resolve, backoff); }).then(tryFetch);
           }
           return r.json();
@@ -683,6 +683,16 @@
             return new Promise(function(resolve){ setTimeout(resolve, wait); }).then(tryFetch);
           }
           return data;
+        })
+        .catch(function(err) {
+          if (err && err.message === '401_UNAUTHORIZED') throw err;
+          if (attempt < maxRetries) {
+            attempt++;
+            var backoff = Math.min(1000 * Math.pow(2, attempt), 8000);
+            console.warn('[DASHBOARD] Network error, retry', attempt, ':', err.message || String(err));
+            return new Promise(function(resolve) { setTimeout(resolve, backoff); }).then(tryFetch);
+          }
+          throw err;
         });
     }
     return tryFetch();
