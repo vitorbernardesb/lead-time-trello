@@ -998,6 +998,10 @@
       (now - autoCache.lastRevertedConformidade > cooldownConformidade);
 
     if (nasListasDeReversao && !isConforme && planejamentoId && podReverter) {
+      autoCache.lastRevertedConformidade = now;
+      changed = true;
+      t.set('card', 'private', 'automationCache', autoCache).catch(function() {});
+
       var commentText = '🚨 CARD DEVOLVIDO PARA PLANEJAMENTO 🚨\n\n' +
         'Este card foi movido de volta automaticamente ' +
         'porque está com campos obrigatórios incompletos.\n\n' +
@@ -1017,11 +1021,7 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: commentText })
         });
-      }).then(function() {
-        autoCache.lastRevertedConformidade = now;
-        return t.set('card', 'private', 'automationCache', autoCache).catch(function() {});
       }).catch(function() {});
-      changed = true;
     }
 
     // 3+4+5. (Sem etiquetas OR criado<10min OR sem due) + fora de Planejamento → mover p/ Planejamento
