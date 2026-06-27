@@ -53,6 +53,11 @@
     'Em andamento 💪'
   ];
 
+  var LISTAS_PROTEGIDAS_345 = [
+    'Planejamento', 'Concluído 🏆', 'Revisão Interna 🔎',
+    'Revisão Externa 🧐', 'Revisões em Atraso ⏰'
+  ];
+
   var FLOW_LISTS = [
     'Planejamento',
     'Captação de Imagem 🎥',
@@ -338,8 +343,8 @@
               } else {
                 console.error('[API] Failed after', _API_MAX_RETRIES, 'retries:', err.message || String(err));
                 item.reject(err);
+                drainQueue();
               }
-              drainQueue();
             });
         }, delay);
       })();
@@ -1039,10 +1044,6 @@
     }
 
     // 3+4+5. (Sem etiquetas OR sem due) + fora de Planejamento/finais → mover p/ Planejamento
-    var LISTAS_PROTEGIDAS_345 = [
-      'Planejamento', 'Concluído 🏆', 'Revisão Interna 🔎',
-      'Revisão Externa 🧐', 'Revisões em Atraso ⏰'
-    ];
     if (LISTAS_PROTEGIDAS_345.indexOf(currentListName) === -1 && planejamentoId && cooled('movePlanej')) {
       var noLabels = !card.labels || card.labels.length === 0;
       var noDue = !card.due;
@@ -1097,8 +1098,7 @@
 
       return Promise.all([
         cachedFetch(card.id+':actions', apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token)),
-        queuedFetch(apiUrl('/cards/'+card.id+'/customFieldItems', token))
-          .then(function(r){ if (!r.ok) throw new Error('API ' + r.status); return r.json(); }),
+        cachedFetch(card.id+':cfItems', apiUrl('/cards/'+card.id+'/customFieldItems', token)),
         getCustomFieldsCache(t, boardId, token),
         getLabelsCache(t, boardId, token)
       ]).then(function(data) {
