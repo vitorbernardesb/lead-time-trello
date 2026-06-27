@@ -273,8 +273,8 @@
 
   var _API_QUEUE = [];
   var _API_RUNNING = 0;
-  var _API_CONCURRENCY = 3;
-  var _API_DELAY = 200;
+  var _API_CONCURRENCY = 6;
+  var _API_DELAY = 0;
   var _API_MAX_RETRIES = 3;
   var _API_TOKEN_DEAD = false;
 
@@ -1253,7 +1253,6 @@
     'attachment-thumbnail': function() { return null; },
 
     'card-back-section': function(t) {
-      fetchAndComputeBadges(t).catch(function() {});
       return Promise.all([
         t.card('id', 'name', 'due', 'desc', 'labels'),
         t.board('id')
