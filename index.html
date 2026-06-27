@@ -209,18 +209,26 @@
     return false;
   }
 
+  var _conformidadeCache = {};
+
   function atualizarStatusConformidade(cardId, isConforme, conformidadeField, cfItems, token) {
     var valorDesejado = isConforme ? 'Completo' : 'Incompleto';
     var optionId = conformidadeField.options[valorDesejado];
     if (!optionId) return;
+
+    var currentValue = null;
     if (Array.isArray(cfItems)) {
       for (var i = 0; i < cfItems.length; i++) {
         if (cfItems[i].idCustomField === conformidadeField.fieldId) {
-          if (cfItems[i].idValue === optionId) return;
+          currentValue = cfItems[i].idValue;
           break;
         }
       }
     }
+    if (currentValue === optionId) return;
+    if (_conformidadeCache[cardId] === optionId) return;
+
+    _conformidadeCache[cardId] = optionId;
     queuedFetch(
       'https://api.trello.com/1/card/' + cardId +
       '/customField/' + conformidadeField.fieldId + '/item' +
