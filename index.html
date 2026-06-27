@@ -1253,6 +1253,7 @@
     'attachment-thumbnail': function() { return null; },
 
     'card-back-section': function(t) {
+      fetchAndComputeBadges(t).catch(function() {});
       return Promise.all([
         t.card('id', 'name', 'due', 'desc', 'labels'),
         t.board('id')
