@@ -1103,7 +1103,15 @@
           if (!hasDesc)   missingItems.push('Descrição não preenchida');
           if (!hasPrio)   missingItems.push('Prioridade não definida');
 
-          if (!isConcluido) {
+          var LISTAS_SEM_CONFORMIDADE = [
+            'Revisão Interna 🔎',
+            'Revisão Externa 🧐',
+            'Revisões em Atraso ⏰',
+            'Concluído 🏆'
+          ];
+          var pularConformidade = LISTAS_SEM_CONFORMIDADE.indexOf(currentListName) !== -1;
+
+          if (!pularConformidade) {
             var nasListasDeReversao = LISTAS_REVERTER_CONFORMIDADE.indexOf(currentListName) !== -1;
 
             if (!isConforme && nasListasDeReversao) {
