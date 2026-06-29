@@ -1081,15 +1081,31 @@
     if (score >= 40) return 'Atenção necessária';
     return 'Situação crítica';
   }
-  // ─── SCORE & COR CENTRALIZADOS ──────────────────
-  // Score de saúde padronizado de um KPI (0..100). ÚNICA fonte de normalização —
-  // usada tanto pelo Health Score quanto pela largura/cor das barras, garantindo
-  // que indicador, barra e cor sempre contem a mesma história.
+  // ─── SCORE, BARRA & COR CENTRALIZADOS ───────────
+  // Há DUAS grandezas distintas, cada uma com sua função:
+  //
+  //  1) kpiBarPct  → LARGURA da barra = proporção REAL valor/meta (quão "cheia" está
+  //     a barra em relação à meta). É a MESMA fórmula para todos os KPIs, sem inversão.
+  //     A direção (bom/ruim) NÃO é comunicada pela largura, e sim pela COR.
+  //     ex.: meta 15, valor 6 → 40% (antes usávamos o score 80%, daí a barra "cheia demais").
+  //
+  //  2) kpiHealth  → SCORE de saúde (0..100) que alimenta a COR (statusColor), o status
+  //     e o Health Score. AQUI sim a lógica diferencia "maior melhor" de "menor melhor".
+
+  // LARGURA: proporção direta valor/meta, clamp [0,100], protegida contra meta <= 0.
+  // Funciona com valores baixos/altos, metas decimais e sem ranges fixos/hardcoded —
+  // qualquer mudança de meta recalcula a barra automaticamente.
+  function kpiBarPct(valor, meta) {
+    valor = parseFloat(valor); meta = parseFloat(meta);
+    if (isNaN(valor) || isNaN(meta) || meta <= 0) return 0; // meta 0 → barra vazia (evita ÷0)
+    return Math.max(0, Math.min(100, (valor / meta) * 100));
+  }
+
+  // SCORE de saúde padronizado (0..100). Fonte única da COR e do Health Score.
   //   tipo 'A' (quanto MAIOR melhor): score = valor/meta            (meta = alvo)
   //   tipo 'B' (quanto MENOR melhor): score = 1 - valor/(2*meta)    (meta = ponto de 50%)
   // Em 'B', a meta é o limite "aceitável": valor 0 → 100, valor = meta → 50,
-  // valor >= 2*meta → 0. Isso elimina o score inflado do antigo `meta/valor`
-  // (que dava 100 para QUALQUER valor <= meta) e padroniza a curva entre todos os KPIs.
+  // valor >= 2*meta → 0. Padroniza a curva de criticidade entre todos os KPIs.
   function kpiHealth(valor, meta, tipo) {
     valor = parseFloat(valor); meta = parseFloat(meta);
     if (isNaN(valor) || isNaN(meta) || meta <= 0) return 0;
@@ -1148,7 +1164,9 @@
 
     html += '<div class="kpi-grid">';
     kpiCards.forEach(function(k, i) {
-      // score padronizado → largura E cor da barra (barra cheia/verde = saudável)
+      // largura = proporção real valor/meta; cor = criticidade (score de saúde).
+      // Ambos calculados UMA vez e reutilizados na animação (sem recomputar por barra).
+      k.pct = kpiBarPct(k.valor, k.meta);
       k.score = kpiHealth(k.valor, k.meta, k.tipo);
       var cor = statusColor(k.score);
       html += '<div class="kpi-card">';
@@ -1202,11 +1220,11 @@
       }
     }, 100);
 
-    // Anima a largura usando o score já calculado (sem recomputar pct/cor por barra).
+    // Anima a largura (proporção real) usando os valores já calculados — sem recomputar.
     setTimeout(function() {
       kpiCards.forEach(function(k, i) {
         var bar = document.getElementById('bar-kpi-'+i);
-        if (bar) { bar.style.width = k.score + '%'; bar.style.background = statusColor(k.score); }
+        if (bar) { bar.style.width = k.pct + '%'; bar.style.background = statusColor(k.score); }
       });
     }, 120);
 
