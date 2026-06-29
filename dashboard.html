@@ -850,6 +850,7 @@
             var tl = buildTimeline(actions);
             var currentStage = tl.length ? tl[tl.length-1] : null;
             var currentListName = currentStage ? currentStage.name : (flowListIds[card.idList] || '');
+            var realListName = flowListIds[card.idList] || currentListName;
             var daysInCurrent = currentStage ? countBusinessDays(currentStage.enteredAt, now) : 0;
             var totalBD = 0;
             for (var si = 0; si < tl.length; si++) {
@@ -908,7 +909,7 @@
               hasPrioridade: hasPrio,
               labels: (card.labels || []).map(function(l) { return l.name; }),
               currentListName: currentListName,
-              isConcluido: currentListName === 'Concluído 🏆',
+              isConcluido: realListName === 'Concluído 🏆',
               inConcluidoThisMonth: inConcluido,
               missing: missing,
               isConforme: tituloValido && hasLabels && hasDue && hasDesc && hasPrio
