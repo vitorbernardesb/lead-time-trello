@@ -588,28 +588,52 @@
     return out;
   }
 
-  // ─── LEAD TIME REAL ─────────────────────────────
-  // Calcula o tempo de atravessamento do fluxo (lead time real), em dias úteis:
-  //   início  = primeira vez que o card entrou numa etapa de PRODUÇÃO ATIVA
-  //             (ou seja, saiu do backlog/Planejamento e começou a ser produzido)
-  //   fim     = momento em que o card entrou em "Concluído 🏆"
-  // Retorna { leadTime, concludedAt } ou null se o card não atravessou o fluxo
-  // (nunca foi produzido, ou ainda não foi concluído).
-  function computeLeadTime(tl) {
-    if (!Array.isArray(tl) || !tl.length) return null;
-    var startProd = null, concludedAt = null;
+  // ─── UTILITÁRIOS DE DATA (reutilizáveis) ────────
+  // Centralizam a comparação de datas para que vencidos, vazão e lead time usem
+  // exatamente a mesma interpretação (mesmo "hoje", mesmo conceito de mês).
+  function startOfToday() { var d = new Date(); d.setHours(0,0,0,0); return d; }
+
+  // Card vencido = tem due, NÃO está marcado como concluído (dueComplete) e a data
+  // de entrega já passou (compara dias no fuso local, ignorando horas). Excluir
+  // dueComplete evita falso-positivo de card já entregue ainda contar como atrasado.
+  function isOverdue(due, dueComplete) {
+    if (!due || dueComplete === true) return false;
+    var d = new Date(due); d.setHours(0,0,0,0);
+    return d < startOfToday();
+  }
+
+  // Mesma competência (mês+ano) entre duas datas — base do recorte mensal da vazão.
+  function sameMonth(date, ref) {
+    return date.getMonth() === ref.getMonth() && date.getFullYear() === ref.getFullYear();
+  }
+
+  // ─── CONCLUSÃO & LEAD TIME ──────────────────────
+  // Data em que o card entrou pela ÚLTIMA vez em "Concluído 🏆" (ou null).
+  // Usar a timeline (e não o flag dueComplete + due date) torna a métrica robusta a
+  // cards reabertos (pega a última conclusão) e a cards sem due date.
+  function getConcludedAt(tl) {
+    if (!Array.isArray(tl)) return null;
+    var concludedAt = null;
     for (var i = 0; i < tl.length; i++) {
       var name = tl[i].name ? tl[i].name.trim() : '';
-      // primeira entrada em produção ativa marca o início do fluxo produtivo
-      if (startProd === null && PRODUCAO_ATIVA.indexOf(name) !== -1) {
-        startProd = tl[i].enteredAt;
-      }
-      // última entrada em Concluído marca a data de conclusão
-      if (name === 'Concluído 🏆') {
-        concludedAt = tl[i].enteredAt;
-      }
+      if (name === 'Concluído 🏆') concludedAt = tl[i].enteredAt; // última vence
     }
-    // só conta quando há início produtivo E conclusão posterior a ele
+    return concludedAt;
+  }
+
+  // Lead time real (atravessamento do fluxo), em dias úteis:
+  //   início = primeira entrada numa etapa de PRODUÇÃO ATIVA (saiu do backlog)
+  //   fim    = conclusão (getConcludedAt)
+  // Retorna { leadTime, concludedAt } ou null se não atravessou o fluxo
+  // (nunca foi produzido, ou ainda não concluído).
+  function computeLeadTime(tl) {
+    if (!Array.isArray(tl) || !tl.length) return null;
+    var startProd = null;
+    for (var i = 0; i < tl.length; i++) {
+      var name = tl[i].name ? tl[i].name.trim() : '';
+      if (PRODUCAO_ATIVA.indexOf(name) !== -1) { startProd = tl[i].enteredAt; break; }
+    }
+    var concludedAt = getConcludedAt(tl);
     if (!startProd || !concludedAt || concludedAt <= startProd) return null;
     return { leadTime: countBusinessDays(startProd, concludedAt), concludedAt: concludedAt };
   }
@@ -884,7 +908,8 @@
             var currentListName = currentStage ? currentStage.name : (flowListIds[card.idList] || '');
             var realListName = flowListIds[card.idList] || currentListName;
 
-            // Lead time real (atravessamento do fluxo) — só existe para cards já concluídos
+            // Conclusão (timeline) compartilhada por vazão E lead time — calculada uma vez.
+            var concludedAt = getConcludedAt(tl);
             var ltReal = computeLeadTime(tl);
             var daysInCurrent = currentStage ? countBusinessDays(currentStage.enteredAt, now) : 0;
             var totalBD = 0;
@@ -893,21 +918,15 @@
               totalBD += countBusinessDays(tl[si].enteredAt, stEnd);
             }
 
-            var isLate = false;
+            // Vencido: due no passado e ainda não entregue (helper centralizado).
             var hasDue = !!card.due;
-            if (hasDue) {
-              var td = new Date(); td.setHours(0,0,0,0);
-              var du = new Date(card.due); du.setHours(0,0,0,0);
-              isLate = du < td;
-            }
+            var isLate = isOverdue(card.due, card.dueComplete);
 
             var hasLabels = card.labels && card.labels.length > 0;
 
-            var inConcluido = false;
-            if (card.dueComplete === true && card.due) {
-              var dueDate = new Date(card.due);
-              if (dueDate.getMonth() === curMonth && dueDate.getFullYear() === curYear) inConcluido = true;
-            }
+            // Concluído no mês corrente = entrou em Concluído neste mês (pela data REAL
+            // de conclusão, não pela due date). É isto que mede vazão/throughput.
+            var concluidoNoMes = !!(concludedAt && sameMonth(concludedAt, now));
 
             var tituloValido = validarTitulo(card.name);
             var hasDesc = card.desc && card.desc.trim().length > 0;
@@ -945,10 +964,11 @@
               labels: (card.labels || []).map(function(l) { return l.name; }),
               currentListName: currentListName,
               isConcluido: realListName === 'Concluído 🏆',
-              inConcluidoThisMonth: inConcluido,
-              // lead time real do fluxo (dias úteis) e quando o card foi concluído
+              concluidoNoMes: concluidoNoMes,
+              // lead time real do fluxo (dias úteis) e quando o card foi concluído.
+              // concludedAt vale para QUALQUER card concluído (independe de lead time).
               leadTimeReal: ltReal ? ltReal.leadTime : null,
-              concludedAt: ltReal ? ltReal.concludedAt.toISOString() : null,
+              concludedAt: concludedAt ? concludedAt.toISOString() : null,
               missing: missing,
               isConforme: tituloValido && hasLabels && hasDue && hasDesc && hasPrio
             });
@@ -964,6 +984,8 @@
   function calcKPIs(cards, config) {
     var withDue = cards.filter(function(c){ return c.hasDue && !c.isConcluido; });
     var vencidos = withDue.filter(function(c){ return c.isLate; });
+    // KPI1 — CARDS VENCIDOS: % de cards ATIVOS (não concluídos) com due date que já
+    // venceu. Denominador = só cards ativos com due (cards sem due/concluídos não entram).
     var kpi1 = withDue.length ? Math.round(vencidos.length / withDue.length * 1000) / 10 : 0;
 
     var totalRw = 0;
@@ -979,7 +1001,9 @@
     prodCards.forEach(function(c) { totalDays += c.daysInCurrent; });
     var kpi3 = prodCards.length ? Math.round(totalDays / prodCards.length * 10) / 10 : 0;
 
-    var kpi4 = cards.filter(function(c){ return c.inConcluidoThisMonth; }).length;
+    // KPI4 — VAZÃO MENSAL / throughput: nº de cards CONCLUÍDOS no mês corrente
+    // (pela data real de entrada em Concluído). Mede entregas no período, não due dates.
+    var kpi4 = cards.filter(function(c){ return c.concluidoNoMes; }).length;
 
     var cardsParaConformidade = cards.filter(function(c){ return !c.isConcluido; });
     var conformes = cardsParaConformidade.filter(function(c){ return c.isConforme; }).length;
@@ -1772,7 +1796,9 @@
       var html = '';
 
       html += '<div class="config-section"><h3>Metas</h3>';
-      html += sliderRow('meta_prazo', 'Meta máx. de cards vencidos', config.meta_prazo, 0, 50, 5, '%');
+      // Métrica percentual: o range vai de 0 a 100% (antes ia só até 50, o que travava
+      // o preenchimento da barra na metade e impedia metas acima de 50%).
+      html += sliderRow('meta_prazo', 'Meta máx. de cards vencidos', config.meta_prazo, 0, 100, 5, '%');
       html += sliderRow('meta_rework', 'Meta retrabalhos máximo', config.meta_rework, 0, 1000, 5, ' retrabalhos');
       html += sliderRow('meta_leadtime_real', 'Meta tempo de entrega (lead time real)', config.meta_leadtime_real, 2, 60, 1, ' d.u.');
       html += sliderRow('meta_leadtime', 'Meta tempo na etapa (aging)', config.meta_leadtime, 2, 20, 1, ' d.u.');
