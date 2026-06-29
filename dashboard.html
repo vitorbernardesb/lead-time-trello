@@ -1089,7 +1089,7 @@
     html += '</div>';
 
     // Non-conforming cards
-    var nonConforming = cards.filter(function(c) { return !c.isConforme; });
+    var nonConforming = cards.filter(function(c) { return !c.isConforme && !c.isConcluido; });
     if (nonConforming.length > 0) {
       var expanded = nonConforming.length > 3;
       html += '<div class="collapsible">';
