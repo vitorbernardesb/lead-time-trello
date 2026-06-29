@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <title>Dashboard de Produção — Midiática</title>
+  <title>Power Up Midiática</title>
   <style>
     @font-face {
       font-family: 'BW Modelica';
@@ -358,7 +358,7 @@
 </head>
 <body>
 <div class="header">
-  <h1>Dashboard de produção — <span class="brand-name">Midiática</span></h1>
+  <h1><strong>Power Up Midiática</strong></h1>
   <div class="tabs">
     <button class="tab active" data-tab="realtime">Tempo real</button>
     <button class="tab" data-tab="funnel">Detalhamento</button>
@@ -940,8 +940,9 @@
 
     var kpi4 = cards.filter(function(c){ return c.inConcluidoThisMonth; }).length;
 
-    var conformes = cards.filter(function(c){ return c.isConforme; }).length;
-    var kpi5 = cards.length ? Math.round(conformes / cards.length * 1000) / 10 : 0;
+    var cardsParaConformidade = cards.filter(function(c){ return !c.isConcluido; });
+    var conformes = cardsParaConformidade.filter(function(c){ return c.isConforme; }).length;
+    var kpi5 = cardsParaConformidade.length ? Math.round(conformes / cardsParaConformidade.length * 1000) / 10 : 0;
 
     var score_prazo = Math.max(0, Math.min(100, ((config.meta_prazo - kpi1) / config.meta_prazo) * 100));
     var score_rework = Math.max(0, Math.min(100, ((config.meta_rework - kpi2) / config.meta_rework) * 100));
