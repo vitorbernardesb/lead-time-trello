@@ -58,6 +58,14 @@
     'Revisão Externa 🧐', 'Revisões em Atraso ⏰'
   ];
 
+  var LISTAS_FORA_DO_FLUXO = [
+    'Tarefas recorrentes - Vic 🫡',
+    'Tarefas recorrentes - Carol💻',
+    'Social Media 📲',
+    '🤑💰Tráfego Pago💰🤑',
+    'Informações 📣'
+  ];
+
   var FLOW_LISTS = [
     'Planejamento',
     'Captação de Imagem 🎥',
@@ -907,6 +915,7 @@
 
     var currentList = lists.find(function(l) { return l.id === card.idList; });
     var currentListName = currentList ? currentList.name.trim() : '';
+    if (LISTAS_FORA_DO_FLUXO.indexOf(currentListName) !== -1) return;
     var concluidoId = getListId(lists, 'Concluído 🏆');
     var planejamentoId = getListId(lists, 'Planejamento');
 
@@ -1131,7 +1140,8 @@
             'Revisões em Atraso ⏰',
             'Concluído 🏆'
           ];
-          var pularConformidade = LISTAS_SEM_CONFORMIDADE.indexOf(currentListName) !== -1;
+          var pularConformidade = LISTAS_SEM_CONFORMIDADE.indexOf(currentListName) !== -1 ||
+            LISTAS_FORA_DO_FLUXO.indexOf(currentListName) !== -1;
 
           if (!pularConformidade) {
             var nasListasDeReversao = LISTAS_REVERTER_CONFORMIDADE.indexOf(currentListName) !== -1;
