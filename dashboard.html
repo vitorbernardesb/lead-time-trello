@@ -309,6 +309,14 @@
       font-size: 12px; font-weight: 700; color: #FFCF06;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
     }
+    .etapa-popup-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .etapa-popup-dl {
+      background: none; border: none; color: #ABABB0; font-size: 14px;
+      cursor: pointer; line-height: 1; padding: 0;
+      transition: color 0.12s;
+    }
+    .etapa-popup-dl:hover { color: #FFCF06; }
+    .etapa-popup-dl:disabled { opacity: 0.5; cursor: default; }
     .etapa-popup-close {
       background: none; border: none; color: #ABABB0; font-size: 18px;
       cursor: pointer; line-height: 1; padding: 0; flex-shrink: 0;
@@ -416,7 +424,10 @@
   <div id="etapa-popup" class="etapa-popup" style="display:none;">
     <div class="etapa-popup-header">
       <span class="etapa-popup-title" id="etapa-popup-title"></span>
-      <button class="etapa-popup-close" id="etapa-popup-close">&times;</button>
+      <div class="etapa-popup-actions">
+        <button class="etapa-popup-dl" id="etapa-popup-dl" title="Exportar planilha dos cards">⬇</button>
+        <button class="etapa-popup-close" id="etapa-popup-close">&times;</button>
+      </div>
     </div>
     <div class="etapa-popup-body" id="etapa-popup-body"></div>
   </div>
@@ -541,6 +552,35 @@
       if (d !== 0 && d !== 6) count++;
     }
     return count;
+  }
+
+  // ─── TEMPO: DIAS/HORAS CORRIDAS E HORAS ÚTEIS ───
+  // Jornada de trabalho considerada para "horas úteis" (seg–sex, fuso local).
+  var WORK_START_HOUR = 9;   // 09:00
+  var WORK_END_HOUR   = 18;  // 18:00 → 9h úteis/dia
+  function round1(x) { return Math.round(x * 10) / 10; }
+  function elapsedCalendarDays(from, to) { return round1((new Date(to) - new Date(from)) / 86400000); }
+  function elapsedCalendarHours(from, to) { return round1((new Date(to) - new Date(from)) / 3600000); }
+
+  // Horas úteis entre duas datas: soma a sobreposição com a janela de trabalho de
+  // cada dia útil. Itera dia a dia (O(nº de dias)) — barato mesmo para etapas longas.
+  function countBusinessHours(from, to) {
+    from = new Date(from); to = new Date(to);
+    if (to <= from) return 0;
+    var total = 0;
+    var cursor = new Date(from); cursor.setHours(0,0,0,0);
+    while (cursor <= to) {
+      var dow = cursor.getDay();
+      if (dow !== 0 && dow !== 6) { // seg–sex
+        var dayStart = new Date(cursor); dayStart.setHours(WORK_START_HOUR,0,0,0);
+        var dayEnd   = new Date(cursor); dayEnd.setHours(WORK_END_HOUR,0,0,0);
+        var s = from > dayStart ? from : dayStart;
+        var e = to   < dayEnd   ? to   : dayEnd;
+        if (e > s) total += (e - s) / 3600000;
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return round1(total);
   }
 
   function buildTimeline(actions) {
@@ -682,6 +722,208 @@
     setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
   }
 
+  // ─── CARREGAMENTO PREGUIÇOSO DE LIBS (on-demand) ─
+  // Carregadas só ao clicar em exportar → zero impacto na renderização em tempo real.
+  function loadScriptOnce(src, globalName, cb) {
+    if (window[globalName]) return cb();
+    var s = document.createElement('script');
+    s.src = src;
+    s.onload = function() { cb(); };
+    s.onerror = function() { cb(new Error('Falha ao carregar ' + src)); };
+    document.head.appendChild(s);
+  }
+  function loadXLSXLib(cb) {
+    loadScriptOnce('https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js', 'XLSX', cb);
+  }
+  function loadHtml2Canvas(cb) {
+    loadScriptOnce('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js', 'html2canvas', cb);
+  }
+
+  // ─── EXPORTAÇÃO: CARDS DE UMA ETAPA (XLSX, fallback CSV) ─
+  // Reutiliza as funções de tempo (countBusinessDays/Hours, elapsed*) para que a
+  // planilha seja idêntica ao que o dashboard calcula — sem lógica duplicada.
+  function buildEtapaRows(nomeEtapa, cardsNaEtapa) {
+    var now = new Date();
+    var header = ['Título','Etapa atual','Entrada na etapa','Dias corridos','Dias úteis','Horas corridas','Horas úteis','Link'];
+    var rows = cardsNaEtapa.map(function(c) {
+      var ent = c.enteredCurrentAt ? new Date(c.enteredCurrentAt) : null;
+      return {
+        nome: c.name,
+        etapa: c.currentListName,
+        entrada: ent ? fmtDateTime(ent) : '—',
+        diasCorr: ent ? elapsedCalendarDays(ent, now) : '',
+        diasUteis: ent ? countBusinessDays(ent, now) : '',
+        horasCorr: ent ? elapsedCalendarHours(ent, now) : '',
+        horasUteis: ent ? countBusinessHours(ent, now) : '',
+        link: c.url || ''
+      };
+    });
+    return { header: header, rows: rows };
+  }
+
+  function exportEtapaCards(nomeEtapa, cardsNaEtapa, btn) {
+    if (!cardsNaEtapa || !cardsNaEtapa.length) return;
+    var data = buildEtapaRows(nomeEtapa, cardsNaEtapa);
+    var safeName = nomeEtapa.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
+    var fileBase = 'cards_' + (safeName || 'etapa');
+    setBtnLoading(btn, true);
+
+    loadXLSXLib(function(err) {
+      try {
+        if (err || typeof XLSX === 'undefined') { exportEtapaCSV(data, fileBase); return; }
+        var aoa = [data.header];
+        data.rows.forEach(function(r) {
+          aoa.push([r.nome, r.etapa, r.entrada, r.diasCorr, r.diasUteis, r.horasCorr, r.horasUteis, r.link]);
+        });
+        var ws = XLSX.utils.aoa_to_sheet(aoa);
+        // largura das colunas
+        ws['!cols'] = [{wch:38},{wch:20},{wch:18},{wch:12},{wch:11},{wch:13},{wch:11},{wch:32}];
+        // estilo do cabeçalho (consistente com a identidade: fundo escuro, texto claro)
+        var headStyle = {font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'0A0A0A'}},alignment:{horizontal:'center'}};
+        for (var c = 0; c < data.header.length; c++) {
+          var ref = XLSX.utils.encode_cell({r:0,c:c});
+          if (ws[ref]) ws[ref].s = headStyle;
+        }
+        // coluna Link clicável (hyperlink nativo do XLSX → funciona no Excel e Sheets)
+        for (var i = 0; i < data.rows.length; i++) {
+          var url = data.rows[i].link;
+          if (!url) continue;
+          var lref = XLSX.utils.encode_cell({r:i+1,c:7});
+          ws[lref] = { t:'s', v:'Abrir card', l:{ Target:url, Tooltip:'Abrir no Trello' }, s:{font:{color:{rgb:'0B5FFF'},underline:true}} };
+        }
+        var wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Cards');
+        XLSX.writeFile(wb, fileBase + '.xlsx');
+      } catch (e) {
+        exportEtapaCSV(data, fileBase); // qualquer erro → CSV garante a entrega
+      } finally {
+        setBtnLoading(btn, false);
+      }
+    });
+  }
+
+  function exportEtapaCSV(data, fileBase) {
+    var rows = [data.header];
+    data.rows.forEach(function(r) {
+      // =HYPERLINK mantém o link clicável também no CSV (Excel/Google Sheets)
+      var link = r.link ? '=HYPERLINK("' + r.link + '";"Abrir card")' : '';
+      rows.push([r.nome, r.etapa, r.entrada, r.diasCorr, r.diasUteis, r.horasCorr, r.horasUteis, link]);
+    });
+    downloadCSV(fileBase + '.csv', rows);
+  }
+
+  function fmtDateTime(d) {
+    d = new Date(d);
+    function p(n){ return String(n).padStart(2,'0'); }
+    return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()+' '+p(d.getHours())+':'+p(d.getMinutes());
+  }
+
+  // ─── FEEDBACK DE LOADING NOS BOTÕES (reutilizável) ─
+  function setBtnLoading(btn, on) {
+    if (!btn) return;
+    if (on) {
+      btn.disabled = true;
+      btn.dataset.label = btn.textContent;
+      btn.textContent = '⏳ Exportando…';
+    } else {
+      btn.disabled = false;
+      if (btn.dataset.label) btn.textContent = btn.dataset.label;
+    }
+  }
+
+  // Definição única dos KPIs exibidos — usada pelo dashboard E pela imagem exportada
+  // (evita duplicar nomes/metas/tipos em dois lugares).
+  function buildKpiCards(kpis, config) {
+    return [
+      { name: 'Cards vencidos', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'Limite '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'B' },
+      { name: 'Retrabalhos', display: kpis.kpi2, metaLabel: 'Limite '+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B' },
+      { name: 'Tempo médio de entrega', display: kpis.kpi6+' d.u.', metaLabel: 'Meta '+config.meta_leadtime_real+' d.u.', valor: kpis.kpi6, meta: config.meta_leadtime_real, tipo: 'B' },
+      { name: 'Tempo médio na etapa', display: kpis.kpi3+' d.u.', metaLabel: 'Limite '+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B' },
+      { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'Meta '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A' },
+      { name: 'Conformidade', display: kpis.kpi5+'%', metaLabel: 'Meta '+config.meta_conformidade+'%', valor: kpis.kpi5, meta: config.meta_conformidade, tipo: 'A' }
+    ];
+  }
+
+  // ─── EXPORTAÇÃO: SNAPSHOT VISUAL DO DASHBOARD ────
+  // Monta um layout LIMPO e dedicado (fora de tela) a partir dos dados já carregados
+  // (cachedData) e o captura — em vez de fotografar o DOM vivo (com botões, scroll,
+  // tabelas). Resultado: imagem focada nos indicadores, sem poluição, e sem depender
+  // de qual aba está ativa.
+  function exportDashboardImage(data, btn) {
+    if (!data) { alert('Acesse a aba "Tempo real" primeiro para carregar os dados.'); return; }
+    setBtnLoading(btn, true);
+    loadHtml2Canvas(function(err) {
+      if (err || typeof html2canvas === 'undefined') {
+        setBtnLoading(btn, false);
+        alert('Não foi possível carregar o gerador de imagem.');
+        return;
+      }
+      var kpis = calcKPIs(data.cards, data.config);
+      var node = buildExportNode(kpis, data.config, data.cards.length);
+      document.body.appendChild(node);
+      html2canvas(node, { scale: 2, backgroundColor: '#F9F9F9', logging: false, useCORS: true })
+        .then(function(canvas) { downloadCanvas(canvas, 'dashboard_midiatica'); })
+        .catch(function() { alert('Falha ao gerar a imagem do dashboard.'); })
+        .then(function() {
+          if (node.parentNode) node.parentNode.removeChild(node); // limpa o DOM temporário
+          setBtnLoading(btn, false);
+        });
+    });
+  }
+
+  function buildExportNode(kpis, config, totalCards) {
+    var wrap = document.createElement('div');
+    // fixo e fora da viewport: html2canvas renderiza pelo box do elemento, sem causar scroll
+    wrap.style.cssText = 'position:fixed;left:-99999px;top:0;width:1000px;background:#F9F9F9;' +
+      "font-family:'BW Modelica','Inter','Helvetica Neue',sans-serif;color:#0A0A0A;padding:32px;box-sizing:border-box;";
+    var hsCor = statusColor(kpis.healthScore);
+    var agora = fmtDateTime(new Date());
+    var h = '';
+    h += '<div style="display:flex;align-items:center;justify-content:space-between;background:#0A0A0A;border-radius:14px;padding:22px 26px;margin-bottom:20px;">';
+    h += '<div><div style="font-size:22px;font-weight:700;color:#FFCF06;">Power Up Midiática</div>' +
+         '<div style="font-size:13px;color:#ABABB0;margin-top:2px;">Dashboard de produção</div></div>';
+    h += '<div style="font-size:13px;color:#ABABB0;">'+agora+'</div></div>';
+    // Health hero
+    h += '<div style="background:#FFFFFF;border:1px solid rgba(171,171,176,0.3);border-radius:14px;padding:24px 26px;margin-bottom:20px;">';
+    h += '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;">' +
+         '<div style="font-size:12px;font-weight:700;letter-spacing:0.08em;color:#ABABB0;text-transform:uppercase;">Health Score</div>' +
+         '<div style="font-size:13px;font-weight:700;color:'+hsCor+';">'+scoreStatus(kpis.healthScore)+'</div></div>';
+    h += '<div style="display:flex;align-items:center;gap:18px;">' +
+         '<div style="font-size:54px;font-weight:700;line-height:1;color:'+hsCor+';min-width:92px;">'+kpis.healthScore+'</div>' +
+         '<div style="flex:1;height:14px;background:rgba(171,171,176,0.18);border-radius:7px;overflow:hidden;">' +
+         '<div style="height:100%;width:'+kpis.healthScore+'%;background:'+hsCor+';border-radius:7px;"></div></div></div></div>';
+    // Grid de KPIs 3x2
+    h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px;">';
+    buildKpiCards(kpis, config).forEach(function(k) {
+      var pct = kpiBarPct(k.valor, k.meta);
+      var cor = statusColor(kpiHealth(k.valor, k.meta, k.tipo));
+      h += '<div style="background:#FFFFFF;border:1px solid rgba(171,171,176,0.3);border-radius:12px;padding:16px 18px;">' +
+        '<div style="font-size:10px;font-weight:600;letter-spacing:0.05em;color:#ABABB0;text-transform:uppercase;margin-bottom:8px;min-height:26px;">'+k.name+'</div>' +
+        '<div style="font-size:24px;font-weight:700;color:#0A0A0A;">'+k.display+'</div>' +
+        '<div style="font-size:11px;color:#ABABB0;margin-top:4px;">'+k.metaLabel+'</div>' +
+        '<div style="height:7px;background:rgba(171,171,176,0.18);border-radius:4px;margin-top:14px;overflow:hidden;">' +
+        '<div style="height:100%;width:'+pct+'%;background:'+cor+';border-radius:4px;"></div></div></div>';
+    });
+    h += '</div>';
+    h += '<div style="font-size:12px;color:#ABABB0;text-align:right;">Gerado em '+agora+' · '+totalCards+' cards analisados</div>';
+    wrap.innerHTML = h;
+    return wrap;
+  }
+
+  function downloadCanvas(canvas, base) {
+    // WEBP: menor que PNG e nítido como ele; se o browser não codificar WEBP, cai p/ PNG.
+    canvas.toBlob(function(blob) {
+      if (blob && blob.type === 'image/webp') { triggerDownload(blob, base + '.webp'); return; }
+      canvas.toBlob(function(png) { if (png) triggerDownload(png, base + '.png'); }, 'image/png');
+    }, 'image/webp', 0.92);
+  }
+  function triggerDownload(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+  }
+
   function validarTitulo(nome) {
     return typeof nome === 'string' && nome.trim().length > 0;
   }
@@ -807,7 +1049,7 @@
     return fieldCachePromise.then(function(cachedField) {
       var phase1 = [
         fetchWithRetry('/boards/'+boardId+'/lists?fields=name', token, 2),
-        fetchWithRetry('/boards/'+boardId+'/cards?filter=open&fields=name,desc,due,dueComplete,dateLastActivity,labels,idList&customFieldItems=true', token, 2)
+        fetchWithRetry('/boards/'+boardId+'/cards?filter=open&fields=name,desc,due,dueComplete,dateLastActivity,labels,idList,shortUrl&customFieldItems=true', token, 2)
       ];
       if (!cachedField) {
         phase1.push(fetchWithRetry('/boards/'+boardId+'/customFields', token, 2));
@@ -983,6 +1225,9 @@
               hasPrioridade: hasPrio,
               labels: (card.labels || []).map(function(l) { return l.name; }),
               currentListName: currentListName,
+              // entrada na etapa atual (para tempos na etapa) e URL clicável do card
+              enteredCurrentAt: currentStage ? currentStage.enteredAt.toISOString() : null,
+              url: card.shortUrl || '',
               isConcluido: realListName === 'Concluído 🏆',
               concluidoNoMes: concluidoNoMes,
               // lead time real do fluxo (dias úteis) e quando o card foi concluído.
@@ -1195,16 +1440,8 @@
     html += '<div class="score-status" style="color:'+sc.text+';">'+scoreStatus(kpis.healthScore)+'</div>';
     html += '</div>';
 
-    // Cada KPI declara apenas o essencial: nome, valor exibido, meta de referência
-    // e o tipo (A/B) que define como o score é calculado. Sem legendas redundantes.
-    var kpiCards = [
-      { name: 'Cards vencidos', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'Limite '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'B' },
-      { name: 'Retrabalhos', display: kpis.kpi2, metaLabel: 'Limite '+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B' },
-      { name: 'Tempo médio de entrega', display: kpis.kpi6+' d.u.', metaLabel: 'Meta '+config.meta_leadtime_real+' d.u.', valor: kpis.kpi6, meta: config.meta_leadtime_real, tipo: 'B' },
-      { name: 'Tempo médio na etapa', display: kpis.kpi3+' d.u.', metaLabel: 'Limite '+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B' },
-      { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'Meta '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A' },
-      { name: 'Conformidade', display: kpis.kpi5+'%', metaLabel: 'Meta '+config.meta_conformidade+'%', valor: kpis.kpi5, meta: config.meta_conformidade, tipo: 'A' }
-    ];
+    // Definição única dos KPIs (compartilhada com a imagem exportada).
+    var kpiCards = buildKpiCards(kpis, config);
 
     html += '<div class="kpi-grid">';
     kpiCards.forEach(function(k, i) {
@@ -1481,6 +1718,11 @@
 
       title.textContent = nomeEtapa + ' (' + cardsNaEtapa.length + ')';
       body.innerHTML = '';
+
+      // botão de exportar planilha desta etapa (onclick reatribuído a cada abertura)
+      var dlBtn = document.getElementById('etapa-popup-dl');
+      dlBtn.disabled = !cardsNaEtapa.length;
+      dlBtn.onclick = function() { exportEtapaCards(nomeEtapa, cardsNaEtapa, dlBtn); };
 
       if (!cardsNaEtapa.length) {
         body.innerHTML = '<p class="etapa-popup-empty">Nenhum card nesta etapa.</p>';
@@ -1773,8 +2015,9 @@
         html += '</tbody></table>';
       }
 
-      html += '<div style="margin-top:16px;">';
+      html += '<div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">';
       html += '<button class="btn btn-secondary" id="btn-force-snap">Salvar snapshot agora</button>';
+      html += '<button class="btn btn-secondary" id="btn-dl-image">⬇ Baixar imagem</button>';
       html += '</div>';
 
       var el = document.getElementById('hist-content');
@@ -1789,6 +2032,11 @@
         }
         var kpis = calcKPIs(cachedData.cards, cachedData.config);
         forceSnapshot(kpis, cachedData.config).then(function() { loadHistory(); });
+      });
+
+      // Snapshot VISUAL (imagem) do dashboard — usa os dados já carregados (cachedData)
+      document.getElementById('btn-dl-image').addEventListener('click', function() {
+        exportDashboardImage(cachedData, this);
       });
 
       var dlHist = document.getElementById('btn-dl-history');
