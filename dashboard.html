@@ -83,24 +83,37 @@
     .btn:disabled { background: rgba(171,171,176,0.40); color: #ABABB0; cursor: not-allowed; }
     .btn-secondary { background: transparent; color: #0A0A0A; border: 1px solid rgba(10,10,10,0.25); }
     .btn-secondary:hover { background: rgba(10,10,10,0.05); }
-    .score-circle-wrap { text-align: center; margin-bottom: 28px; }
-    .score-ring-svg { display: block; margin: 0 auto 8px; }
-    .score-ring-progress { transition: stroke-dashoffset 0.8s ease, stroke 0.8s ease; }
-    .score-status { font-size: 16px; font-weight: 600; }
-    /* grid fluido: acomoda os 6 KPIs e quebra sozinho conforme a largura */
-    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px; }
-    .kpi-card {
-      background: #FFFFFF; border-radius: 10px; padding: 16px 18px; border: 1px solid rgba(171,171,176,0.35);
-      display: flex; flex-direction: column;
+    /* ── Health Score: painel hero centralizado ── */
+    .score-circle-wrap {
+      background: linear-gradient(180deg, #FFFFFF 0%, #FAFAFA 100%);
+      border: 1px solid rgba(171,171,176,0.30);
+      border-radius: 14px;
+      padding: 26px 20px 22px;
+      margin-bottom: 24px;
+      text-align: center;
     }
-    /* min-height no nome alinha os valores entre cards com títulos de 1 ou 2 linhas */
-    .kpi-card .kpi-name { font-size: 10px; color: #ABABB0; font-weight: 600; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1.3; min-height: 26px; }
-    /* tabular-nums mantém os dígitos alinhados e legíveis */
-    .kpi-card .kpi-value { font-size: 24px; font-weight: 700; color: #0A0A0A; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .score-ring-svg { display: block; margin: 0 auto 6px; }
+    /* preenchimento do anel com easing suave; cor transiciona junto (só visual) */
+    .score-ring-progress { transition: stroke-dashoffset 0.9s cubic-bezier(0.22,1,0.36,1), stroke 0.6s ease; }
+    .score-status { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+    /* grid fluido: acomoda os 6 KPIs e quebra sozinho conforme a largura */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 14px; margin-bottom: 24px; }
+    .kpi-card {
+      background: #FFFFFF; border-radius: 12px; padding: 16px 18px; border: 1px solid rgba(171,171,176,0.30);
+      display: flex; flex-direction: column; min-height: 120px;
+      transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+    }
+    /* realce sutil ao passar o mouse (transform/box-shadow → barato p/ o compositor) */
+    .kpi-card:hover { box-shadow: 0 4px 14px rgba(10,10,10,0.07); transform: translateY(-2px); border-color: rgba(171,171,176,0.50); }
+    /* nome: rótulo discreto; min-height alinha os valores entre cards de 1 ou 2 linhas */
+    .kpi-card .kpi-name { font-size: 10px; color: #ABABB0; font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1.3; min-height: 26px; }
+    /* valor: protagonista do card; dígitos tabulares mantêm o alinhamento e a leitura */
+    .kpi-card .kpi-value { font-size: 25px; font-weight: 700; color: #0A0A0A; line-height: 1.05; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
     .kpi-card .kpi-meta { font-size: 11px; color: #ABABB0; margin-top: 4px; }
-    .kpi-bar-bg { height: 6px; background: rgba(171,171,176,0.20); border-radius: 3px; margin-top: 14px; overflow: hidden; }
+    /* margin-top:auto empurra a barra para a base → todas alinhadas, qualquer que seja o texto */
+    .kpi-bar-bg { height: 7px; background: rgba(171,171,176,0.18); border-radius: 4px; margin-top: auto; overflow: hidden; }
     /* transição suave de largura E cor, sem flicker (parent com overflow:hidden) */
-    .kpi-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease, background 0.5s ease; }
+    .kpi-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s cubic-bezier(0.22,1,0.36,1), background 0.5s ease; }
     .footer-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
     .footer-bar .info { font-size: 12px; color: #ABABB0; margin-left: auto; }
     .collapsible { margin-bottom: 20px; border-bottom: 1px solid rgba(171,171,176,0.30); padding-bottom: 20px; }
@@ -351,6 +364,13 @@
       .sla-grid { grid-template-columns: 1fr; }
       .body { padding: 16px; }
       .summary-cards { flex-direction: column; }
+    }
+    /* telas estreitas: cards menores e mais compactos, sem quebrar/sobrepor */
+    @media (max-width: 480px) {
+      .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+      .kpi-card { min-height: 104px; padding: 14px; }
+      .kpi-card .kpi-value { font-size: 22px; }
+      .score-circle-wrap { padding: 20px 14px 16px; }
     }
   </style>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
@@ -1169,8 +1189,8 @@
     html += '<circle cx="60" cy="60" r="52" stroke="rgba(171,171,176,0.25)" stroke-width="6" fill="none"/>';
     html += '<circle id="score-ring-progress" class="score-ring-progress" cx="60" cy="60" r="52" stroke="'+ringCor+'" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="'+circumference+'" stroke-dashoffset="'+circumference+'" transform="rotate(-90 60 60)"/>';
     html += '<circle cx="60" cy="60" r="46" fill="'+sc.bg+'"/>';
-    html += '<text id="score-ring-number" x="60" y="54" text-anchor="middle" dominant-baseline="middle" font-size="28" font-weight="500" font-family="BW Modelica, Inter, Helvetica Neue, sans-serif" fill="'+ringCor+'">'+kpis.healthScore+'</text>';
-    html += '<text x="60" y="72" text-anchor="middle" font-size="9" font-family="BW Modelica, Inter, Helvetica Neue, sans-serif" fill="#ABABB0">Health Score</text>';
+    html += '<text id="score-ring-number" x="60" y="55" text-anchor="middle" dominant-baseline="middle" font-size="31" font-weight="700" font-family="BW Modelica, Inter, Helvetica Neue, sans-serif" fill="'+ringCor+'">'+kpis.healthScore+'</text>';
+    html += '<text x="60" y="73" text-anchor="middle" font-size="9" letter-spacing="0.6" font-family="BW Modelica, Inter, Helvetica Neue, sans-serif" fill="#ABABB0">HEALTH SCORE</text>';
     html += '</svg>';
     html += '<div class="score-status" style="color:'+sc.text+';">'+scoreStatus(kpis.healthScore)+'</div>';
     html += '</div>';
