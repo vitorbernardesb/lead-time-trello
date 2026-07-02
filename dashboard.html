@@ -139,6 +139,40 @@
     .collapse-body tr:nth-child(even) td { background: rgba(171,171,176,0.08); }
     .collapse-body tr:hover td { background: rgba(255,207,6,0.06); }
     .collapse-body tr.warn td { background: rgba(255,207,6,0.15); }
+    /* ── Tempo até 1ª entrega por nível de esforço ── */
+    .pe-section { margin-bottom: 24px; }
+    .pe-title-row { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .pe-title-row h3 { margin: 0; font-size: 15px; font-weight: 700; }
+    .pe-hint { font-size: 12px; font-weight: 500; color: #ABABB0; }
+    .pe-epoch { font-size: 11px; color: #ABABB0; }
+    .pe-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .pe-card { background: #FFFFFF; border: 1px solid rgba(171,171,176,0.30); border-radius: 12px; overflow: hidden; }
+    .pe-toggle {
+      width: 100%; text-align: left; background: transparent; border: none; cursor: pointer;
+      padding: 16px 18px; font-family: inherit; color: #0A0A0A; display: block;
+      transition: background 0.14s;
+    }
+    .pe-toggle:hover:not(:disabled) { background: rgba(255,207,6,0.06); }
+    .pe-toggle:disabled { cursor: default; }
+    .pe-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .pe-nivel { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: #0A0A0A; }
+    .pe-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+    .pe-arrow { color: #ABABB0; font-size: 11px; }
+    .pe-main { font-size: 22px; font-weight: 700; color: #0A0A0A; font-variant-numeric: tabular-nums; }
+    .pe-main.pe-empty { font-size: 15px; color: #ABABB0; font-weight: 500; }
+    .pe-sub { font-size: 11px; color: #ABABB0; margin-top: 4px; }
+    .pe-body { display: none; border-top: 1px solid rgba(171,171,176,0.25); padding: 4px 0 0; }
+    .pe-body.open { display: block; }
+    .pe-table { width: 100%; border-collapse: collapse; }
+    .pe-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #ABABB0; padding: 8px 18px 4px; font-weight: 600; }
+    .pe-table td { padding: 6px 18px; font-size: 12px; border-bottom: 1px solid rgba(171,171,176,0.15); }
+    .pe-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+    .pe-stats { padding: 10px 18px 14px; }
+    .pe-stats > div { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 3px 0; }
+    .pe-stats span { color: #ABABB0; }
+    .pe-stats b { color: #0A0A0A; font-variant-numeric: tabular-nums; text-align: right; }
+    .pe-foot { font-size: 11px; color: #ABABB0; margin-top: 10px; }
+    @media (max-width: 700px) { .pe-grid { grid-template-columns: 1fr; } }
     .missing-tag {
       display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
       margin: 1px 3px; background: rgba(10,10,10,0.08); color: #0A0A0A; border: 1px solid rgba(10,10,10,0.25);
@@ -466,6 +500,16 @@
     'Revisões em Atraso ⏰'
   ];
 
+  // ─── TEMPO ATÉ PRIMEIRA ENTREGA (por Nível de Esforço) ─
+  var REVISAO_INTERNA = 'Revisão Interna 🔎';
+  var EM_ANDAMENTO    = 'Em andamento 💪';
+  // Etapas cujo tempo é detalhado no breakdown (até a 1ª saída de Revisão Interna).
+  var ETAPAS_PRE_ENTREGA = ['Planejamento', 'A fazer 👇', 'Em andamento 💪', 'Revisão Interna 🔎'];
+  // Níveis de esforço esperados no custom field "Nível de Esforço".
+  var NIVEIS_ESFORCO = ['BAIXO', 'MÉDIO', 'ALTO'];
+  // "Daqui pra frente": só entram cards CRIADOS a partir desta data (ignora histórico).
+  var PRIMEIRA_ENTREGA_EPOCH = new Date('2026-06-30T00:00:00');
+
   var DEFAULT_SLA = {};
   var slaDefaults = [2, 5, 1, 3, 5, 2, 2, 2, 3, 2, 999];
   FLOW_LISTS.forEach(function(n, i) { DEFAULT_SLA[n] = slaDefaults[i]; });
@@ -696,6 +740,72 @@
     var concludedAt = getConcludedAt(tl);
     if (!startProd || !concludedAt || concludedAt <= startProd) return null;
     return { leadTime: countBusinessDays(startProd, concludedAt), concludedAt: concludedAt };
+  }
+
+  // Normaliza o texto do "Nível de Esforço" para um dos buckets (BAIXO/MÉDIO/ALTO).
+  // Tolerante a acentos e caixa: "Médio", "medio", "MEDIO" → "MÉDIO".
+  function normalizeNivel(text) {
+    if (!text) return null;
+    var t = String(text).trim().toUpperCase()
+      .replace(/[ÁÀÂÃÄ]/g,'A').replace(/[ÉÈÊË]/g,'E').replace(/[ÍÌÎÏ]/g,'I')
+      .replace(/[ÓÒÔÕÖ]/g,'O').replace(/[ÚÙÛÜ]/g,'U');
+    if (t.indexOf('BAIX') === 0) return 'BAIXO';
+    if (t.indexOf('MED')  === 0) return 'MÉDIO';
+    if (t.indexOf('ALT')  === 0) return 'ALTO';
+    return null;
+  }
+
+  // Desvio padrão populacional (volatilidade) de um array de números.
+  function stdDev(arr) {
+    if (!arr || arr.length < 2) return 0;
+    var m = arr.reduce(function(a,b){return a+b;},0) / arr.length;
+    var v = arr.reduce(function(a,b){return a+(b-m)*(b-m);},0) / arr.length;
+    return round1(Math.sqrt(v));
+  }
+  function mean(arr) {
+    if (!arr || !arr.length) return 0;
+    return round1(arr.reduce(function(a,b){return a+b;},0) / arr.length);
+  }
+
+  // ─── TEMPO ATÉ PRIMEIRA ENTREGA ─────────────────
+  // Da CRIAÇÃO do card até a PRIMEIRA saída de "Revisão Interna".
+  //   início = tl[0].enteredAt (createdAt, já clampado pela buildTimeline)
+  //   fim    = leftAt do PRIMEIRO estágio "Revisão Interna 🔎" que já foi deixado
+  // Retorna null se o card ainda não teve a 1ª entrega (nunca saiu de Revisão Interna).
+  // Também conta reentradas em "Em andamento" no percurso (1 = original, 2+ = retrabalho),
+  // pois não havia rastreamento por reentrada em Em andamento no código (só o campo
+  // "Retrabalhos", que é incrementado ao entrar em "Alterações" — conceito diferente).
+  function computePrimeiraEntrega(tl) {
+    if (!Array.isArray(tl) || !tl.length) return null;
+    var inicio = tl[0].enteredAt;
+    var fim = null, idxFim = -1;
+    for (var i = 0; i < tl.length; i++) {
+      if ((tl[i].name ? tl[i].name.trim() : '') === REVISAO_INTERNA && tl[i].leftAt) {
+        fim = tl[i].leftAt; idxFim = i; break; // primeira SAÍDA de Revisão Interna
+      }
+    }
+    if (!fim || fim <= inicio) return null;
+
+    // breakdown (horas úteis) por etapa e contagem de entradas em Em andamento,
+    // apenas no percurso até a 1ª entrega (estágios 0..idxFim).
+    var breakdown = {};
+    ETAPAS_PRE_ENTREGA.forEach(function(n){ breakdown[n] = 0; });
+    var entradasEmAndamento = 0;
+    for (var j = 0; j <= idxFim; j++) {
+      var nome = tl[j].name ? tl[j].name.trim() : '';
+      var fimEtapa = tl[j].leftAt || fim; // a última (Revisão Interna) fecha em `fim`
+      if (breakdown.hasOwnProperty(nome)) breakdown[nome] += countBusinessHours(tl[j].enteredAt, fimEtapa);
+      if (nome === EM_ANDAMENTO) entradasEmAndamento++;
+    }
+    ETAPAS_PRE_ENTREGA.forEach(function(n){ breakdown[n] = round1(breakdown[n]); });
+
+    return {
+      inicio: inicio,
+      horas: countBusinessHours(inicio, fim),
+      dias: countBusinessDays(inicio, fim),
+      breakdown: breakdown,
+      entradasEmAndamento: entradasEmAndamento
+    };
   }
 
   function apiUrl(path, token) {
@@ -1042,7 +1152,9 @@
 
   function fetchData(token, boardId) {
     var fieldCachePromise = t.get('board', 'private', 'retrabalhoFieldCache').then(function(fc) {
-      if (fc && fc.id && fc.savedAt && (Date.now() - fc.savedAt < FIELD_CACHE_TTL)) return fc;
+      // exige nivelEsforcoId no cache: caches antigos (sem o campo) são reprocessados
+      if (fc && fc.id && fc.savedAt && fc.nivelEsforcoId !== undefined &&
+          (Date.now() - fc.savedAt < FIELD_CACHE_TTL)) return fc;
       return null;
     }).catch(function() { return null; });
 
@@ -1070,10 +1182,14 @@
         var retrabalhoFieldId = null;
         var retrabalhoOptions = {};
         var prioridadeFieldId = null;
+        var nivelEsforcoFieldId = null;         // custom field "Nível de Esforço"
+        var nivelEsforcoOptions = {};           // optionId → texto (ALTO/MÉDIO/BAIXO)
         if (cachedField) {
           retrabalhoFieldId = cachedField.id;
           retrabalhoOptions = cachedField.options || {};
           prioridadeFieldId = cachedField.prioridadeId || null;
+          nivelEsforcoFieldId = cachedField.nivelEsforcoId || null;
+          nivelEsforcoOptions = cachedField.nivelEsforcoOptions || {};
         } else if (Array.isArray(customFields)) {
           for (var fi=0; fi<customFields.length; fi++) {
             if (customFields[fi].name === 'Retrabalhos') {
@@ -1087,10 +1203,20 @@
             if (customFields[fi].name === 'Prioridade') {
               prioridadeFieldId = customFields[fi].id;
             }
+            if (customFields[fi].name === 'Nível de Esforço') {
+              nivelEsforcoFieldId = customFields[fi].id;
+              if (Array.isArray(customFields[fi].options)) {
+                customFields[fi].options.forEach(function(o) {
+                  nivelEsforcoOptions[o.id] = o.value && o.value.text ? o.value.text : '';
+                });
+              }
+            }
           }
           try {
             t.set('board', 'private', 'retrabalhoFieldCache', {
-              id: retrabalhoFieldId, options: retrabalhoOptions, prioridadeId: prioridadeFieldId, savedAt: Date.now()
+              id: retrabalhoFieldId, options: retrabalhoOptions, prioridadeId: prioridadeFieldId,
+              nivelEsforcoId: nivelEsforcoFieldId, nivelEsforcoOptions: nivelEsforcoOptions,
+              savedAt: Date.now()
             });
           } catch(e) {}
         }
@@ -1173,6 +1299,18 @@
             // Conclusão (timeline) compartilhada por vazão E lead time — calculada uma vez.
             var concludedAt = getConcludedAt(tl);
             var ltReal = computeLeadTime(tl);
+            // Tempo até 1ª entrega (criação → 1ª saída de Revisão Interna) e nível de esforço.
+            var pe = computePrimeiraEntrega(tl);
+            var createdAt = tl.length ? tl[0].enteredAt : null;
+            var nivelEsforco = null;
+            if (nivelEsforcoFieldId) {
+              for (var ni=0; ni<cfItems.length; ni++) {
+                if (cfItems[ni].idCustomField === nivelEsforcoFieldId && cfItems[ni].idValue) {
+                  nivelEsforco = normalizeNivel(nivelEsforcoOptions[cfItems[ni].idValue]);
+                  break;
+                }
+              }
+            }
             var daysInCurrent = currentStage ? countBusinessDays(currentStage.enteredAt, now) : 0;
             var totalBD = 0;
             for (var si = 0; si < tl.length; si++) {
@@ -1234,6 +1372,13 @@
               // concludedAt vale para QUALQUER card concluído (independe de lead time).
               leadTimeReal: ltReal ? ltReal.leadTime : null,
               concludedAt: concludedAt ? concludedAt.toISOString() : null,
+              // Tempo até 1ª entrega por nível de esforço (null se ainda não entregou).
+              nivelEsforco: nivelEsforco,
+              createdAt: createdAt ? createdAt.toISOString() : null,
+              primeiraEntrega: pe ? {
+                horas: pe.horas, dias: pe.dias,
+                breakdown: pe.breakdown, entradasEmAndamento: pe.entradasEmAndamento
+              } : null,
               missing: missing,
               isConforme: tituloValido && hasLabels && hasDue && hasDesc && hasPrio
             });
@@ -1315,6 +1460,51 @@
       healthScore: healthScore,
       totalCards: cards.length
     };
+  }
+
+  // ─── AGREGAÇÃO: TEMPO ATÉ 1ª ENTREGA POR NÍVEL ──
+  // Agrupa por Nível de Esforço apenas cards CRIADOS a partir do epoch (daqui pra
+  // frente) e que já tiveram 1ª entrega. Calcula média (h/d úteis), desvio padrão,
+  // min/máx e o breakdown médio por etapa.
+  function calcPrimeiraEntrega(cards) {
+    var grupos = {};
+    NIVEIS_ESFORCO.forEach(function(n){ grupos[n] = []; });
+    var semNivel = 0, foraEpoch = 0;
+
+    cards.forEach(function(c) {
+      if (!c.primeiraEntrega) return;                               // ainda não entregou
+      if (!c.createdAt || new Date(c.createdAt) < PRIMEIRA_ENTREGA_EPOCH) { foraEpoch++; return; }
+      if (!c.nivelEsforco || !grupos[c.nivelEsforco]) { semNivel++; return; }
+      grupos[c.nivelEsforco].push(c);
+    });
+
+    var out = { niveis: {}, semNivel: semNivel, foraEpoch: foraEpoch };
+    NIVEIS_ESFORCO.forEach(function(nivel) {
+      var lista = grupos[nivel];
+      var horas = lista.map(function(c){ return c.primeiraEntrega.horas; });
+      var dias  = lista.map(function(c){ return c.primeiraEntrega.dias; });
+      var entradas = lista.map(function(c){ return c.primeiraEntrega.entradasEmAndamento; });
+
+      // breakdown médio por etapa
+      var breakdown = {};
+      ETAPAS_PRE_ENTREGA.forEach(function(etapa) {
+        breakdown[etapa] = mean(lista.map(function(c){ return (c.primeiraEntrega.breakdown[etapa] || 0); }));
+      });
+
+      out.niveis[nivel] = {
+        n: lista.length,
+        avgHoras: mean(horas), avgDias: mean(dias),
+        stdHoras: stdDev(horas), stdDias: stdDev(dias),
+        minHoras: horas.length ? Math.min.apply(null, horas) : 0,
+        maxHoras: horas.length ? Math.max.apply(null, horas) : 0,
+        minDias:  dias.length ? Math.min.apply(null, dias) : 0,
+        maxDias:  dias.length ? Math.max.apply(null, dias) : 0,
+        avgEntradas: mean(entradas),
+        retrabalhoCount: entradas.filter(function(e){ return e > 1; }).length, // reentrou em Em andamento
+        breakdown: breakdown
+      };
+    });
+    return out;
   }
 
   // ─── SLA ALERTS ─────────────────────────────────
@@ -1423,6 +1613,70 @@
       : lerpColor(COR_ATENCAO, COR_SAUDAVEL, (score - 50) / 50);
   }
 
+  // Cores-rótulo por nível (apenas identificação visual, não é semáforo de saúde).
+  var COR_NIVEL = { 'BAIXO': '#2E9E5B', 'MÉDIO': '#F2B705', 'ALTO': '#E5484D' };
+
+  function fmtHoras(h) { return String(h).replace('.', ',') + 'h'; }
+  function fmtDias(d)  { return String(d).replace('.', ',') + ' d.u.'; }
+
+  // Monta os 3 cards expandíveis (BAIXO/MÉDIO/ALTO). Usa classe .pe-toggle própria
+  // (não .collapse-toggle) para não colidir com o handler genérico que reescreve textContent.
+  function renderPrimeiraEntregaHTML(cards) {
+    var pe = calcPrimeiraEntrega(cards);
+    var h = '';
+    h += '<div class="pe-section">';
+    h += '<div class="pe-title-row"><h3>Tempo até primeira entrega <span class="pe-hint">por nível de esforço</span></h3>';
+    h += '<span class="pe-epoch">contando cards criados a partir de '+fmtDateBR(PRIMEIRA_ENTREGA_EPOCH)+'</span></div>';
+    h += '<div class="pe-grid">';
+
+    NIVEIS_ESFORCO.forEach(function(nivel) {
+      var g = pe.niveis[nivel];
+      var cor = COR_NIVEL[nivel] || '#ABABB0';
+      var temDados = g.n > 0;
+      h += '<div class="pe-card">';
+      h += '<button class="pe-toggle" data-pe="'+nivel+'"'+(temDados?'':' disabled')+'>';
+      h += '<div class="pe-head"><span class="pe-nivel"><span class="pe-dot" style="background:'+cor+'"></span>'+nivel+'</span>';
+      h += '<span class="pe-arrow">'+(temDados?'▼':'')+'</span></div>';
+      if (temDados) {
+        h += '<div class="pe-main"><span class="pe-value">'+fmtHoras(g.avgHoras)+'</span> úteis · '+fmtDias(g.avgDias)+'</div>';
+        h += '<div class="pe-sub">Tempo médio até 1ª entrega · '+g.n+' card'+(g.n>1?'s':'')+'</div>';
+      } else {
+        h += '<div class="pe-main pe-empty">Sem dados ainda</div>';
+        h += '<div class="pe-sub">Nenhum card entregue neste nível</div>';
+      }
+      h += '</button>';
+
+      // corpo expandível: breakdown por etapa + volatilidade + min/máx + retrabalho
+      h += '<div class="pe-body" id="pe-body-'+nivel+'">';
+      if (temDados) {
+        h += '<table class="pe-table"><thead><tr><th>Etapa</th><th>h úteis médias</th></tr></thead><tbody>';
+        ETAPAS_PRE_ENTREGA.forEach(function(etapa) {
+          h += '<tr><td>'+escHtml(etapa)+'</td><td>'+fmtHoras(g.breakdown[etapa])+'</td></tr>';
+        });
+        h += '</tbody></table>';
+        h += '<div class="pe-stats">';
+        h += '<div><span>Desvio padrão</span><b>'+fmtHoras(g.stdHoras)+' · '+fmtDias(g.stdDias)+'</b></div>';
+        h += '<div><span>Mín – Máx</span><b>'+fmtHoras(g.minHoras)+' – '+fmtHoras(g.maxHoras)+'</b></div>';
+        h += '<div><span>Reentradas em "Em andamento" (retrabalho)</span><b>'+g.retrabalhoCount+' de '+g.n+'</b></div>';
+        h += '</div>';
+      }
+      h += '</div></div>';
+    });
+
+    h += '</div>';
+    if (pe.semNivel > 0) {
+      h += '<div class="pe-foot">'+pe.semNivel+' card(s) entregues sem "Nível de Esforço" definido não estão nos grupos acima.</div>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  function fmtDateBR(d) {
+    d = new Date(d);
+    function p(n){ return String(n).padStart(2,'0'); }
+    return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear();
+  }
+
   function renderRealtime(kpis, config, cards, cachedAt) {
     var sc = scoreColor(kpis.healthScore);
     var circumference = 2 * Math.PI * 52;
@@ -1458,6 +1712,9 @@
       html += '</div>';
     });
     html += '</div>';
+
+    // Tempo até 1ª entrega por Nível de Esforço (3 cards expandíveis)
+    html += renderPrimeiraEntregaHTML(cards);
 
     // Non-conforming cards
     var nonConforming = cards.filter(function(c) { return !c.isConforme && !c.isConcluido; });
@@ -1535,6 +1792,18 @@
             btn.textContent = btn.textContent.replace('▲', '▼');
           }
         }
+      });
+    });
+
+    // Toggles do "Tempo até 1ª entrega" (handler próprio: não reescreve o innerHTML rico)
+    document.querySelectorAll('.pe-toggle').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var body = document.getElementById('pe-body-' + btn.getAttribute('data-pe'));
+        if (!body) return;
+        var open = body.classList.toggle('open');
+        btn.classList.toggle('open', open);
+        var arrow = btn.querySelector('.pe-arrow');
+        if (arrow) arrow.textContent = open ? '▲' : '▼';
       });
     });
   }
