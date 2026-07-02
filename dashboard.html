@@ -503,8 +503,15 @@
   // ─── TEMPO ATÉ PRIMEIRA ENTREGA (por Nível de Esforço) ─
   var REVISAO_INTERNA = 'Revisão Interna 🔎';
   var EM_ANDAMENTO    = 'Em andamento 💪';
-  // Etapas cujo tempo é detalhado no breakdown (até a 1ª saída de Revisão Interna).
-  var ETAPAS_PRE_ENTREGA = ['Planejamento', 'A fazer 👇', 'Em andamento 💪', 'Revisão Interna 🔎'];
+  // "Entrega" = 1ª CHEGADA a um marco de entrega (revisão externa ou concluído).
+  // Usar a CHEGADA (e não a saída de Revisão Interna) evita parar o cronômetro em
+  // reprovações internas que voltam para retrabalho e captura cards que pulam a
+  // revisão interna. Ver computePrimeiraEntrega.
+  var MARCOS_ENTREGA = ['Revisão Externa 🧐', 'Concluído 🏆'];
+  // Etapas detalhadas no breakdown até a 1ª entrega. "Outras etapas" é um bucket
+  // catch-all (URGÊNCIAS, Captação, Atrasos, etc.) para que a soma do breakdown
+  // FECHE exatamente com o tempo total exibido — nada é descartado.
+  var ETAPAS_PRE_ENTREGA = ['Planejamento', 'A fazer 👇', 'Em andamento 💪', 'Alterações ✏️', 'Revisão Interna 🔎', 'Outras etapas'];
   // Níveis de esforço esperados no custom field "Nível de Esforço".
   var NIVEIS_ESFORCO = ['BAIXO', 'MÉDIO', 'ALTO'];
   // "Daqui pra frente": só entram cards CRIADOS a partir desta data (ignora histórico).
@@ -606,9 +613,11 @@
   function elapsedCalendarDays(from, to) { return round1((new Date(to) - new Date(from)) / 86400000); }
   function elapsedCalendarHours(from, to) { return round1((new Date(to) - new Date(from)) / 3600000); }
 
-  // Horas úteis entre duas datas: soma a sobreposição com a janela de trabalho de
-  // cada dia útil. Itera dia a dia (O(nº de dias)) — barato mesmo para etapas longas.
-  function countBusinessHours(from, to) {
+  // Horas úteis entre duas datas (SEM arredondar): soma a sobreposição com a janela
+  // de trabalho de cada dia útil. Itera dia a dia (O(nº de dias)) — barato mesmo para
+  // etapas longas. A versão raw é usada para o breakdown FECHAR com o total (somar
+  // valores já arredondados por etapa introduz drift; somamos raw e arredondamos 1x).
+  function businessHoursRaw(from, to) {
     from = new Date(from); to = new Date(to);
     if (to <= from) return 0;
     var total = 0;
@@ -624,7 +633,18 @@
       }
       cursor.setDate(cursor.getDate() + 1);
     }
-    return round1(total);
+    return total;
+  }
+  function countBusinessHours(from, to) { return round1(businessHoursRaw(from, to)); }
+
+  // Data de criação embutida no ID do card do Trello: os 4 primeiros bytes (8 hex)
+  // são o timestamp Unix em segundos. Permite filtrar arquivados por data de criação
+  // ANTES de buscar as actions deles (barra o histórico antigo sem custo de fetch).
+  function idToDate(id) {
+    if (!id || id.length < 8) return null;
+    var secs = parseInt(id.substring(0, 8), 16);
+    if (isNaN(secs)) return null;
+    return new Date(secs * 1000);
   }
 
   function buildTimeline(actions) {
@@ -768,40 +788,52 @@
   }
 
   // ─── TEMPO ATÉ PRIMEIRA ENTREGA ─────────────────
-  // Da CRIAÇÃO do card até a PRIMEIRA saída de "Revisão Interna".
+  // Da CRIAÇÃO do card até a 1ª CHEGADA a um marco de entrega (Revisão Externa 🧐 ou
+  // Concluído 🏆).
   //   início = tl[0].enteredAt (createdAt, já clampado pela buildTimeline)
-  //   fim    = leftAt do PRIMEIRO estágio "Revisão Interna 🔎" que já foi deixado
-  // Retorna null se o card ainda não teve a 1ª entrega (nunca saiu de Revisão Interna).
-  // Também conta reentradas em "Em andamento" no percurso (1 = original, 2+ = retrabalho),
-  // pois não havia rastreamento por reentrada em Em andamento no código (só o campo
-  // "Retrabalhos", que é incrementado ao entrar em "Alterações" — conceito diferente).
+  //   fim    = enteredAt do PRIMEIRO estágio cujo nome ∈ MARCOS_ENTREGA
+  // Retorna null se o card ainda não atingiu um marco de entrega.
+  // Usar a CHEGADA ao marco (e não a saída de Revisão Interna) é robusto a reprovações
+  // internas que voltam para retrabalho (não param o cronômetro) e a cards que pulam a
+  // revisão interna. Também conta reentradas em "Em andamento" no percurso
+  // (1 = original, 2+ = retrabalho).
+  //
+  // Breakdown: os estágios 0..idxFim-1 PARTICIONAM [início, fim] (contíguos, sem
+  // gaps). Cada etapa nomeada acumula suas horas úteis; o restante (URGÊNCIAS,
+  // Captação, Atrasos, …) cai em "Outras etapas". Somamos horas RAW e a headline é a
+  // soma dos buckets já arredondados → o breakdown FECHA exatamente com o total.
   function computePrimeiraEntrega(tl) {
     if (!Array.isArray(tl) || !tl.length) return null;
     var inicio = tl[0].enteredAt;
     var fim = null, idxFim = -1;
     for (var i = 0; i < tl.length; i++) {
-      if ((tl[i].name ? tl[i].name.trim() : '') === REVISAO_INTERNA && tl[i].leftAt) {
-        fim = tl[i].leftAt; idxFim = i; break; // primeira SAÍDA de Revisão Interna
+      if (MARCOS_ENTREGA.indexOf(tl[i].name ? tl[i].name.trim() : '') !== -1) {
+        fim = tl[i].enteredAt; idxFim = i; break; // 1ª CHEGADA a um marco de entrega
       }
     }
     if (!fim || fim <= inicio) return null;
 
-    // breakdown (horas úteis) por etapa e contagem de entradas em Em andamento,
-    // apenas no percurso até a 1ª entrega (estágios 0..idxFim).
     var breakdown = {};
     ETAPAS_PRE_ENTREGA.forEach(function(n){ breakdown[n] = 0; });
     var entradasEmAndamento = 0;
-    for (var j = 0; j <= idxFim; j++) {
+    for (var j = 0; j < idxFim; j++) { // estágios ANTES do marco (particionam [início,fim])
       var nome = tl[j].name ? tl[j].name.trim() : '';
-      var fimEtapa = tl[j].leftAt || fim; // a última (Revisão Interna) fecha em `fim`
-      if (breakdown.hasOwnProperty(nome)) breakdown[nome] += countBusinessHours(tl[j].enteredAt, fimEtapa);
+      var fimEtapa = tl[j].leftAt || fim; // o último pré-marco fecha em `fim`
+      var horasEtapa = businessHoursRaw(tl[j].enteredAt, fimEtapa);
+      if (breakdown.hasOwnProperty(nome)) breakdown[nome] += horasEtapa;
+      else breakdown['Outras etapas'] += horasEtapa;
       if (nome === EM_ANDAMENTO) entradasEmAndamento++;
     }
     ETAPAS_PRE_ENTREGA.forEach(function(n){ breakdown[n] = round1(breakdown[n]); });
 
+    // headline = soma dos buckets já arredondados → fecha com a soma exibida no breakdown.
+    var horas = 0;
+    ETAPAS_PRE_ENTREGA.forEach(function(n){ horas += breakdown[n]; });
+    horas = round1(horas);
+
     return {
       inicio: inicio,
-      horas: countBusinessHours(inicio, fim),
+      horas: horas,
       dias: countBusinessDays(inicio, fim),
       breakdown: breakdown,
       entradasEmAndamento: entradasEmAndamento
@@ -1161,7 +1193,7 @@
     return fieldCachePromise.then(function(cachedField) {
       var phase1 = [
         fetchWithRetry('/boards/'+boardId+'/lists?fields=name', token, 2),
-        fetchWithRetry('/boards/'+boardId+'/cards?filter=open&fields=name,desc,due,dueComplete,dateLastActivity,labels,idList,shortUrl&customFieldItems=true', token, 2)
+        fetchWithRetry('/boards/'+boardId+'/cards?filter=all&fields=name,desc,due,dueComplete,dateLastActivity,labels,idList,shortUrl,closed&customFieldItems=true', token, 2)
       ];
       if (!cachedField) {
         phase1.push(fetchWithRetry('/boards/'+boardId+'/customFields', token, 2));
@@ -1221,10 +1253,21 @@
           } catch(e) {}
         }
 
+      // cards abertos → alimentam TODOS os KPIs (comportamento inalterado).
+      // cards ARQUIVADOS elegíveis (criados a partir do epoch) → processados junto,
+      // mas isolados via flag `closed`: entram SÓ no indicador de 1ª entrega, nunca
+      // nos demais KPIs (ver split do retorno e guarda de throughput). O filtro por
+      // data de criação (idToDate) evita puxar o histórico antigo do board.
       var cards = [];
       if (Array.isArray(allBoardCards)) {
         allBoardCards.forEach(function(c) {
-          if (flowListIds[c.idList]) cards.push(c);
+          if (!flowListIds[c.idList]) return;
+          if (c.closed) {
+            var cd = idToDate(c.id);
+            if (cd && cd >= PRIMEIRA_ENTREGA_EPOCH) cards.push(c);
+          } else {
+            cards.push(c);
+          }
         });
       }
 
@@ -1253,15 +1296,19 @@
             var card = cards[i];
             var actions = Array.isArray(allActions[i]) ? allActions[i] : [];
 
-            actions.forEach(function(act) {
-              if (act.type === 'updateCard' && act.data.listBefore) {
-                var d = new Date(act.date);
-                if (d.getMonth() === curMonth && d.getFullYear() === curYear) {
-                  var fromList = act.data.listBefore.name;
-                  if (throughput.hasOwnProperty(fromList)) throughput[fromList]++;
+            // Vazão/throughput considera apenas cards ABERTOS (arquivados entram só na
+            // 1ª entrega). Evita que arquivar um card altere a vazão do mês.
+            if (!card.closed) {
+              actions.forEach(function(act) {
+                if (act.type === 'updateCard' && act.data.listBefore) {
+                  var d = new Date(act.date);
+                  if (d.getMonth() === curMonth && d.getFullYear() === curYear) {
+                    var fromList = act.data.listBefore.name;
+                    if (throughput.hasOwnProperty(fromList)) throughput[fromList]++;
+                  }
                 }
-              }
-            });
+              });
+            }
 
             var rwVal = 0;
             var hasRetrabalho = false;
@@ -1353,6 +1400,7 @@
             processed.push({
               id: card.id,
               name: card.name,
+              isArchived: !!card.closed,
               retrabalho: rwVal,
               hasRetrabalho: hasRetrabalho,
               totalBD: totalBD,
@@ -1383,7 +1431,13 @@
               isConforme: tituloValido && hasLabels && hasDue && hasDesc && hasPrio
             });
           }
-          return { cards: processed, throughput: throughput };
+          // Split: `cards` = só abertos (todos os KPIs, inalterado); `archived` =
+          // arquivados elegíveis, consumidos EXCLUSIVAMENTE pela 1ª entrega.
+          var openCards = [], archivedCards = [];
+          for (var pi2 = 0; pi2 < processed.length; pi2++) {
+            (processed[pi2].isArchived ? archivedCards : openCards).push(processed[pi2]);
+          }
+          return { cards: openCards, archived: archivedCards, throughput: throughput };
         });
       });
     });
@@ -1490,10 +1544,14 @@
       ETAPAS_PRE_ENTREGA.forEach(function(etapa) {
         breakdown[etapa] = mean(lista.map(function(c){ return (c.primeiraEntrega.breakdown[etapa] || 0); }));
       });
+      // headline agregada = soma das médias do breakdown → FECHA com as linhas exibidas.
+      var avgHorasFechada = 0;
+      ETAPAS_PRE_ENTREGA.forEach(function(etapa){ avgHorasFechada += breakdown[etapa]; });
+      avgHorasFechada = round1(avgHorasFechada);
 
       out.niveis[nivel] = {
         n: lista.length,
-        avgHoras: mean(horas), avgDias: mean(dias),
+        avgHoras: avgHorasFechada, avgDias: mean(dias),
         stdHoras: stdDev(horas), stdDias: stdDev(dias),
         minHoras: horas.length ? Math.min.apply(null, horas) : 0,
         maxHoras: horas.length ? Math.max.apply(null, horas) : 0,
@@ -1677,7 +1735,7 @@
     return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear();
   }
 
-  function renderRealtime(kpis, config, cards, cachedAt) {
+  function renderRealtime(kpis, config, cards, cachedAt, archived) {
     var sc = scoreColor(kpis.healthScore);
     var circumference = 2 * Math.PI * 52;
     var ringCor = statusColor(kpis.healthScore); // anel usa o mesmo semáforo dos KPIs
@@ -1713,8 +1771,9 @@
     });
     html += '</div>';
 
-    // Tempo até 1ª entrega por Nível de Esforço (3 cards expandíveis)
-    html += renderPrimeiraEntregaHTML(cards);
+    // Tempo até 1ª entrega por Nível de Esforço (3 cards expandíveis).
+    // Inclui os arquivados elegíveis (só este indicador os vê).
+    html += renderPrimeiraEntregaHTML(cards.concat(archived || []));
 
     // Non-conforming cards
     var nonConforming = cards.filter(function(c) { return !c.isConforme && !c.isConcluido; });
@@ -2204,10 +2263,10 @@
         if (!forceRefresh) {
           var cache = readCache(boardId);
           if (cache && cache.cards) {
-            cachedData = { cards: cache.cards, config: config, throughput: cache.throughput };
+            cachedData = { cards: cache.cards, config: config, throughput: cache.throughput, archived: cache.archived || [] };
             var kpis = calcKPIs(cache.cards, config);
             var slaAlerts = computeSLAAlerts(cache.cards, config);
-            renderRealtime(kpis, config, cache.cards, cache.cachedAt);
+            renderRealtime(kpis, config, cache.cards, cache.cachedAt, cache.archived || []);
             renderAlertBanner(slaAlerts);
             document.getElementById('rt-loading').style.display = 'none';
             return;
@@ -2216,11 +2275,11 @@
 
         showSkeleton('Buscando cards do board…');
         return fetchData(token, boardId).then(function(data) {
-          cachedData = { cards: data.cards, config: config, throughput: data.throughput };
-          writeCache(boardId, { cards: data.cards, throughput: data.throughput });
+          cachedData = { cards: data.cards, config: config, throughput: data.throughput, archived: data.archived || [] };
+          writeCache(boardId, { cards: data.cards, throughput: data.throughput, archived: data.archived || [] });
           var kpis = calcKPIs(data.cards, config);
           var slaAlerts = computeSLAAlerts(data.cards, config);
-          renderRealtime(kpis, config, data.cards, null);
+          renderRealtime(kpis, config, data.cards, null, data.archived || []);
           renderAlertBanner(slaAlerts);
           saveSnapshotIfNeeded(kpis, config);
         });
