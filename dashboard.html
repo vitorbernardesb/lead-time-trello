@@ -1239,7 +1239,7 @@
           return '/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000';
         });
 
-        return throttledFetch(actionUrls, token, 20, 2500).then(function(allResults) {
+        return throttledFetch(actionUrls, token, 5, 5000).then(function(allResults) {
         var allActions = allResults;
         var allCF = cards.map(function(c) { return cfByCard[c.id]; });
 
