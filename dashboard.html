@@ -146,7 +146,14 @@
     .pe-hint { font-size: 12px; font-weight: 500; color: #ABABB0; }
     .pe-epoch { font-size: 11px; color: #ABABB0; }
     .pe-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-    .pe-card { background: #FFFFFF; border: 1px solid rgba(171,171,176,0.30); border-radius: 12px; overflow: hidden; }
+    /* Card: mesma linguagem do .kpi-card (raio/borda/hover) + acento de cor por nível no topo. */
+    .pe-card {
+      background: #FFFFFF; border: 1px solid rgba(171,171,176,0.30); border-radius: 12px;
+      border-top: 3px solid var(--pe-cor, #ABABB0); overflow: hidden;
+      transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+    }
+    .pe-card:hover { box-shadow: 0 4px 14px rgba(10,10,10,0.07); transform: translateY(-2px); }
+    .pe-card.pe-nodata { border-top-color: rgba(171,171,176,0.35); }
     .pe-toggle {
       width: 100%; text-align: left; background: transparent; border: none; cursor: pointer;
       padding: 16px 18px; font-family: inherit; color: #0A0A0A; display: block;
@@ -154,12 +161,22 @@
     }
     .pe-toggle:hover:not(:disabled) { background: rgba(255,207,6,0.06); }
     .pe-toggle:disabled { cursor: default; }
-    .pe-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .pe-nivel { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: #0A0A0A; }
-    .pe-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+    .pe-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    /* chip do nível: pílula neutra + ponto na cor do nível → diferenciação forte e limpa */
+    .pe-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px;
+      background: rgba(10,10,10,0.04); font-size: 10px; font-weight: 700; letter-spacing: 0.07em;
+      text-transform: uppercase; color: var(--pe-cor, #0A0A0A); }
+    .pe-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--pe-cor, #ABABB0); }
     .pe-arrow { color: #ABABB0; font-size: 11px; }
-    .pe-main { font-size: 22px; font-weight: 700; color: #0A0A0A; font-variant-numeric: tabular-nums; }
+    /* valor protagonista (tabular) + unidade subordinada; dias em linha própria discreta */
+    .pe-main { display: flex; align-items: baseline; gap: 5px; }
+    .pe-value { font-size: 27px; font-weight: 700; color: #0A0A0A; line-height: 1.0; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+    .pe-unit { font-size: 13px; font-weight: 600; color: #6B6B70; }
+    .pe-days { font-size: 12px; color: #ABABB0; margin-top: 3px; font-variant-numeric: tabular-nums; }
     .pe-main.pe-empty { font-size: 15px; color: #ABABB0; font-weight: 500; }
+    /* mini-barra de comparação: escala COMPARTILHADA entre os 3 níveis (largura = avg/máx) */
+    .pe-compare { height: 6px; background: rgba(171,171,176,0.18); border-radius: 4px; margin: 12px 0 8px; overflow: hidden; }
+    .pe-compare-fill { height: 100%; border-radius: 4px; background: var(--pe-cor, #ABABB0); transition: width 0.6s cubic-bezier(0.22,1,0.36,1); }
     .pe-sub { font-size: 11px; color: #ABABB0; margin-top: 4px; }
     .pe-body { display: none; border-top: 1px solid rgba(171,171,176,0.25); padding: 4px 0 0; }
     .pe-body.open { display: block; }
@@ -750,14 +767,14 @@
   //   fim    = conclusão (getConcludedAt)
   // Retorna { leadTime, concludedAt } ou null se não atravessou o fluxo
   // (nunca foi produzido, ou ainda não concluído).
-  function computeLeadTime(tl) {
+  function computeLeadTime(tl, concludedAt) {
     if (!Array.isArray(tl) || !tl.length) return null;
     var startProd = null;
     for (var i = 0; i < tl.length; i++) {
       var name = tl[i].name ? tl[i].name.trim() : '';
       if (PRODUCAO_ATIVA.indexOf(name) !== -1) { startProd = tl[i].enteredAt; break; }
     }
-    var concludedAt = getConcludedAt(tl);
+    if (concludedAt === undefined) concludedAt = getConcludedAt(tl); // reaproveita se já calculado
     if (!startProd || !concludedAt || concludedAt <= startProd) return null;
     return { leadTime: countBusinessDays(startProd, concludedAt), concludedAt: concludedAt };
   }
@@ -1184,8 +1201,10 @@
 
   function fetchData(token, boardId) {
     var fieldCachePromise = t.get('board', 'private', 'retrabalhoFieldCache').then(function(fc) {
-      // exige nivelEsforcoId no cache: caches antigos (sem o campo) são reprocessados
-      if (fc && fc.id && fc.savedAt && fc.nivelEsforcoId !== undefined &&
+      // Só confia no cache se o ID do campo "Nível de Esforço" já é CONHECIDO (truthy).
+      // Se foi cacheado como null (campo ainda não existia), reprocessa /customFields
+      // para captar o campo assim que for adicionado — sem esperar o TTL de 24h.
+      if (fc && fc.id && fc.savedAt && fc.nivelEsforcoId &&
           (Date.now() - fc.savedAt < FIELD_CACHE_TTL)) return fc;
       return null;
     }).catch(function() { return null; });
@@ -1279,10 +1298,11 @@
         updateSkeletonMsg('Calculando lead time de ' + cards.length + ' cards…');
 
         var actionUrls = cards.map(function(c) {
-          return '/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000';
+          // fields enxutos: só o que buildTimeline/vazão usam (type,date,data) — reduz payload/parse.
+          return '/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000&fields=type,date,data&memberCreator=false&member=false';
         });
 
-        return throttledFetch(actionUrls, token, 5, 5000).then(function(allResults) {
+        return throttledFetch(actionUrls, token, 10, 1200).then(function(allResults) {
         var allActions = allResults;
         var allCF = cards.map(function(c) { return cfByCard[c.id]; });
 
@@ -1343,10 +1363,11 @@
             var currentListName = currentStage ? currentStage.name : (flowListIds[card.idList] || '');
             var realListName = flowListIds[card.idList] || currentListName;
 
-            // Conclusão (timeline) compartilhada por vazão E lead time — calculada uma vez.
+            // Conclusão (timeline) compartilhada por vazão E lead time — calculada uma vez
+            // e reaproveitada em computeLeadTime (evita recomputar getConcludedAt).
             var concludedAt = getConcludedAt(tl);
-            var ltReal = computeLeadTime(tl);
-            // Tempo até 1ª entrega (criação → 1ª saída de Revisão Interna) e nível de esforço.
+            var ltReal = computeLeadTime(tl, concludedAt);
+            // Tempo até 1ª entrega (criação → 1ª chegada a marco de entrega) e nível de esforço.
             var pe = computePrimeiraEntrega(tl);
             var createdAt = tl.length ? tl[0].enteredAt : null;
             var nivelEsforco = null;
@@ -1359,11 +1380,6 @@
               }
             }
             var daysInCurrent = currentStage ? countBusinessDays(currentStage.enteredAt, now) : 0;
-            var totalBD = 0;
-            for (var si = 0; si < tl.length; si++) {
-              var stEnd = tl[si].leftAt || now;
-              totalBD += countBusinessDays(tl[si].enteredAt, stEnd);
-            }
 
             // Vencido: due no passado e ainda não entregue (helper centralizado).
             var hasDue = !!card.due;
@@ -1403,7 +1419,6 @@
               isArchived: !!card.closed,
               retrabalho: rwVal,
               hasRetrabalho: hasRetrabalho,
-              totalBD: totalBD,
               daysInCurrent: daysInCurrent,
               hasDue: hasDue,
               isLate: isLate,
@@ -1687,16 +1702,23 @@
     h += '<span class="pe-epoch">contando cards criados a partir de '+fmtDateBR(PRIMEIRA_ENTREGA_EPOCH)+'</span></div>';
     h += '<div class="pe-grid">';
 
+    // Escala COMPARTILHADA para as mini-barras: maior média (h úteis) entre os 3 níveis.
+    var maxAvg = 0;
+    NIVEIS_ESFORCO.forEach(function(n){ if (pe.niveis[n].avgHoras > maxAvg) maxAvg = pe.niveis[n].avgHoras; });
+
     NIVEIS_ESFORCO.forEach(function(nivel) {
       var g = pe.niveis[nivel];
       var cor = COR_NIVEL[nivel] || '#ABABB0';
       var temDados = g.n > 0;
-      h += '<div class="pe-card">';
+      h += '<div class="pe-card'+(temDados?'':' pe-nodata')+'" style="--pe-cor:'+cor+'">';
       h += '<button class="pe-toggle" data-pe="'+nivel+'"'+(temDados?'':' disabled')+'>';
-      h += '<div class="pe-head"><span class="pe-nivel"><span class="pe-dot" style="background:'+cor+'"></span>'+nivel+'</span>';
+      h += '<div class="pe-head"><span class="pe-chip"><span class="pe-dot"></span>'+nivel+'</span>';
       h += '<span class="pe-arrow">'+(temDados?'▼':'')+'</span></div>';
       if (temDados) {
-        h += '<div class="pe-main"><span class="pe-value">'+fmtHoras(g.avgHoras)+'</span> úteis · '+fmtDias(g.avgDias)+'</div>';
+        h += '<div class="pe-main"><span class="pe-value">'+fmtHoras(g.avgHoras)+'</span><span class="pe-unit">úteis</span></div>';
+        h += '<div class="pe-days">'+fmtDias(g.avgDias)+'</div>';
+        var pct = maxAvg > 0 ? Math.round(g.avgHoras / maxAvg * 100) : 0;
+        h += '<div class="pe-compare"><div class="pe-compare-fill" style="width:'+pct+'%"></div></div>';
         h += '<div class="pe-sub">Tempo médio até 1ª entrega · '+g.n+' card'+(g.n>1?'s':'')+'</div>';
       } else {
         h += '<div class="pe-main pe-empty">Sem dados ainda</div>';
