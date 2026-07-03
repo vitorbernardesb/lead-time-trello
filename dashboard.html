@@ -591,6 +591,33 @@
     return Math.floor(sec / 60) + 'min atrás';
   }
 
+  // ─── CACHE INCREMENTAL DE ACTIONS (por card) ────
+  // As actions de um card só mudam quando há atividade nele — e QUALQUER atividade
+  // atualiza dateLastActivity (que o fetch de cards já traz). Então: cacheia as
+  // actions por card com o dateLastActivity da época; num load futuro, se o
+  // dateLastActivity está idêntico, reutiliza sem re-buscar. Cards sem mudança
+  // (inclusive TODOS os arquivados, imutáveis) deixam de gerar requisição.
+  // Resultado byte-idêntico ao refetch: o cache só é usado com dateLastActivity igual.
+  var ACTIONS_CACHE_VERSION = 1; // bump se o filtro/fields do fetch de actions mudar
+  function actionsCacheKey(boardId) { return 'leadtime_actions_' + boardId; }
+  function readActionsCache(boardId) {
+    try {
+      var raw = localStorage.getItem(actionsCacheKey(boardId));
+      if (!raw) return {};
+      var obj = JSON.parse(raw);
+      if (obj && obj.v === ACTIONS_CACHE_VERSION && obj.cards) return obj.cards;
+    } catch(e) {}
+    return {};
+  }
+  function writeActionsCache(boardId, map) {
+    try {
+      localStorage.setItem(actionsCacheKey(boardId), JSON.stringify({ v: ACTIONS_CACHE_VERSION, cards: map }));
+    } catch(e) {
+      // quota excedida ou storage indisponível: descarta o cache (funciona sem ele)
+      try { localStorage.removeItem(actionsCacheKey(boardId)); } catch(e2) {}
+    }
+  }
+
   function showSkeleton(msg) {
     var el = document.getElementById('rt-loading');
     el.innerHTML = '<div class="skeleton-wrap">' +
@@ -727,7 +754,6 @@
       out[0].enteredAt = createdAt;
     }
 
-    console.log('[TIMELINE]', 'stages:', out.length, 'createdAt:', createdAt, 'actions:', actions.length);
     return out;
   }
 
@@ -1299,13 +1325,38 @@
 
         updateSkeletonMsg('Calculando lead time de ' + cards.length + ' cards…');
 
-        var actionUrls = cards.map(function(c) {
-          // fields enxutos: só o que buildTimeline/vazão usam (type,date,data) — reduz payload/parse.
-          return '/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000&fields=type,date,data&memberCreator=false&member=false';
+        // Cache incremental: só busca actions de cards cujo dateLastActivity mudou
+        // desde o último load (cards sem atividade nova — e todos os arquivados —
+        // reutilizam as actions cacheadas, com resultado idêntico ao refetch).
+        var actCache = readActionsCache(boardId);
+        var allActions = new Array(cards.length);
+        var toFetch = [];
+        cards.forEach(function(c, i) {
+          var hit = actCache[c.id];
+          if (hit && hit.la === c.dateLastActivity && Array.isArray(hit.a)) {
+            allActions[i] = hit.a;
+          } else {
+            toFetch.push(i);
+          }
         });
 
-        return throttledFetch(actionUrls, token, 10, 1200).then(function(allResults) {
-        var allActions = allResults;
+        var actionUrls = toFetch.map(function(i) {
+          // fields enxutos: só o que buildTimeline/vazão usam (type,date,data) — reduz payload/parse.
+          return '/cards/'+cards[i].id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000&fields=type,date,data&memberCreator=false&member=false';
+        });
+
+        return throttledFetch(actionUrls, token, 10, 1200).then(function(fetched) {
+          // falha de fetch fica undefined (processada como []), mas NUNCA entra no cache
+          toFetch.forEach(function(cardIdx, j) {
+            if (Array.isArray(fetched[j])) allActions[cardIdx] = fetched[j];
+          });
+          // regrava o cache só com os cards atuais do board (prune automático dos removidos)
+          var newCache = {};
+          cards.forEach(function(c, i) {
+            if (Array.isArray(allActions[i])) newCache[c.id] = { la: c.dateLastActivity, a: allActions[i] };
+          });
+          writeActionsCache(boardId, newCache);
+
         var allCF = cards.map(function(c) { return cfByCard[c.id]; });
 
           var now = new Date();
