@@ -1296,7 +1296,7 @@
     'board-buttons': function (t) {
       return [{
         icon: 'https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/heart-pulse.svg',
-        text: '​',
+        text: 'Dashboard',
         callback: function(t) {
           return t.modal({
             url: './dashboard.html?v=8',
@@ -1306,7 +1306,7 @@
         }
       }, {
         icon: 'https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/download.svg',
-        text: '​',
+        text: 'Relatório',
         callback: function(t) {
           t.alert({ message: 'Gerando relatório…', display: 'info', duration: 30 });
           return exportReport(t);
