@@ -531,8 +531,10 @@
   var ETAPAS_PRE_ENTREGA = ['Planejamento', 'A fazer 👇', 'Em andamento 💪', 'Alterações ✏️', 'Revisão Interna 🔎', 'Outras etapas'];
   // Níveis de esforço esperados no custom field "Nível de Esforço".
   var NIVEIS_ESFORCO = ['BAIXO', 'MÉDIO', 'ALTO'];
-  // "Daqui pra frente": só entram cards CRIADOS a partir desta data (ignora histórico).
-  var PRIMEIRA_ENTREGA_EPOCH = new Date('2026-06-30T00:00:00');
+  // Data de início do indicador: só entram cards CRIADOS a partir daqui (abertos E
+  // arquivados). Antes 30/06/2026; recuada para 04/05/2026 para considerar cards mais
+  // antigos. Também limita o fetch de arquivados (não puxa histórico anterior a esta data).
+  var PRIMEIRA_ENTREGA_EPOCH = new Date('2026-05-04T00:00:00');
 
   var DEFAULT_SLA = {};
   var slaDefaults = [2, 5, 1, 3, 5, 2, 2, 2, 3, 2, 999];
