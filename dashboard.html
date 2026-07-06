@@ -6,14 +6,12 @@
   <style>
     @font-face {
       font-family: 'BW Modelica';
-      src: url('./fonts/BWModelica-Regular.woff2') format('woff2'),
-           url('./fonts/BWModelica-Regular.woff') format('woff');
+      src: url('./fonts/BwModelica-Regular.otf') format('opentype');
       font-weight: 400;
     }
     @font-face {
       font-family: 'BW Modelica';
-      src: url('./fonts/BWModelica-Bold.woff2') format('woff2'),
-           url('./fonts/BWModelica-Bold.woff') format('woff');
+      src: url('./fonts/BwModelica-Bold.otf') format('opentype');
       font-weight: 700;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -72,8 +70,6 @@
     .spinner-wrap p { margin-top: 12px; color: #ABABB0; }
     .error-box { text-align: center; padding: 60px 20px; color: #0A0A0A; }
     .error-box button { margin-top: 12px; }
-    .auth-wrap { text-align: center; padding: 80px 20px; }
-    .auth-wrap p { color: #ABABB0; margin-bottom: 16px; font-size: 16px; }
     .btn {
       background: #FFCF06; color: #0A0A0A; border: none; border-radius: 6px;
       padding: 10px 20px; font-size: 14px; font-family: inherit; font-weight: 700; cursor: pointer;
@@ -448,11 +444,6 @@
 <div id="alert-banner" style="display:none;"></div>
 
 <div class="body">
-  <div id="auth-screen" class="auth-wrap" style="display:none;">
-    <p>Autorize o Power-Up para acessar os dados do board.</p>
-    <button class="btn" id="auth-btn">Autorizar Power-Up</button>
-  </div>
-
   <div id="tab-realtime" class="tab-content active visible">
     <div class="spinner-wrap" id="rt-loading"><div class="spinner"></div><p>Carregando dados…</p></div>
     <div id="rt-error" class="error-box" style="display:none;"><p></p><button class="btn" id="rt-retry">Tentar novamente</button></div>
@@ -518,7 +509,6 @@
   ];
 
   // ─── TEMPO ATÉ PRIMEIRA ENTREGA (por Nível de Esforço) ─
-  var REVISAO_INTERNA = 'Revisão Interna 🔎';
   var EM_ANDAMENTO    = 'Em andamento 💪';
   // "Entrega" = 1ª CHEGADA a um marco de entrega (revisão externa ou concluído).
   // Usar a CHEGADA (e não a saída de Revisão Interna) evita parar o cronômetro em
@@ -894,7 +884,11 @@
   function downloadCSV(filename, rows) {
     var csv = rows.map(function(row) {
       return row.map(function(cell) {
-        var s = String(cell === null || cell === undefined ? '' : cell);
+        // {raw: '...'} pula o escape de fórmula (usado pelo =HYPERLINK intencional)
+        var isRaw = cell && typeof cell === 'object' && cell.raw !== undefined;
+        var s = String(isRaw ? cell.raw : (cell === null || cell === undefined ? '' : cell));
+        // anti formula-injection: célula iniciando com = + - @ vira texto no Excel
+        if (!isRaw && /^[=+\-@]/.test(s)) s = "'" + s;
         if (s.indexOf(';') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
           s = '"' + s.replace(/"/g, '""') + '"';
         }
@@ -992,8 +986,9 @@
   function exportEtapaCSV(data, fileBase) {
     var rows = [data.header];
     data.rows.forEach(function(r) {
-      // =HYPERLINK mantém o link clicável também no CSV (Excel/Google Sheets)
-      var link = r.link ? '=HYPERLINK("' + r.link + '";"Abrir card")' : '';
+      // =HYPERLINK mantém o link clicável também no CSV (Excel/Google Sheets);
+      // {raw} sinaliza ao downloadCSV que esta fórmula é intencional (não escapar).
+      var link = r.link ? { raw: '=HYPERLINK("' + r.link + '";"Abrir card")' } : '';
       rows.push([r.nome, r.etapa, r.entrada, r.diasCorr, r.diasUteis, r.horasCorr, r.horasUteis, link]);
     });
     downloadCSV(fileBase + '.csv', rows);
@@ -1148,7 +1143,7 @@
       target.classList.add('active');
       if (name === 'history' && !renderedTabs.history) { loadHistory(); renderedTabs.history = true; }
       if (name === 'config') renderConfig();
-      if (name === 'funnel' && cachedData) { renderFunnel(); renderedTabs.funnel = true; }
+      if (name === 'funnel' && cachedData) { renderFunnel(); }
       else if (name === 'funnel' && !cachedData) { document.getElementById('funnel-content').innerHTML = '<div class="no-data"><p>Carregue os dados na aba "Tempo real" primeiro.</p></div>'; }
       requestAnimationFrame(function() { target.classList.add('visible'); });
     }, 150);
@@ -1157,11 +1152,81 @@
     tab.addEventListener('click', function() { switchTab(tab.getAttribute('data-tab')); });
   });
 
-  // ─── AUTH ───────────────────────────────────────
-  function checkAuth(cb) {
-    document.getElementById('auth-screen').style.display = 'none';
-    cb();
+  // ─── POPUP DE ETAPA + DELEGAÇÃO GLOBAL DE CLIQUES ─
+  // Registrados UMA única vez. Antes, renderRealtime/renderFunnel adicionavam
+  // listeners aos contêineres permanentes (e ao document) a cada re-render,
+  // acumulando handlers duplicados (t.showCard disparado N vezes por clique).
+  function fecharPopup() {
+    document.getElementById('etapa-popup').style.display = 'none';
   }
+
+  function abrirPopupEtapa(nomeEtapa, trigger) {
+    var cards = cachedData && cachedData.cards ? cachedData.cards : [];
+    var cardsNaEtapa = cards.filter(function(c) {
+      return c.currentListName === nomeEtapa;
+    });
+
+    var popup = document.getElementById('etapa-popup');
+    var title = document.getElementById('etapa-popup-title');
+    var body = document.getElementById('etapa-popup-body');
+
+    title.textContent = nomeEtapa + ' (' + cardsNaEtapa.length + ')';
+    body.innerHTML = '';
+
+    // botão de exportar planilha desta etapa (onclick reatribuído a cada abertura)
+    var dlBtn = document.getElementById('etapa-popup-dl');
+    dlBtn.disabled = !cardsNaEtapa.length;
+    dlBtn.onclick = function() { exportEtapaCards(nomeEtapa, cardsNaEtapa, dlBtn); };
+
+    if (!cardsNaEtapa.length) {
+      body.innerHTML = '<p class="etapa-popup-empty">Nenhum card nesta etapa.</p>';
+    } else {
+      var ul = document.createElement('ul');
+      ul.className = 'etapa-popup-list';
+      cardsNaEtapa.forEach(function(card) {
+        var li = document.createElement('li');
+        var span = document.createElement('span');
+        span.textContent = card.name;
+        span.className = 'card-link etapa-popup-card';
+        span.addEventListener('click', function() { t.showCard(card.id); });
+        li.appendChild(span);
+        ul.appendChild(li);
+      });
+      body.appendChild(ul);
+    }
+
+    var rect = trigger.getBoundingClientRect();
+    var bodyRect = document.querySelector('.body').getBoundingClientRect();
+
+    popup.style.display = 'flex';
+
+    var popupWidth = 280;
+    var left = rect.right - bodyRect.left + 8;
+    if (left + popupWidth > bodyRect.width) {
+      left = rect.left - bodyRect.left - popupWidth - 8;
+    }
+    var top = rect.top - bodyRect.top;
+
+    popup.style.left = Math.max(0, left) + 'px';
+    popup.style.top = Math.max(0, top) + 'px';
+  }
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.etapa-count-btn');
+    if (btn) {
+      abrirPopupEtapa(btn.getAttribute('data-etapa'), btn);
+      return;
+    }
+    var link = e.target.closest('.card-link');
+    if (link) {
+      var cid = link.getAttribute('data-card-id');
+      if (cid) t.showCard(cid);
+      return;
+    }
+    var popup = document.getElementById('etapa-popup');
+    if (popup.style.display !== 'none' && !popup.contains(e.target)) fecharPopup();
+  });
+  document.getElementById('etapa-popup-close').addEventListener('click', fecharPopup);
 
   // ─── FETCH DATA ─────────────────────────────────
   function fetchWithRetry(url, token, maxRetries) {
@@ -1215,6 +1280,11 @@
           batch.push(
             fetchWithRetry(urls[i], token, 2)
               .then(function(data){ results[i] = data; })
+              .catch(function(err) {
+                // erro de UM card não derruba o load inteiro: fica undefined
+                // (tratado como [] adiante), exatamente como o consumo já espera.
+                console.warn('[DASHBOARD] Falha em', urls[i].substring(0, 60), '—', err && err.message ? err.message : String(err));
+              })
           );
         })(b);
       }
@@ -1675,10 +1745,10 @@
 
   // ─── RENDER REALTIME ────────────────────────────
   function scoreColor(score) {
-    if (score >= 80) return { border: '#FFCF06', bg: 'rgba(255,207,6,0.12)', text: '#0A0A0A' };
-    if (score >= 60) return { border: '#FFCF06', bg: 'rgba(255,207,6,0.06)', text: '#0A0A0A' };
-    if (score >= 40) return { border: '#ABABB0', bg: 'rgba(171,171,176,0.10)', text: '#0A0A0A' };
-    return { border: '#0A0A0A', bg: 'rgba(10,10,10,0.06)', text: '#0A0A0A' };
+    if (score >= 80) return { bg: 'rgba(255,207,6,0.12)', text: '#0A0A0A' };
+    if (score >= 60) return { bg: 'rgba(255,207,6,0.06)', text: '#0A0A0A' };
+    if (score >= 40) return { bg: 'rgba(171,171,176,0.10)', text: '#0A0A0A' };
+    return { bg: 'rgba(10,10,10,0.06)', text: '#0A0A0A' };
   }
   function scoreStatus(score) {
     if (score >= 80) return 'Produção excelente';
@@ -1900,10 +1970,7 @@
       });
     }, 120);
 
-    el.addEventListener('click', function(e) {
-      var target = e.target.closest('.card-link');
-      if (target) { var cid = target.getAttribute('data-card-id'); if (cid) t.showCard(cid); }
-    });
+    // cliques em .card-link são tratados pela delegação global (registrada 1x)
     document.getElementById('btn-refresh').addEventListener('click', function() { loadRealtime(true); });
     var btnCache = document.getElementById('btn-refresh-cache');
     if (btnCache) btnCache.addEventListener('click', function() { loadRealtime(true); });
@@ -1919,7 +1986,6 @@
         if (body) {
           btn.classList.toggle('open');
           body.classList.toggle('open');
-          var arrow = btn.textContent.trim();
           if (btn.classList.contains('open')) {
             btn.textContent = btn.textContent.replace('▼', '▲');
           } else {
@@ -2069,10 +2135,7 @@
     html += '</div>'; // close detail-flex
 
     el.innerHTML = html;
-    el.addEventListener('click', function(e) {
-      var target = e.target.closest('.card-link');
-      if (target) { var cid = target.getAttribute('data-card-id'); if (cid) t.showCard(cid); }
-    });
+    // cliques em .card-link e .etapa-count-btn são tratados pela delegação global
 
     document.getElementById('btn-dl-funnel').addEventListener('click', function() {
       var rows = [['Etapa','Cards agora','Acima do SLA','SLA','Saídas no mês','Status']];
@@ -2104,79 +2167,6 @@
         rows.push([i+1, c.name, c.currentListName, c.retrabalho, (c.labels||[]).join(' | ')]);
       });
       downloadCSV('retrabalho_midiatica.csv', rows);
-    });
-
-    function fecharPopup() {
-      document.getElementById('etapa-popup').style.display = 'none';
-    }
-
-    function abrirPopupEtapa(nomeEtapa, trigger) {
-      var cardsNaEtapa = cards.filter(function(c) {
-        return c.currentListName === nomeEtapa;
-      });
-
-      var popup = document.getElementById('etapa-popup');
-      var title = document.getElementById('etapa-popup-title');
-      var body = document.getElementById('etapa-popup-body');
-
-      title.textContent = nomeEtapa + ' (' + cardsNaEtapa.length + ')';
-      body.innerHTML = '';
-
-      // botão de exportar planilha desta etapa (onclick reatribuído a cada abertura)
-      var dlBtn = document.getElementById('etapa-popup-dl');
-      dlBtn.disabled = !cardsNaEtapa.length;
-      dlBtn.onclick = function() { exportEtapaCards(nomeEtapa, cardsNaEtapa, dlBtn); };
-
-      if (!cardsNaEtapa.length) {
-        body.innerHTML = '<p class="etapa-popup-empty">Nenhum card nesta etapa.</p>';
-      } else {
-        var ul = document.createElement('ul');
-        ul.className = 'etapa-popup-list';
-        cardsNaEtapa.forEach(function(card) {
-          var li = document.createElement('li');
-          var span = document.createElement('span');
-          span.textContent = card.name;
-          span.className = 'card-link etapa-popup-card';
-          span.addEventListener('click', function() { t.showCard(card.id); });
-          li.appendChild(span);
-          ul.appendChild(li);
-        });
-        body.appendChild(ul);
-      }
-
-      var rect = trigger.getBoundingClientRect();
-      var bodyRect = document.querySelector('.body').getBoundingClientRect();
-
-      popup.style.display = 'flex';
-
-      var popupWidth = 280;
-      var left = rect.right - bodyRect.left + 8;
-      if (left + popupWidth > bodyRect.width) {
-        left = rect.left - bodyRect.left - popupWidth - 8;
-      }
-      var top = rect.top - bodyRect.top;
-
-      popup.style.left = Math.max(0, left) + 'px';
-      popup.style.top = Math.max(0, top) + 'px';
-    }
-
-    el.addEventListener('click', function(e) {
-      var btn = e.target.closest('.etapa-count-btn');
-      if (btn) {
-        e.stopPropagation();
-        abrirPopupEtapa(btn.getAttribute('data-etapa'), btn);
-      }
-    });
-
-    document.getElementById('etapa-popup-close').addEventListener('click', fecharPopup);
-
-    document.addEventListener('click', function(e) {
-      var popup = document.getElementById('etapa-popup');
-      if (popup.style.display !== 'none' &&
-          !popup.contains(e.target) &&
-          !e.target.classList.contains('etapa-count-btn')) {
-        fecharPopup();
-      }
     });
 
     var ITEMS_PER_PAGE = 10;
@@ -2302,8 +2292,10 @@
           totalCards: kpis.totalCards,
           savedAt: now.toISOString()
         };
-        t.set('board', 'shared', key, snap);
+        return t.set('board', 'shared', key, snap);
       }
+    }).catch(function(err) {
+      console.warn('[SNAPSHOT] Falha ao salvar snapshot mensal:', err && err.message ? err.message : String(err));
     });
   }
 
@@ -2434,7 +2426,9 @@
           return;
         }
         var kpis = calcKPIs(cachedData.cards, cachedData.config);
-        forceSnapshot(kpis, cachedData.config).then(function() { loadHistory(); });
+        forceSnapshot(kpis, cachedData.config)
+          .then(function() { loadHistory(); })
+          .catch(function() { alert('Não foi possível salvar o snapshot. Tente novamente.'); });
       });
 
       // Snapshot VISUAL (imagem) do dashboard — usa os dados já carregados (cachedData)
@@ -2457,6 +2451,13 @@
         });
         downloadCSV('historico_midiatica.csv', rows);
       });
+    }).catch(function(err) {
+      // sem isto, uma falha do t.get deixava o spinner girando para sempre
+      document.getElementById('hist-loading').style.display = 'none';
+      var el = document.getElementById('hist-content');
+      el.innerHTML = '<div class="history-empty"><p>Erro ao carregar o histórico: ' +
+        escHtml(err && err.message ? err.message : String(err)) + '</p></div>';
+      el.style.display = '';
     });
   }
 
@@ -2592,6 +2593,11 @@
           setTimeout(function() { switchTab('realtime'); loadRealtime(); }, 1000);
         });
       });
+    }).catch(function(err) {
+      // sem isto, uma falha do t.get deixava a aba de configurações em branco
+      document.getElementById('cfg-content').innerHTML =
+        '<div class="no-data"><p>Erro ao carregar as configurações: ' +
+        escHtml(err && err.message ? err.message : String(err)) + '</p></div>';
     });
   }
 
@@ -2625,7 +2631,7 @@
   }
 
   // ─── INIT ───────────────────────────────────────
-  checkAuth(loadRealtime);
+  loadRealtime();
 })();
 </script>
 </body>

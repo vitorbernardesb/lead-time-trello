@@ -33,7 +33,6 @@
   1. dueComplete=true + fora de Concluído → mover p/ Concluído
   2. Em Concluído + !dueComplete → marcar como concluído
   3. Sem etiquetas + fora de Planejamento → mover p/ Planejamento
-  4. Criado há <10min + fora de Planejamento → mover p/ Planejamento
   5. Sem data de entrega + fora de Planejamento → mover p/ Planejamento
   6. Saiu de Captação de Imagem (últimos 10min) → add label "CAPTAÇÃO REALIZADA"
   7. Entrou em Alterações (últimos 10min) → incrementar Retrabalhos +1
@@ -46,6 +45,9 @@
   var TRELLO_TOKEN = 'ATTAa452bde3af25da62c9bf3061e522b13a132b95f557ff528b4b3a5aaa8aac01165F42B089';
   var APP_NAME = 'Lead Time Midiática';
   var ICON ='https://vitorbernardesb.github.io/lead-time-trello/icon.svg';
+  // Etapas com permanência menor que isto são fundidas na etapa anterior
+  // (mesma regra do dashboard — mantém badge, seção do card e dashboard consistentes).
+  var MIN_STAGE_MS = 600000;
 
   var LISTAS_REVERTER_CONFORMIDADE = [
     'Captação de Imagem 🎥',
@@ -53,7 +55,7 @@
     'Em andamento 💪'
   ];
 
-  var LISTAS_PROTEGIDAS_345 = [
+  var LISTAS_PROTEGIDAS_35 = [
     'Planejamento', 'Concluído 🏆', 'Revisão Interna 🔎',
     'Revisão Externa 🧐', 'Revisões em Atraso ⏰'
   ];
@@ -144,13 +146,30 @@
       }
     }
 
-    if (createdAt) {
+    if (stages.length > 0) {
       for (var v = 0; v < stages.length; v++) {
-        if (stages[v].enteredAt < createdAt) stages[v].enteredAt = createdAt;
+        if (createdAt && stages[v].enteredAt < createdAt) {
+          stages[v].enteredAt = createdAt;
+        }
       }
     }
 
-    return stages;
+    var out = [];
+    for (var j = 0; j < stages.length; j++) {
+      var st = stages[j];
+      var dur = (st.leftAt ? st.leftAt.getTime() : Date.now()) - st.enteredAt.getTime();
+      if (dur < MIN_STAGE_MS && st.leftAt && out.length > 0) {
+        out[out.length - 1].leftAt = st.leftAt;
+      } else {
+        out.push(st);
+      }
+    }
+
+    if (out.length === 1 && !out[0].leftAt && createdAt) {
+      out[0].enteredAt = createdAt;
+    }
+
+    return out;
   }
 
   function validarTitulo(nome) {
@@ -168,8 +187,15 @@
     return 'https://api.trello.com/1'+path+(path.indexOf('?')>=0?'&':'?')+'key='+APP_KEY+'&token='+token;
   }
 
+  // Rejeita respostas HTTP não-ok (antes eram tratadas como sucesso e falhavam em silêncio).
+  function assertOk(r) {
+    if (!r.ok) throw new Error('API ' + r.status);
+    return r;
+  }
+
   function buscarCustomFields(t, boardId, token) {
     return queuedFetch(apiUrl('/boards/'+boardId+'/customFields', token))
+      .then(assertOk)
       .then(function(r) { return r.json(); })
       .then(function(fields) {
         if (!Array.isArray(fields)) return null;
@@ -210,7 +236,10 @@
         if (cache && cache.savedAt && Date.now() - cache.savedAt < TTL && cache.conformidade && cache.prioridade) {
           return cache;
         }
-        return buscarCustomFields(t, boardId, token);
+        return buscarCustomFields(t, boardId, token).catch(function(err) {
+          console.warn('[CF] Falha ao buscar custom fields:', err && err.message ? err.message : String(err));
+          return null;
+        });
       });
   }
 
@@ -259,11 +288,11 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idValue: optionId })
       }
-    ).catch(function() { delete _conformidadeCache[cardId]; });
+    ).then(assertOk).catch(function() { delete _conformidadeCache[cardId]; });
   }
 
-  function avg(arr, ignoreZeros) {
-    var f = ignoreZeros ? arr.filter(function(v){return v>0;}) : arr.filter(function(v){return v!=null;});
+  function avg(arr) {
+    var f = arr.filter(function(v){return v!=null;});
     if (!f.length) return 0;
     return Math.round(f.reduce(function(a,b){return a+b;},0)/f.length*10)/10;
   }
@@ -295,7 +324,6 @@
   var _API_QUEUE = [];
   var _API_RUNNING = 0;
   var _API_CONCURRENCY = 6;
-  var _API_DELAY = 0;
   var _API_MAX_RETRIES = 3;
   var _API_TOKEN_DEAD = false;
 
@@ -313,48 +341,45 @@
       (function() {
         var item = _API_QUEUE.shift();
         _API_RUNNING++;
-        var delay = _API_RUNNING > 1 ? _API_DELAY : 0;
-        setTimeout(function() {
-          fetch(item.url, item.opts)
-            .then(function(resp) {
-              if (resp.status === 429 && item.attempt < _API_MAX_RETRIES) {
-                item.attempt++;
-                var backoff = Math.min(1000 * Math.pow(2, item.attempt), 8000);
-                console.warn('[API] 429 rate limited, retry', item.attempt, 'in', backoff + 'ms');
-                setTimeout(function() {
-                  _API_RUNNING--;
-                  _API_QUEUE.unshift(item);
-                  drainQueue();
-                }, backoff);
-                return;
-              }
-              if (resp.status === 401) {
-                console.error('[API] 401 Unauthorized — token expirado ou revogado');
-                _API_TOKEN_DEAD = true;
-                setTimeout(function() { _API_TOKEN_DEAD = false; }, 60000);
+        fetch(item.url, item.opts)
+          .then(function(resp) {
+            if (resp.status === 429 && item.attempt < _API_MAX_RETRIES) {
+              item.attempt++;
+              var backoff = Math.min(1000 * Math.pow(2, item.attempt), 8000);
+              console.warn('[API] 429 rate limited, retry', item.attempt, 'in', backoff + 'ms');
+              setTimeout(function() {
                 _API_RUNNING--;
-                item.reject(new Error('TOKEN_EXPIRED'));
-                _flushQueueOnDeadToken();
-                return;
-              }
-              _API_RUNNING--;
-              item.resolve(resp);
-              drainQueue();
-            })
-            .catch(function(err) {
-              _API_RUNNING--;
-              if (item.attempt < _API_MAX_RETRIES) {
-                item.attempt++;
-                console.warn('[API] Network error, retry', item.attempt, ':', err.message || String(err));
                 _API_QUEUE.unshift(item);
                 drainQueue();
-              } else {
-                console.error('[API] Failed after', _API_MAX_RETRIES, 'retries:', err.message || String(err));
-                item.reject(err);
-                drainQueue();
-              }
-            });
-        }, delay);
+              }, backoff);
+              return;
+            }
+            if (resp.status === 401) {
+              console.error('[API] 401 Unauthorized — token expirado ou revogado');
+              _API_TOKEN_DEAD = true;
+              setTimeout(function() { _API_TOKEN_DEAD = false; }, 60000);
+              _API_RUNNING--;
+              item.reject(new Error('TOKEN_EXPIRED'));
+              _flushQueueOnDeadToken();
+              return;
+            }
+            _API_RUNNING--;
+            item.resolve(resp);
+            drainQueue();
+          })
+          .catch(function(err) {
+            _API_RUNNING--;
+            if (item.attempt < _API_MAX_RETRIES) {
+              item.attempt++;
+              console.warn('[API] Network error, retry', item.attempt, ':', err.message || String(err));
+              _API_QUEUE.unshift(item);
+              drainQueue();
+            } else {
+              console.error('[API] Failed after', _API_MAX_RETRIES, 'retries:', err.message || String(err));
+              item.reject(err);
+              drainQueue();
+            }
+          });
       })();
     }
   }
@@ -477,7 +502,7 @@
   function processCard(card, actions, listNames, retrabalhoVal) {
     if (!Array.isArray(actions)) actions = [];
     var tl = buildTimeline(actions), now = new Date();
-    var bd = {}, visited = {};
+    var bd = {};
     var created = null;
 
     listNames.forEach(function(n){ bd[n] = null; });
@@ -494,7 +519,6 @@
       var b = countBusinessDays(st.enteredAt, end);
       if (bd.hasOwnProperty(st.name)) {
         bd[st.name] = (bd[st.name] === null ? 0 : bd[st.name]) + b;
-        visited[st.name] = true;
       }
     });
 
@@ -632,7 +656,7 @@
     function addBlank(cols) { var r=new Array(cols); for(var i=0;i<cols;i++) r[i]=''; rows.push(r); types.push('empty'); }
 
     var total = cards.length;
-    var avgLT = avg(cards.map(function(c){return c.totalBD;}), false);
+    var avgLT = avg(cards.map(function(c){return c.totalBD;}));
     var rwCards = cards.filter(function(c){return c.retrabalho > 0;}).length;
     var dueCards = cards.filter(function(c){return c.daysUntilDue !== null;}).length;
     var lateCards = cards.filter(function(c){return c.status==='🔴 Atrasado';}).length;
@@ -653,8 +677,8 @@
       var bv = cards.map(function(c){return c.bd[n];}).filter(function(v){return v!==null && v>0;});
       var passed = bv.length;
       var rwVals = cards.filter(function(c){return c.bd[n]!==null;}).map(function(c){return c.retrabalho;});
-      var avgRw = avg(rwVals, false);
-      addRow([n, avg(bv, false), passed, avgRw]);
+      var avgRw = avg(rwVals);
+      addRow([n, avg(bv), passed, avgRw]);
     });
     addBlank(4);
 
@@ -673,7 +697,7 @@
       return {
         name: l,
         count: lc.length,
-        avgLt: avg(lc.map(function(c){return c.totalBD;}), false),
+        avgLt: avg(lc.map(function(c){return c.totalBD;})),
         latePct: lc.length ? Math.round(late/lc.length*1000)/10 : 0
       };
     }).sort(function(a,b){return b.count - a.count;});
@@ -778,8 +802,8 @@
       .then(function(board) {
         boardId = board.id;
         return Promise.all([
-          queuedFetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(function(r){return r.json();}),
-          queuedFetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(function(r){return r.json();}),
+          queuedFetch(apiUrl('/boards/'+boardId+'/lists?fields=name', token)).then(assertOk).then(function(r){return r.json();}),
+          queuedFetch(apiUrl('/boards/'+boardId+'/customFields', token)).then(assertOk).then(function(r){return r.json();}),
           t.get('board', 'shared', 'healthConfig')
         ]);
       })
@@ -805,6 +829,7 @@
 
         return Promise.all(flowLists.map(function(l) {
           return queuedFetch(apiUrl('/lists/'+l.id+'/cards?filter=open&fields=name,due,dateLastActivity,labels,idList,desc,dueComplete', token))
+            .then(assertOk)
             .then(function(r){return r.json();});
         })).then(function(cardArrays) {
           var cards = [];
@@ -829,12 +854,14 @@
 
         var actionPromises = cards.map(function(c){
           return queuedFetch(apiUrl('/cards/'+c.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token))
+            .then(assertOk)
             .then(function(r){return r.json();});
         });
 
         var cfPromises = cards.map(function(c){
           if (!retrabalhoField) return Promise.resolve([]);
           return queuedFetch(apiUrl('/cards/'+c.id+'/customFieldItems', token))
+            .then(assertOk)
             .then(function(r){return r.json();});
         });
 
@@ -879,17 +906,38 @@
   //  LABELS CACHE
   // ═══════════════════════════════════════════════
 
+  var LABELS_CACHE_TTL = 86400000;
+  var _labelsMemCache = null;
+
   function getLabelsCache(t, boardId, token) {
+    // Cache em memória primeiro: mesmo que o t.set do pluginData falhe (ex.: limite
+    // de 4096 bytes), as labels não são re-buscadas a cada recomputo de badge.
+    if (_labelsMemCache && Date.now() - _labelsMemCache.savedAt < LABELS_CACHE_TTL) {
+      return Promise.resolve(_labelsMemCache);
+    }
     return t.get('board', 'private', 'labelsCache')
       .catch(function() { return null; })
       .then(function(cache) {
-        if (cache && cache.savedAt && Date.now() - cache.savedAt < 86400000) return cache;
+        if (cache && cache.savedAt && Date.now() - cache.savedAt < LABELS_CACHE_TTL) {
+          _labelsMemCache = cache;
+          return cache;
+        }
         return queuedFetch(apiUrl('/boards/' + boardId + '/labels', token))
+          .then(assertOk)
           .then(function(r) { return r.json(); })
           .then(function(labels) {
-            var result = { labels: Array.isArray(labels) ? labels : [], savedAt: Date.now() };
+            // Só id e nome são usados — objetos completos estouravam o pluginData.
+            var slim = Array.isArray(labels)
+              ? labels.map(function(l) { return { id: l.id, name: l.name }; })
+              : [];
+            var result = { labels: slim, savedAt: Date.now() };
+            _labelsMemCache = result;
             t.set('board', 'private', 'labelsCache', result).catch(function() {});
             return result;
+          })
+          .catch(function(err) {
+            console.warn('[LABELS] Falha ao buscar labels:', err && err.message ? err.message : String(err));
+            return { labels: [], savedAt: 0 };
           });
       });
   }
@@ -900,6 +948,10 @@
 
   var AUTO_COOLDOWN = 600000;
   var _automationLock = {};
+
+  function logAutoFail(err) {
+    console.warn('[AUTO] Falha na automação:', err && err.message ? err.message : String(err));
+  }
 
   function runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache, isConforme, missingItems) {
     if (_automationLock[card.id]) return;
@@ -924,7 +976,7 @@
       queuedFetch(apiUrl('/cards/' + card.id, token), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idList: concluidoId })
-      }).catch(function() {});
+      }).then(assertOk).catch(logAutoFail);
       mark('moveConcluido');
     }
 
@@ -933,7 +985,7 @@
       queuedFetch(apiUrl('/cards/' + card.id, token), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dueComplete: true })
-      }).catch(function() {});
+      }).then(assertOk).catch(logAutoFail);
       mark('markComplete');
     }
 
@@ -954,7 +1006,7 @@
           queuedFetch(apiUrl('/cards/' + card.id + '/idLabels', token), {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ value: captLabel.id })
-          }).catch(function() {});
+          }).then(assertOk).catch(logAutoFail);
           mark('labelCaptacao');
         }
       }
@@ -986,13 +1038,13 @@
           queuedFetch('https://api.trello.com/1/card/' + card.id + '/customField/' + fields.retrabalho.fieldId + '/item?key=' + APP_KEY + '&token=' + token, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ value: { number: String(rwVal + 1) } })
-          }).catch(function() {});
+          }).then(assertOk).catch(logAutoFail);
         }
         // Set start date
         queuedFetch(apiUrl('/cards/' + card.id, token), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ start: new Date().toISOString() })
-        }).catch(function() {});
+        }).then(assertOk).catch(logAutoFail);
         mark('retrabalhoAlt');
       }
     }
@@ -1013,7 +1065,7 @@
           queuedFetch('https://api.trello.com/1/card/' + card.id + '/customField/' + fields.prioridade.fieldId + '/item?key=' + APP_KEY + '&token=' + token, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ idValue: altoId })
-          }).catch(function() {});
+          }).then(assertOk).catch(logAutoFail);
           mark('prioAlto');
         }
       }
@@ -1027,10 +1079,9 @@
 
     if (nasListasDeReversao && !isConforme && planejamentoId && podReverter) {
       autoCache.lastRevertedConformidade = now;
-      changed = true;
-      t.set('card', 'private', 'automationCache', autoCache).catch(function() {});
+      changed = true; // gravado uma única vez no bloco final (if changed)
 
-      var commentText = '🚨 CARD DEVOLVIDO PARA PLANEJAMENTO 🚨\n\n' +
+      var commentText ='🚨 CARD DEVOLVIDO PARA PLANEJAMENTO 🚨\n\n' +
         'Este card foi movido de volta automaticamente ' +
         'porque está com campos obrigatórios incompletos.\n\n' +
         '❌ O QUE ESTÁ FALTANDO:\n' +
@@ -1044,33 +1095,37 @@
       queuedFetch(apiUrl('/cards/' + card.id, token), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idList: planejamentoId, pos: 'top' })
-      }).then(function() {
+      }).then(assertOk).then(function() {
         return queuedFetch(apiUrl('/cards/' + card.id + '/actions/comments', token), {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: commentText })
-        });
-      }).catch(function() {});
+        }).then(assertOk);
+      }).catch(logAutoFail);
     }
 
-    // 3+4+5. (Sem etiquetas OR sem due) + fora de Planejamento/finais → mover p/ Planejamento
-    if (LISTAS_PROTEGIDAS_345.indexOf(currentListName) === -1 && planejamentoId && cooled('movePlanej')) {
+    // 3+5. (Sem etiquetas OR sem due) + fora de Planejamento/finais → mover p/ Planejamento
+    if (LISTAS_PROTEGIDAS_35.indexOf(currentListName) === -1 && planejamentoId && cooled('movePlanej')) {
       var noLabels = !card.labels || card.labels.length === 0;
       var noDue = !card.due;
       if (noLabels || noDue) {
         queuedFetch(apiUrl('/cards/' + card.id, token), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ idList: planejamentoId })
-        }).catch(function() {});
+        }).then(assertOk).catch(logAutoFail);
         mark('movePlanej');
       }
     }
 
     if (changed) {
-      t.set('card', 'private', 'automationCache', autoCache).catch(function() {});
+      // escopo SHARED: o cooldown vale para todos os membros (private era por membro,
+      // o que permitia automações duplicadas com dois boards abertos).
+      t.set('card', 'shared', 'automationCache', autoCache).catch(function() {});
     }
   }
 
-  var BADGE_CACHE_TTL = 10000;
+  // 60s (antes 10s): alinhado ao TTL do cache de API; reduz ~6x as rajadas de
+  // requisições e as gravações de pluginData por card com o board aberto.
+  var BADGE_CACHE_TTL = 60000;
   var BADGE_ERROR_TTL = 10000;
   var _dueCompleteProcessed = {};
   var _healthConfigCache = null;
@@ -1084,7 +1139,6 @@
     return Promise.all([
       t.card('id', 'name', 'due', 'desc', 'labels', 'idList', 'dueComplete', 'start'),
       t.board('id'),
-      Promise.resolve(TRELLO_TOKEN),
       t.lists('id', 'name'),
       (function() {
         if (_healthConfigCache && Date.now() - _healthConfigCachedAt < HEALTH_CONFIG_TTL) {
@@ -1098,12 +1152,12 @@
           })
           .catch(function() { return null; });
       })(),
-      t.get('card', 'private', 'automationCache').catch(function() { return null; })
+      t.get('card', 'shared', 'automationCache').catch(function() { return null; })
     ]).then(function(res) {
-      var card = res[0], boardId = res[1].id, token = res[2], lists = res[3], cfg = res[4], autoCache = res[5];
+      var card = res[0], boardId = res[1].id, lists = res[2], cfg = res[3], autoCache = res[4];
+      var token = TRELLO_TOKEN;
       var currentList = lists.find(function(l) { return l.id === card.idList; });
       var currentListName = currentList ? currentList.name.trim() : '';
-      var isConcluido = currentListName === 'Concluído 🏆';
 
       return Promise.all([
         cachedFetch(card.id+':actions', apiUrl('/cards/'+card.id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000', token)),
@@ -1172,7 +1226,7 @@
             }
           }
 
-          t.set('card', 'private', 'badgeCache', { badges: badges, cachedAt: Date.now() });
+          t.set('card', 'private', 'badgeCache', { badges: badges, cachedAt: Date.now() }).catch(function() {});
 
           try {
             runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache, isConforme, missingItems);
@@ -1184,7 +1238,7 @@
         });
     }).catch(function(err) {
       console.error('[BADGE] ERRO FATAL:', err && err.message ? err.message : String(err));
-      t.set('card', 'private', 'badgeCache', { badges: [], cachedAt: Date.now() - BADGE_CACHE_TTL + BADGE_ERROR_TTL });
+      t.set('card', 'private', 'badgeCache', { badges: [], cachedAt: Date.now() - BADGE_CACHE_TTL + BADGE_ERROR_TTL }).catch(function() {});
       return [];
     });
   }
@@ -1221,27 +1275,29 @@
   try {
   TrelloPowerUp.initialize({
     'card-badges': function(t) {
-      return t.card('id', 'dueComplete', 'idList').then(function(card) {
-        return t.lists('id', 'name').then(function(lists) {
-          var currentList = lists.find(function(l) { return l.id === card.idList; });
-          var currentListName = currentList ? currentList.name.trim() : '';
-          var isConcluido = currentListName === 'Concluído 🏆';
+      return Promise.all([
+        t.card('id', 'dueComplete', 'idList'),
+        t.lists('id', 'name')
+      ]).then(function(res) {
+        var card = res[0], lists = res[1];
+        var currentList = lists.find(function(l) { return l.id === card.idList; });
+        var currentListName = currentList ? currentList.name.trim() : '';
+        var isConcluido = currentListName === 'Concluído 🏆';
 
-          if (card.dueComplete && !isConcluido && !_dueCompleteProcessed[card.id]) {
-            _dueCompleteProcessed[card.id] = Date.now();
-            return fetchAndComputeBadges(t);
-          }
-          if (isConcluido && _dueCompleteProcessed[card.id]) {
-            delete _dueCompleteProcessed[card.id];
-          }
+        if (card.dueComplete && !isConcluido && !_dueCompleteProcessed[card.id]) {
+          _dueCompleteProcessed[card.id] = Date.now();
+          return fetchAndComputeBadges(t);
+        }
+        if (isConcluido && _dueCompleteProcessed[card.id]) {
+          delete _dueCompleteProcessed[card.id];
+        }
 
-          return t.get('card', 'private', 'badgeCache').then(function(cached) {
-            if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
-              return cached.badges;
-            }
-            return fetchAndComputeBadges(t);
-          }).catch(function() { return []; });
-        });
+        return t.get('card', 'private', 'badgeCache').then(function(cached) {
+          if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
+            return cached.badges;
+          }
+          return fetchAndComputeBadges(t);
+        }).catch(function() { return []; });
       }).catch(function() { return []; });
     },
 
@@ -1285,7 +1341,16 @@
           if (!hasDue)    missing.push('Data de entrega não definida');
           if (!hasDesc)   missing.push('Descrição não preenchida');
           if (!hasPrio)   missing.push('Prioridade não definida');
-          t.set('card', 'shared', 'warningFields', missing).catch(function() {});
+          // Grava só quando o valor mudou: cada t.set notifica o Trello e
+          // re-dispara as capabilities do card — regravar o mesmo valor era ruído.
+          t.get('card', 'shared', 'warningFields')
+            .catch(function() { return null; })
+            .then(function(prev) {
+              var prevJson = JSON.stringify(Array.isArray(prev) ? prev : []);
+              if (prevJson !== JSON.stringify(missing)) {
+                t.set('card', 'shared', 'warningFields', missing).catch(function() {});
+              }
+            });
           return buildSections(t, missing);
         });
       }).catch(function() {

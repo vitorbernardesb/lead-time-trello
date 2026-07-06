@@ -59,18 +59,6 @@
       font-weight: 600;
     }
     .msg { text-align: center; padding: 16px 8px; color: #5e6c84; font-size: 13px; }
-    .auth-btn {
-      margin-top: 8px;
-      background: #0079bf;
-      color: #fff;
-      border: none;
-      border-radius: 3px;
-      padding: 6px 14px;
-      font-size: 13px;
-      cursor: pointer;
-      font-family: inherit;
-    }
-    .auth-btn:hover { background: #026aa7; }
   </style>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
 </head>
@@ -84,6 +72,13 @@
   var TRELLO_TOKEN = 'ATTAa452bde3af25da62c9bf3061e522b13a132b95f557ff528b4b3a5aaa8aac01165F42B089';
   var t = TrelloPowerUp.iframe({ appKey: APP_KEY, appName: 'Lead Time Midiática' });
   var content = document.getElementById('content');
+  // Etapas com permanência menor que isto são fundidas na etapa anterior
+  // (mesma regra do dashboard — mantém os três contextos consistentes).
+  var MIN_STAGE_MS = 600000;
+  // switchMode grava leadTimeViewMode via t.set, o que dispara um novo t.render;
+  // como o DOM já foi atualizado manualmente, esse render extra (com refetch das
+  // actions) é suprimido uma única vez.
+  var selfUpdate = false;
 
   var MODES = [
     { key: 'businessDays', label: 'Dias úteis', header: 'Dias úteis' },
@@ -119,40 +114,31 @@
     return count;
   }
 
+  // Janela de trabalho unificada com o dashboard (seg–sex, 09:00–18:00).
+  // Algoritmo por sobreposição diária (mesmo do dashboard): soma, para cada dia
+  // útil, a interseção do intervalo com a janela de trabalho. Retorna MINUTOS.
+  // Substitui a versão anterior que pulava uma hora inteira após a primeira
+  // hora parcial e usava janela divergente (08:00–18:00).
+  var WORK_START_HOUR = 9;
+  var WORK_END_HOUR = 18;
+
   function countWorkingHours(from, to) {
-    var s = new Date(from);
-    var e = new Date(to);
-    if (e <= s) return 0;
-
-    var totalMinutes = 0;
-    var cur = new Date(s);
-
-    var firstHourEnd = new Date(s);
-    firstHourEnd.setMinutes(60, 0, 0);
-    if (firstHourEnd > e) firstHourEnd = new Date(e);
-
-    while (cur < firstHourEnd) {
-      var day = cur.getDay(), hour = cur.getHours();
-      if (day >= 1 && day <= 5 && hour >= 8 && hour < 18) totalMinutes++;
-      cur.setTime(cur.getTime() + 60000);
+    from = new Date(from); to = new Date(to);
+    if (to <= from) return 0;
+    var totalMs = 0;
+    var cursor = new Date(from); cursor.setHours(0, 0, 0, 0);
+    while (cursor <= to) {
+      var dow = cursor.getDay();
+      if (dow !== 0 && dow !== 6) {
+        var dayStart = new Date(cursor); dayStart.setHours(WORK_START_HOUR, 0, 0, 0);
+        var dayEnd   = new Date(cursor); dayEnd.setHours(WORK_END_HOUR, 0, 0, 0);
+        var s = from > dayStart ? from : dayStart;
+        var e = to   < dayEnd   ? to   : dayEnd;
+        if (e > s) totalMs += (e - s);
+      }
+      cursor.setDate(cursor.getDate() + 1);
     }
-
-    cur.setMinutes(0, 0, 0);
-    cur.setTime(cur.getTime() + 3600000);
-    while (cur.getTime() + 3600000 <= e.getTime()) {
-      var day2 = cur.getDay(), hour2 = cur.getHours();
-      if (day2 >= 1 && day2 <= 5 && hour2 >= 8 && hour2 < 18) totalMinutes += 60;
-      cur.setTime(cur.getTime() + 3600000);
-    }
-
-    var lastHourEnd = new Date(e);
-    while (cur < lastHourEnd) {
-      var day3 = cur.getDay(), hour3 = cur.getHours();
-      if (day3 >= 1 && day3 <= 5 && hour3 >= 8 && hour3 < 18) totalMinutes++;
-      cur.setTime(cur.getTime() + 60000);
-    }
-
-    return totalMinutes;
+    return Math.round(totalMs / 60000);
   }
 
   function formatBusinessDays(v) { return v + ' d.u.'; }
@@ -225,11 +211,22 @@
       }
     }
 
-    if (stages.length === 1 && !stages[0].leftAt && createdAt) {
-      stages[0].enteredAt = createdAt;
+    var out = [];
+    for (var j = 0; j < stages.length; j++) {
+      var st = stages[j];
+      var dur = (st.leftAt ? st.leftAt.getTime() : Date.now()) - st.enteredAt.getTime();
+      if (dur < MIN_STAGE_MS && st.leftAt && out.length > 0) {
+        out[out.length - 1].leftAt = st.leftAt;
+      } else {
+        out.push(st);
+      }
     }
 
-    return stages;
+    if (out.length === 1 && !out[0].leftAt && createdAt) {
+      out[0].enteredAt = createdAt;
+    }
+
+    return out;
   }
 
   function computeSegments(stages) {
@@ -347,7 +344,13 @@
       cells[j].textContent = fmt(val);
     }
 
-    try { t.set('card', 'shared', 'leadTimeViewMode', newMode); } catch(e) {}
+    try {
+      selfUpdate = true;
+      // válvula de segurança: se o render disparado pelo t.set não chegar,
+      // não deixa um render legítimo futuro ser engolido.
+      setTimeout(function() { selfUpdate = false; }, 1500);
+      t.set('card', 'shared', 'leadTimeViewMode', newMode);
+    } catch(e) { selfUpdate = false; }
   }
 
   function fetchWithRetry(url, retries, delay) {
@@ -427,7 +430,10 @@
     });
   }
 
-  t.render(render);
+  t.render(function() {
+    if (selfUpdate) { selfUpdate = false; return; }
+    render();
+  });
 })();
 </script>
 </body>
