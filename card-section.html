@@ -12,53 +12,66 @@
       background: transparent;
       padding: 4px 0;
       overflow: hidden;
+      -webkit-font-smoothing: antialiased;
     }
     #content { width: 100%; overflow: visible; }
     table { width: 100%; border-collapse: collapse; }
     thead th {
       text-align: left;
       padding: 4px 8px 6px;
-      border-bottom: 2px solid #dfe1e6;
+      border-bottom: 1px solid #dfe1e6;
       font-size: 11px;
-      font-weight: 600;
-      color: #5e6c84;
+      font-weight: 700;
+      color: #6b778c;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.05em;
     }
+    /* coluna de tempo alinhada à direita + dígitos tabulares → valores escaneáveis */
+    thead th:last-child { text-align: right; }
     tbody td {
-      padding: 5px 8px;
-      border-bottom: 1px solid #ebecf0;
+      padding: 6px 8px;
+      border-bottom: 1px solid #f0f1f3;
       font-size: 13px;
       color: #172b4d;
     }
+    td.time-val { text-align: right; font-variant-numeric: tabular-nums; }
     tbody tr:last-child td { border-bottom: none; }
-    tr.current td { background: #e3fcef; font-weight: 600; }
+    tr.current td { background: #e8f6ee; font-weight: 600; }
+    tr.current td:first-child { box-shadow: inset 3px 0 0 #2E9E5B; }
     tr.total td {
       font-weight: 700;
-      border-top: 2px solid #dfe1e6;
+      border-top: 1px solid #dfe1e6;
       border-bottom: none;
-      background: #f4f5f7;
+      background: #f7f8f9;
       font-size: 13px;
     }
-    .toggle-bar { display: flex; gap: 4px; justify-content: flex-end; margin-bottom: 8px; }
+    /* controle segmentado: trilho cinza + segmento ativo em "cartão" branco elevado */
+    .toggle-bar {
+      display: flex; gap: 2px;
+      width: max-content; margin: 0 0 10px auto;
+      background: #f1f2f4; border-radius: 8px; padding: 2px;
+    }
     .toggle-btn {
       font-size: 11px;
-      padding: 3px 8px;
-      border-radius: 3px;
-      border: 1px solid #dfe1e6;
+      font-weight: 500;
+      padding: 4px 9px;
+      border-radius: 6px;
+      border: none;
       background: transparent;
-      color: #5e6c84;
+      color: #6b778c;
       cursor: pointer;
       font-family: inherit;
+      transition: background 0.12s, color 0.12s;
     }
-    .toggle-btn:hover { background: #f4f5f7; color: #172b4d; }
+    .toggle-btn:hover { color: #172b4d; }
+    .toggle-btn:focus-visible { outline: 2px solid #172b4d; outline-offset: 1px; }
     .toggle-btn.active {
-      background: #0079bf;
-      border-color: #0079bf;
-      color: #ffffff;
-      font-weight: 600;
+      background: #ffffff;
+      color: #172b4d;
+      font-weight: 700;
+      box-shadow: 0 1px 2px rgba(9,30,66,0.15);
     }
-    .msg { text-align: center; padding: 16px 8px; color: #5e6c84; font-size: 13px; }
+    .msg { text-align: center; padding: 16px 8px; color: #6b778c; font-size: 13px; }
   </style>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
 </head>

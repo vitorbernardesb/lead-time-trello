@@ -433,15 +433,17 @@
   // ═══════════════════════════════════════════════
 
   var BD = {
-    top:{style:'thin',color:{rgb:'CCCCCC'}},
-    bottom:{style:'thin',color:{rgb:'CCCCCC'}},
-    left:{style:'thin',color:{rgb:'CCCCCC'}},
-    right:{style:'thin',color:{rgb:'CCCCCC'}}
+    top:{style:'thin',color:{rgb:'DDDDDD'}},
+    bottom:{style:'thin',color:{rgb:'DDDDDD'}},
+    left:{style:'thin',color:{rgb:'DDDDDD'}},
+    right:{style:'thin',color:{rgb:'DDDDDD'}}
   };
 
-  function sHeader()    { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:11},fill:{fgColor:{rgb:'1E3A5F'}},border:BD,alignment:{horizontal:'center',vertical:'center'}}; }
-  function sData(r,num) { return {fill:{fgColor:{rgb:r%2===0?'FFFFFF':'F8F9FA'}},border:BD,alignment:{horizontal:num?'right':'left',vertical:'center'}}; }
-  function sMedia(num)  { var o = {font:{bold:true},fill:{fgColor:{rgb:'FFF9C4'}},border:BD,alignment:{horizontal:num?'right':'left'}}; if(num) o.numFmt='0.0'; return o; }
+  // Cabeçalhos na identidade da marca (preto + branco); zebra e bordas suaves.
+  // As cores SEMÂNTICAS de dados (sStatus/sDiasAtePrazo/sPrazoDegrade) não mudam.
+  function sHeader()    { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:11},fill:{fgColor:{rgb:'0A0A0A'}},border:BD,alignment:{horizontal:'center',vertical:'center'}}; }
+  function sData(r,num) { return {fill:{fgColor:{rgb:r%2===0?'FFFFFF':'F7F8F9'}},border:BD,alignment:{horizontal:num?'right':'left',vertical:'center'}}; }
+  function sMedia(num)  { var o = {font:{bold:true},fill:{fgColor:{rgb:'FFF4CC'}},border:BD,alignment:{horizontal:num?'right':'left'}}; if(num) o.numFmt='0.0'; return o; }
 
   function sStatus(v) {
     var bg = v==='🔴 Atrasado'?'FDE8E8' : v==='⚠️ Vence hoje'?'FFF3CD' : v==='✅ No prazo'?'E8F5E9' : 'FFFFFF';
@@ -472,8 +474,8 @@
     return s;
   }
 
-  function sKpiTitle()  { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:12},fill:{fgColor:{rgb:'1E3A5F'}},border:BD}; }
-  function sKpiSub()    { return {font:{bold:true},fill:{fgColor:{rgb:'E0E0E0'}},border:BD}; }
+  function sKpiTitle()  { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:12},fill:{fgColor:{rgb:'0A0A0A'}},border:BD}; }
+  function sKpiSub()    { return {font:{bold:true,color:{rgb:'55555E'}},fill:{fgColor:{rgb:'EFEFF2'}},border:BD}; }
   function sKpiData(num){ return {border:BD,alignment:{horizontal:num?'right':'left'}}; }
 
   function setS(ws,r,c,style) {
