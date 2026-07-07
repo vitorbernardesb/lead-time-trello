@@ -1000,26 +1000,58 @@
     loadXLSXLib(function(err) {
       try {
         if (err || typeof XLSX === 'undefined') { exportEtapaCSV(data, fileBase); return; }
+
+        // ── Estilos executivos (mesma linguagem do relatório completo) ──
+        var XB = { top:{style:'thin',color:{rgb:'DDDDDD'}}, bottom:{style:'thin',color:{rgb:'DDDDDD'}}, left:{style:'thin',color:{rgb:'DDDDDD'}}, right:{style:'thin',color:{rgb:'DDDDDD'}} };
+        var head = {font:{bold:true,color:{rgb:'FFFFFF'},sz:11},fill:{fgColor:{rgb:'0A0A0A'}},border:XB,alignment:{horizontal:'center',vertical:'center',wrapText:true}};
+        // alinhamento por coluna: texto à esquerda, data ao centro, números à direita
+        var ALIGN = ['left','left','center','right','right','right','right','left'];
+        var NUMFMT = { 3:'0.0', 4:'0', 5:'0.0', 6:'0.0' };
+        function cellStyle(rowParity, col) {
+          var s = { fill:{fgColor:{rgb: rowParity%2===0 ? 'FFFFFF' : 'F7F8F9'}}, border:XB, alignment:{horizontal:ALIGN[col]||'left',vertical:'center'} };
+          if (NUMFMT[col]) s.numFmt = NUMFMT[col];
+          return s;
+        }
+
+        var HEAD = 3;                         // faixa de título ocupa 3 linhas
         var aoa = [data.header];
         data.rows.forEach(function(r) {
           aoa.push([r.nome, r.etapa, r.entrada, r.diasCorr, r.diasUteis, r.horasCorr, r.horasUteis, r.link]);
         });
-        var ws = XLSX.utils.aoa_to_sheet(aoa);
-        // largura das colunas
-        ws['!cols'] = [{wch:38},{wch:20},{wch:18},{wch:12},{wch:11},{wch:13},{wch:11},{wch:32}];
-        // estilo do cabeçalho (consistente com a identidade: fundo escuro, texto claro)
-        var headStyle = {font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'0A0A0A'}},alignment:{horizontal:'center'}};
-        for (var c = 0; c < data.header.length; c++) {
-          var ref = XLSX.utils.encode_cell({r:0,c:c});
-          if (ws[ref]) ws[ref].s = headStyle;
-        }
-        // coluna Link clicável (hyperlink nativo do XLSX → funciona no Excel e Sheets)
+        var nCols = data.header.length;
+        var ws = XLSX.utils.aoa_to_sheet([[]]);
+        XLSX.utils.sheet_add_aoa(ws, aoa, { origin: { r: HEAD, c: 0 } });
+
+        // faixa de título executivo (nome do relatório + metadados)
+        ws['A1'] = { v:'Cards da etapa — ' + nomeEtapa, t:'s', s:{font:{bold:true,sz:15,color:{rgb:'0A0A0A'}},alignment:{vertical:'center'}} };
+        ws['A2'] = { v:'Gerado em ' + fmtDateTime(new Date()) + ' · ' + data.rows.length + ' card' + (data.rows.length===1?'':'s'), t:'s', s:{font:{sz:10,color:{rgb:'6B6B70'}},alignment:{vertical:'center'}} };
+        ws['!merges'] = [ {s:{r:0,c:0},e:{r:0,c:nCols-1}}, {s:{r:1,c:0},e:{r:1,c:nCols-1}} ];
+        ws['!rows'] = [ {hpt:21}, {hpt:15}, {hpt:6} ];
+        ws['!cols'] = [{wch:38},{wch:20},{wch:18},{wch:13},{wch:11},{wch:14},{wch:11},{wch:14}];
+
+        // cabeçalho da tabela
+        for (var c = 0; c < nCols; c++) ws[XLSX.utils.encode_cell({r:HEAD,c:c})].s = head;
+
+        // linhas de dados: zebra + bordas + alinhamento/numFmt por tipo
         for (var i = 0; i < data.rows.length; i++) {
+          var rr = HEAD + 1 + i;
+          for (var cc = 0; cc < nCols; cc++) {
+            var ref0 = XLSX.utils.encode_cell({r:rr,c:cc});
+            if (!ws[ref0]) ws[ref0] = { v:'', t:'s' };
+            ws[ref0].s = cellStyle(i, cc);
+          }
+          // coluna Link clicável (hyperlink nativo → Excel, Sheets, LibreOffice)
           var url = data.rows[i].link;
-          if (!url) continue;
-          var lref = XLSX.utils.encode_cell({r:i+1,c:7});
-          ws[lref] = { t:'s', v:'Abrir card', l:{ Target:url, Tooltip:'Abrir no Trello' }, s:{font:{color:{rgb:'0B5FFF'},underline:true}} };
+          if (url) {
+            var lref = XLSX.utils.encode_cell({r:rr,c:7});
+            ws[lref] = { t:'s', v:'Abrir card', l:{ Target:url, Tooltip:'Abrir no Trello' }, s:{font:{color:{rgb:'0B5FFF'},underline:true},border:XB,alignment:{vertical:'center'}} };
+          }
         }
+
+        var lastRow0 = HEAD + data.rows.length;
+        ws['!ref'] = 'A1:' + XLSX.utils.encode_cell({r: lastRow0, c: nCols - 1});
+        ws['!autofilter'] = { ref: XLSX.utils.encode_cell({r:HEAD,c:0}) + ':' + XLSX.utils.encode_cell({r:lastRow0,c:nCols-1}) };
+
         var wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Cards');
         XLSX.writeFile(wb, fileBase + '.xlsx');

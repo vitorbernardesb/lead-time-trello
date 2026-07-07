@@ -441,9 +441,10 @@
 
   // Cabeçalhos na identidade da marca (preto + branco); zebra e bordas suaves.
   // As cores SEMÂNTICAS de dados (sStatus/sDiasAtePrazo/sPrazoDegrade) não mudam.
-  function sHeader()    { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:11},fill:{fgColor:{rgb:'0A0A0A'}},border:BD,alignment:{horizontal:'center',vertical:'center'}}; }
+  function sHeader()    { return {font:{bold:true,color:{rgb:'FFFFFF'},sz:11},fill:{fgColor:{rgb:'0A0A0A'}},border:BD,alignment:{horizontal:'center',vertical:'center',wrapText:true}}; }
   function sData(r,num) { return {fill:{fgColor:{rgb:r%2===0?'FFFFFF':'F7F8F9'}},border:BD,alignment:{horizontal:num?'right':'left',vertical:'center'}}; }
-  function sMedia(num)  { var o = {font:{bold:true},fill:{fgColor:{rgb:'FFF4CC'}},border:BD,alignment:{horizontal:num?'right':'left'}}; if(num) o.numFmt='0.0'; return o; }
+  // Linha de MÉDIA/total: fundo destacado + NEGRITO + borda superior reforçada (executivo).
+  function sMedia(num)  { var o = {font:{bold:true},fill:{fgColor:{rgb:'FFF4CC'}},border:{top:{style:'medium',color:{rgb:'0A0A0A'}},bottom:BD.bottom,left:BD.left,right:BD.right},alignment:{horizontal:num?'right':'left'}}; if(num) o.numFmt='0.0'; return o; }
 
   function sStatus(v) {
     var bg = v==='🔴 Atrasado'?'FDE8E8' : v==='⚠️ Vence hoje'?'FFF3CD' : v==='✅ No prazo'?'E8F5E9' : 'FFFFFF';
@@ -495,6 +496,36 @@
       w.push({wch:Math.min(m+3,max||40)});
     }
     return w;
+  }
+
+  // ── CABEÇALHO EXECUTIVO DA ABA (título + metadados) ──
+  // Reutilizado pelas 3 abas para dar aparência de relatório corporativo.
+  // Título na linha 0, metadados na 1, espaçador na 2 → dados começam na linha 3.
+  // Retorna o nº de linhas consumidas (o corpo é escrito abaixo, com deslocamento).
+  var SHEET_HEAD_ROWS = 3;
+  function xTitle() { return {font:{bold:true,sz:15,color:{rgb:'0A0A0A'}},alignment:{vertical:'center'}}; }
+  function xMeta()  { return {font:{sz:10,color:{rgb:'6B6B70'}},alignment:{vertical:'center'}}; }
+  function bandTitle(ws, title, meta, nCols) {
+    ws['A1'] = { v:title, t:'s', s:xTitle() };
+    ws['A2'] = { v:meta,  t:'s', s:xMeta()  };
+    if (!ws['!merges']) ws['!merges'] = [];
+    ws['!merges'].push({ s:{r:0,c:0}, e:{r:0,c:nCols-1} });
+    ws['!merges'].push({ s:{r:1,c:0}, e:{r:1,c:nCols-1} });
+    if (!ws['!rows']) ws['!rows'] = [];
+    ws['!rows'][0] = { hpt:21 }; ws['!rows'][1] = { hpt:15 }; ws['!rows'][2] = { hpt:6 };
+    return SHEET_HEAD_ROWS;
+  }
+  // Filtro automático (dropdowns de ordenar/filtrar) na linha de cabeçalho da tabela.
+  // Substitui o congelamento de painel (não suportado pela lib xlsx-js-style).
+  function autoFilter(ws, headerRow0, nCols, lastRow0) {
+    ws['!autofilter'] = {
+      ref: XLSX.utils.encode_cell({r:headerRow0,c:0}) + ':' + XLSX.utils.encode_cell({r:lastRow0,c:nCols-1})
+    };
+  }
+  function fmtDateTime(d) {
+    d = new Date(d);
+    function p(n){ return String(n).padStart(2,'0'); }
+    return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()+' '+p(d.getHours())+':'+p(d.getMinutes());
   }
 
   // ═══════════════════════════════════════════════
@@ -559,7 +590,7 @@
   //  ABA RELATÓRIO
   // ═══════════════════════════════════════════════
 
-  function sheetRelatorio(cards, listNames) {
+  function sheetRelatorio(cards, listNames, meta) {
     var hdr = ['Card','Labels','Criado em','Prazo','Dias até o Prazo'];
     var prazoCol = 3;
     var diasCol = 4;
@@ -576,66 +607,79 @@
     numCols[diasCol] = true;
     for (var ci = stageStart; ci <= rwCol; ci++) numCols[ci] = true;
 
-    var data = [hdr];
+    var body = [hdr];
     cards.forEach(function(c) {
       var row = [c.name, c.labels, c.createdAt, c.due, c.daysUntilDue !== null ? c.daysUntilDue : ''];
       listNames.forEach(function(n){ row.push(c.bd[n] !== null ? c.bd[n] : '-'); });
       row.push(c.totalBD);
       row.push(c.retrabalho);
       row.push(c.status);
-      data.push(row);
+      body.push(row);
     });
 
-    var lastDataRow = cards.length + 1;
     var mRow = new Array(hdr.length);
     for (var mi = 0; mi < mRow.length; mi++) mRow[mi] = '';
     mRow[0] = 'MÉDIA';
-    data.push(mRow);
+    body.push(mRow);
 
-    var ws = XLSX.utils.aoa_to_sheet(data);
+    // Corpo (cabeçalho + dados + MÉDIA) escrito ABAIXO da faixa de título executivo.
+    var HEAD = SHEET_HEAD_ROWS;                 // linha do cabeçalho da tabela (idx 3)
+    var ws = XLSX.utils.aoa_to_sheet([[]]);
+    XLSX.utils.sheet_add_aoa(ws, body, { origin: { r: HEAD, c: 0 } });
+    bandTitle(ws, 'Relatório de Lead Time — Cards em aberto', meta || '', hdr.length);
+
+    // Referências das fórmulas AVERAGE deslocadas por HEAD — resultado idêntico
+    // (mesmos valores mediados), apenas em linhas rebaixadas. Verificado por teste.
+    var firstData1 = HEAD + 2;                  // 1ª linha de dados (1-indexed)
+    var lastData0  = HEAD + cards.length;       // última linha de dados (0-indexed)
+    var lastData1  = lastData0 + 1;             // (1-indexed)
+    var mediaRow0  = HEAD + cards.length + 1;   // linha da MÉDIA (0-indexed)
 
     function colLetter(idx) { return XLSX.utils.encode_col(idx); }
 
-    if (lastDataRow >= 2) {
+    if (cards.length >= 1) {
       var diasLetter = colLetter(diasCol);
-      var ref = XLSX.utils.encode_cell({r: lastDataRow, c: diasCol});
-      ws[ref] = {t:'n', f:'AVERAGE('+diasLetter+'2:'+diasLetter+lastDataRow+')', s: sMedia(true)};
+      ws[XLSX.utils.encode_cell({r: mediaRow0, c: diasCol})] = {t:'n', f:'AVERAGE('+diasLetter+firstData1+':'+diasLetter+lastData1+')', s: sMedia(true)};
 
       for (var si = 0; si < listNames.length; si++) {
         var col = stageStart + si;
         var cl = colLetter(col);
-        var sr = XLSX.utils.encode_cell({r: lastDataRow, c: col});
-        ws[sr] = {t:'n', f:'AVERAGE('+cl+'2:'+cl+lastDataRow+')', s: sMedia(true)};
+        ws[XLSX.utils.encode_cell({r: mediaRow0, c: col})] = {t:'n', f:'AVERAGE('+cl+firstData1+':'+cl+lastData1+')', s: sMedia(true)};
       }
 
       var ltLetter = colLetter(ltCol);
-      var ltRef = XLSX.utils.encode_cell({r: lastDataRow, c: ltCol});
-      ws[ltRef] = {t:'n', f:'AVERAGE('+ltLetter+'2:'+ltLetter+lastDataRow+')', s: sMedia(true)};
+      ws[XLSX.utils.encode_cell({r: mediaRow0, c: ltCol})] = {t:'n', f:'AVERAGE('+ltLetter+firstData1+':'+ltLetter+lastData1+')', s: sMedia(true)};
 
       var rwLetter = colLetter(rwCol);
-      var rwRef = XLSX.utils.encode_cell({r: lastDataRow, c: rwCol});
-      ws[rwRef] = {t:'n', f:'AVERAGE('+rwLetter+'2:'+rwLetter+lastDataRow+')', s: sMedia(true)};
+      ws[XLSX.utils.encode_cell({r: mediaRow0, c: rwCol})] = {t:'n', f:'AVERAGE('+rwLetter+firstData1+':'+rwLetter+lastData1+')', s: sMedia(true)};
     }
 
-    ws['!cols'] = colWidths(data, 40);
-    ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activeCell: 'A2', sqref: 'A2' };
+    ws['!cols'] = colWidths(body, 40);          // largura do corpo (título mesclado não infla)
+    ws['!ref'] = 'A1:' + XLSX.utils.encode_cell({r: mediaRow0, c: hdr.length - 1});
+    autoFilter(ws, HEAD, hdr.length, lastData0);
 
-    var totalR = data.length, totalC = hdr.length;
-    for (var r = 0; r < totalR; r++) {
+    // Estilização (linhas do corpo deslocadas por HEAD; título já estilizado)
+    var totalC = hdr.length;
+    var bodyRows = body.length;                 // cabeçalho + dados + MÉDIA
+    for (var br = 0; br < bodyRows; br++) {
+      var r = HEAD + br;                         // linha real na planilha
+      var isHeader = (br === 0);
+      var isMedia  = (br === bodyRows - 1);
+      var dataIdx  = br - 1;                     // índice em `cards` (para linhas de dados)
       for (var c = 0; c < totalC; c++) {
         var cellRef = XLSX.utils.encode_cell({r:r, c:c});
-        if (r === 0) {
+        if (isHeader) {
           setS(ws, r, c, sHeader());
-        } else if (r === totalR - 1) {
+        } else if (isMedia) {
           if (!ws[cellRef] || !ws[cellRef].f) setS(ws, r, c, sMedia(!!numCols[c]));
         } else if (c === stCol) {
-          setS(ws, r, c, sStatus(data[r][c]));
+          setS(ws, r, c, sStatus(body[br][c]));
         } else if (c === diasCol) {
-          setS(ws, r, c, sDiasAtePrazo(data[r][c], r-1));
+          setS(ws, r, c, sDiasAtePrazo(body[br][c], dataIdx));
         } else if (c === prazoCol) {
-          setS(ws, r, c, sPrazoDegrade(cards[r-1].daysUntilDue, r-1));
+          setS(ws, r, c, sPrazoDegrade(cards[dataIdx].daysUntilDue, dataIdx));
         } else {
-          setS(ws, r, c, sData(r-1, !!numCols[c]));
+          setS(ws, r, c, sData(dataIdx, !!numCols[c]));
         }
       }
     }
@@ -647,7 +691,7 @@
   //  ABA KPIs
   // ═══════════════════════════════════════════════
 
-  function sheetKPIs(cards, listNames) {
+  function sheetKPIs(cards, listNames, meta) {
     var rows = [], types = [];
     function addTitle(text, cols) {
       var r = new Array(cols); for (var i=0;i<cols;i++) r[i]=''; r[0]=text;
@@ -711,14 +755,19 @@
     var maxCols = 4;
     rows.forEach(function(r){ while(r.length < maxCols) r.push(''); });
 
-    var ws = XLSX.utils.aoa_to_sheet(rows);
+    // Blocos escritos abaixo da faixa de título executivo.
+    var HEAD = SHEET_HEAD_ROWS;
+    var ws = XLSX.utils.aoa_to_sheet([[]]);
+    XLSX.utils.sheet_add_aoa(ws, rows, { origin: { r: HEAD, c: 0 } });
+    bandTitle(ws, 'Indicadores de Desempenho (KPIs)', meta || '', maxCols);
     ws['!cols'] = [{wch:30},{wch:22},{wch:20},{wch:18}];
+    ws['!ref'] = 'A1:' + XLSX.utils.encode_cell({r: HEAD + rows.length - 1, c: maxCols - 1});
 
     for (var r = 0; r < rows.length; r++) {
       for (var c = 0; c < maxCols; c++) {
-        if (types[r]==='title')     setS(ws, r, c, sKpiTitle());
-        else if (types[r]==='sub')  setS(ws, r, c, sKpiSub());
-        else if (types[r]==='data') setS(ws, r, c, sKpiData(c > 0));
+        if (types[r]==='title')     setS(ws, HEAD + r, c, sKpiTitle());
+        else if (types[r]==='sub')  setS(ws, HEAD + r, c, sKpiSub());
+        else if (types[r]==='data') setS(ws, HEAD + r, c, sKpiData(c > 0));
       }
     }
 
@@ -733,7 +782,7 @@
   var slaDefaults = [2, 5, 1, 3, 5, 2, 2, 2, 3, 2, 999];
   FLOW_LISTS.forEach(function(n, i) { DEFAULT_SLA[n] = slaDefaults[i]; });
 
-  function sheetAlertas(cards, slaConfig) {
+  function sheetAlertas(cards, slaConfig, meta) {
     var sla = slaConfig || DEFAULT_SLA;
     var alerts = [];
     cards.forEach(function(c) {
@@ -750,29 +799,35 @@
     alerts.sort(function(a,b) { return b.excess - a.excess; });
 
     var hdr = ['Card','Etapa atual','Dias úteis na etapa','SLA da etapa','Excesso'];
-    var data = [hdr];
+    var numCols = { 2:true, 3:true };
+    var body = [hdr];
     alerts.forEach(function(a) {
-      data.push([a.name, a.list, a.days, a.slaLimit, '+'+a.excess+' dias']);
+      body.push([a.name, a.list, a.days, a.slaLimit, '+'+a.excess+' dias']);
     });
 
-    var hoje = new Date();
-    var footer = 'Gerado em '+fmtDate(hoje)+' '+String(hoje.getHours()).padStart(2,'0')+':'+String(hoje.getMinutes()).padStart(2,'0');
-    data.push([]);
-    data.push([footer,'','','','']);
-
-    var ws = XLSX.utils.aoa_to_sheet(data);
+    // Corpo abaixo da faixa de título (o timestamp antes no rodapé agora vive na faixa).
+    var HEAD = SHEET_HEAD_ROWS;
+    var ws = XLSX.utils.aoa_to_sheet([[]]);
+    XLSX.utils.sheet_add_aoa(ws, body, { origin: { r: HEAD, c: 0 } });
+    bandTitle(ws, 'Alertas de SLA — Cards acima do limite', meta || '', hdr.length);
     ws['!cols'] = [{wch:35},{wch:25},{wch:20},{wch:15},{wch:20}];
 
-    var sAlertHeader = {font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'A32D2D'}},border:BD,alignment:{horizontal:'center'}};
-    for (var c=0; c<hdr.length; c++) setS(ws, 0, c, sAlertHeader);
+    var lastRow0 = HEAD + alerts.length;        // última linha de dados (0-indexed)
+    ws['!ref'] = 'A1:' + XLSX.utils.encode_cell({r: Math.max(lastRow0, HEAD), c: hdr.length - 1});
+
+    // Cabeçalho: dark consistente com as demais abas (era vermelho isolado).
+    for (var c=0; c<hdr.length; c++) setS(ws, HEAD, c, sHeader());
 
     for (var r=1; r<=alerts.length; r++) {
       var excess = alerts[r-1].excess;
+      // Severidade: excesso alto (>5 d.u.) em vermelho-alerta, demais em âmbar.
       var bg = excess > 5 ? 'FCEBEB' : 'FFF3CD';
       for (var c2=0; c2<hdr.length; c2++) {
-        setS(ws, r, c2, {fill:{fgColor:{rgb:bg}},border:BD});
+        setS(ws, HEAD + r, c2, {fill:{fgColor:{rgb:bg}},border:BD,alignment:{horizontal:numCols[c2]?'right':'left',vertical:'center'}});
       }
     }
+
+    if (alerts.length) autoFilter(ws, HEAD, hdr.length, lastRow0);
 
     return ws;
   }
@@ -886,11 +941,13 @@
             });
 
             var wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, sheetRelatorio(processed, listNames), 'Relatório');
-            XLSX.utils.book_append_sheet(wb, sheetKPIs(processed, listNames), 'KPIs');
+            var geradoEm = 'Gerado em ' + fmtDateTime(new Date());
+            var metaRel = geradoEm + ' · ' + processed.length + ' card' + (processed.length === 1 ? '' : 's') + ' em aberto';
+            XLSX.utils.book_append_sheet(wb, sheetRelatorio(processed, listNames, metaRel), 'Relatório');
+            XLSX.utils.book_append_sheet(wb, sheetKPIs(processed, listNames, metaRel), 'KPIs');
 
             var slaConfig = (healthConfig && healthConfig.sla) ? healthConfig.sla : DEFAULT_SLA;
-            XLSX.utils.book_append_sheet(wb, sheetAlertas(processed, slaConfig), 'Alertas');
+            XLSX.utils.book_append_sheet(wb, sheetAlertas(processed, slaConfig, geradoEm), 'Alertas');
 
             var hoje = new Date();
             var fn = 'leadtime_midiatica_'+String(hoje.getDate()).padStart(2,'0')+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+hoje.getFullYear()+'.xlsx';
