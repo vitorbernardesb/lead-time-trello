@@ -484,13 +484,19 @@
     .cp-intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
     .cp-intro h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
     .cp-intro p { font-size: 12px; color: var(--muted); max-width: 520px; }
-    .cp-intro-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .cp-intro-actions {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    }
     .cp-slots-hint {
-      font-size: 11px; color: var(--muted); align-self: center; font-weight: 600;
-      margin: 0 22px; padding-left: 22px; border-left: 1px solid var(--border-2);
+      font-size: 11px; color: var(--muted); font-weight: 600;
       cursor: default; user-select: none;
     }
-    @media (max-width: 560px) { .cp-slots-hint { margin: 4px 0; padding-left: 0; border-left: none; width: 100%; } }
+    .cp-actions-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+    @media (max-width: 720px) {
+      .cp-intro-actions { flex-direction: column; align-items: stretch; }
+      .cp-slots-hint { text-align: center; margin-bottom: 8px; }
+      .cp-actions-buttons { width: 100%; }
+    }
     .cp-empty {
       text-align: center; padding: 48px 24px; background: var(--card);
       border: 1px dashed var(--border-2); border-radius: var(--radius-lg); color: var(--muted);
@@ -3389,11 +3395,12 @@
       h += '<h2>Análises Personalizadas</h2>';
       h += '<p>Monte dashboards por conjuntos de etiquetas (equipes). Cada painel passa pelos mesmos KPIs, filtros e cache do dashboard — nada é recalculado por fora.</p>';
       h += '</div><div class="cp-intro-actions">';
-      h += '<button class="btn btn-secondary" id="cp-refresh">⟲ Atualizar dados</button>';
       h += '<span class="cp-slots-hint">' + panels.length + '/' + UI_LIMIT + ' painéis</span>';
+      h += '<div class="cp-actions-buttons">';
+      h += '<button class="btn btn-secondary" id="cp-refresh">⟲ Atualizar dados</button>';
       h += '<button class="btn btn-secondary" id="cp-export" ' + (panels.length ? '' : 'disabled') + '>⬇ Exportar</button>';
       h += '<button class="btn" id="cp-new" ' + (panels.length >= UI_LIMIT ? 'disabled title="Limite de ' + UI_LIMIT + ' painéis"' : '') + '>+ Novo painel</button>';
-      h += '</div></div>';
+      h += '</div></div></div>';
 
       if (!cachedData) h += '<div class="alert-banner success" style="border-radius:10px;margin-bottom:18px;cursor:default;">Abra a aba <b>Tempo real</b> uma vez para carregar os cards — as métricas dos painéis usam exatamente esses dados em cache.</div>';
 
