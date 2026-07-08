@@ -636,7 +636,11 @@
     .cp-vlist { max-height: 58vh; overflow: auto; position: relative; border: 1px solid var(--border); border-radius: 10px; }
     .cp-vlist-inner { position: relative; }
     /* colunas compartilhadas entre cabeçalho e linhas — larguras mínimas com "fr" para
-       ocupar o espaço extra do modal; só ultrapassam o container (com scroll-x) em telas mínimas. */
+       ocupar o espaço extra do modal; só ultrapassam o container (com scroll-x) em telas mínimas.
+       IMPORTANTE: cabeçalho e linha usam sempre "left:0;right:0" (largura = 100% do container),
+       nunca shrink-to-fit — do contrário, linhas com texto curto (sem truncamento) encolhem para
+       caber no próprio conteúdo e ficam mais estreitas que o cabeçalho, desalinhando as colunas
+       seguintes (Dificuldade/1ª Entrega/Retrabalhos/Lista Atual) exatamente nas linhas "mais limpas". */
     .cp-ctable-head, .cp-crow {
       display: grid;
       grid-template-columns: minmax(170px,2.4fr) minmax(120px,1.4fr) minmax(120px,1.3fr) 100px 118px 104px minmax(110px,1.2fr);
@@ -649,7 +653,7 @@
     }
     .cp-ctable-head > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cp-crow {
-      position: absolute; left: 0; height: 48px;
+      position: absolute; left: 0; right: 0; height: 48px;
       border-bottom: 1px solid var(--border); cursor: pointer; background: var(--card);
       transition: background 0.1s;
     }
