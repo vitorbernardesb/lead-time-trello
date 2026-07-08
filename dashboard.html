@@ -392,43 +392,6 @@
       cursor: pointer; transition: background 0.15s, border-color 0.15s;
     }
     .etapa-count-btn:hover { background: rgba(255,207,6,0.28); border-color: var(--brand); }
-    .etapa-popup {
-      position: absolute; z-index: 1000; width: 280px; max-height: 320px;
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-      box-shadow: var(--shadow-pop); overflow: hidden;
-      display: flex; flex-direction: column;
-    }
-    .etapa-popup-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 14px; background: #0A0A0A; flex-shrink: 0;
-    }
-    .etapa-popup-title {
-      font-size: 12px; font-weight: 700; color: #FFCF06;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
-    }
-    .etapa-popup-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-    .etapa-popup-dl {
-      background: none; border: none; color: var(--faint); font-size: 14px;
-      cursor: pointer; line-height: 1; padding: 0;
-      transition: color 0.12s;
-    }
-    .etapa-popup-dl:hover { color: var(--brand); }
-    .etapa-popup-dl:disabled { opacity: 0.5; cursor: default; }
-    .etapa-popup-close {
-      background: none; border: none; color: var(--faint); font-size: 18px;
-      cursor: pointer; line-height: 1; padding: 0; flex-shrink: 0;
-    }
-    .etapa-popup-close:hover { color: var(--brand); }
-    .etapa-popup-body { overflow-y: auto; max-height: 270px; padding: 8px 0; }
-    .etapa-popup-list { list-style: none; padding: 0; margin: 0; }
-    .etapa-popup-card {
-      display: block; padding: 7px 14px; font-size: 12px; color: var(--ink);
-      cursor: pointer; text-decoration: underline;
-      text-decoration-color: rgba(255,207,6,0.50); text-underline-offset: 3px;
-      transition: background 0.12s;
-    }
-    .etapa-popup-card:hover { background: rgba(255,207,6,0.08); text-decoration-color: var(--brand); }
-    .etapa-popup-empty { padding: 12px 14px; font-size: 12px; color: var(--muted); text-align: center; }
     .table-header-row {
       display: flex;
       align-items: center;
@@ -741,16 +704,6 @@
     <div id="cfg-content"></div>
   </div>
 
-  <div id="etapa-popup" class="etapa-popup" style="display:none;">
-    <div class="etapa-popup-header">
-      <span class="etapa-popup-title" id="etapa-popup-title"></span>
-      <div class="etapa-popup-actions">
-        <button class="etapa-popup-dl" id="etapa-popup-dl" title="Exportar planilha dos cards">⬇</button>
-        <button class="etapa-popup-close" id="etapa-popup-close">&times;</button>
-      </div>
-    </div>
-    <div class="etapa-popup-body" id="etapa-popup-body"></div>
-  </div>
 </div>
 
 <script>
@@ -1473,65 +1426,22 @@
   // Registrados UMA única vez. Antes, renderRealtime/renderFunnel adicionavam
   // listeners aos contêineres permanentes (e ao document) a cada re-render,
   // acumulando handlers duplicados (t.showCard disparado N vezes por clique).
-  function fecharPopup() {
-    document.getElementById('etapa-popup').style.display = 'none';
-  }
-
-  function abrirPopupEtapa(nomeEtapa, trigger) {
+  // Reutiliza o mesmo modal de cards da aba "Análises Personalizadas" (CP.openCards)
+  // em vez de um popup próprio — mesma aparência, animações e comportamento nas duas abas.
+  function abrirPopupEtapa(nomeEtapa) {
     var cards = cachedData && cachedData.cards ? cachedData.cards : [];
     var cardsNaEtapa = cards.filter(function(c) {
       return c.currentListName === nomeEtapa;
     });
-
-    var popup = document.getElementById('etapa-popup');
-    var title = document.getElementById('etapa-popup-title');
-    var body = document.getElementById('etapa-popup-body');
-
-    title.textContent = nomeEtapa + ' (' + cardsNaEtapa.length + ')';
-    body.innerHTML = '';
-
-    // botão de exportar planilha desta etapa (onclick reatribuído a cada abertura)
-    var dlBtn = document.getElementById('etapa-popup-dl');
-    dlBtn.disabled = !cardsNaEtapa.length;
-    dlBtn.onclick = function() { exportEtapaCards(nomeEtapa, cardsNaEtapa, dlBtn); };
-
-    if (!cardsNaEtapa.length) {
-      body.innerHTML = '<p class="etapa-popup-empty">Nenhum card nesta etapa.</p>';
-    } else {
-      var ul = document.createElement('ul');
-      ul.className = 'etapa-popup-list';
-      cardsNaEtapa.forEach(function(card) {
-        var li = document.createElement('li');
-        var span = document.createElement('span');
-        span.textContent = card.name;
-        span.className = 'card-link etapa-popup-card';
-        span.addEventListener('click', function() { t.showCard(card.id); });
-        li.appendChild(span);
-        ul.appendChild(li);
-      });
-      body.appendChild(ul);
-    }
-
-    var rect = trigger.getBoundingClientRect();
-    var bodyRect = document.querySelector('.body').getBoundingClientRect();
-
-    popup.style.display = 'flex';
-
-    var popupWidth = 280;
-    var left = rect.right - bodyRect.left + 8;
-    if (left + popupWidth > bodyRect.width) {
-      left = rect.left - bodyRect.left - popupWidth - 8;
-    }
-    var top = rect.top - bodyRect.top;
-
-    popup.style.left = Math.max(0, left) + 'px';
-    popup.style.top = Math.max(0, top) + 'px';
+    CP.openCards(nomeEtapa, cardsNaEtapa, '#0A0A0A', {
+      onExport: function(btn) { exportEtapaCards(nomeEtapa, cardsNaEtapa, btn); }
+    });
   }
 
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('.etapa-count-btn');
     if (btn) {
-      abrirPopupEtapa(btn.getAttribute('data-etapa'), btn);
+      abrirPopupEtapa(btn.getAttribute('data-etapa'));
       return;
     }
     var link = e.target.closest('.card-link');
@@ -1540,10 +1450,7 @@
       if (cid) t.showCard(cid);
       return;
     }
-    var popup = document.getElementById('etapa-popup');
-    if (popup.style.display !== 'none' && !popup.contains(e.target)) fecharPopup();
   });
-  document.getElementById('etapa-popup-close').addEventListener('click', fecharPopup);
 
   // ─── FETCH DATA ─────────────────────────────────
   function fetchWithRetry(url, token, maxRetries) {
@@ -3675,7 +3582,8 @@
     }
 
     // ══════════════ modal de detalhes dos cards (busca/ordenação/scroll virtual) ══════════════
-    function openCards(title, cards, color) {
+    function openCards(title, cards, color, opts) {
+      opts = opts || {};
       var over = getOverlay('cp-modal-lg');
       var state = { q: '', sort: 'name', list: cards.slice() };
       var ROW_H = 48;
@@ -3732,6 +3640,7 @@
         '<span class="cp-crow-center">Retrabalhos</span><span>Lista Atual</span></div>' +
         '<div class="cp-vlist-inner" id="cp-cards-inner"></div></div>';
       var foot = '<span class="cp-modal-sub" id="cp-cards-count" style="color:var(--muted)"></span>';
+      if (opts.onExport) foot += '<button class="btn btn-secondary" id="cp-cards-export" style="margin-left:auto" ' + (cards.length ? '' : 'disabled') + '>⬇ Exportar planilha</button>';
 
       setModal(over, { swatch: color, title: escHtml(title), sub: 'Detalhes dos cards', body: body, foot: foot });
       showOverlay(over);
@@ -3743,6 +3652,10 @@
       inner.addEventListener('click', function(e) {
         var row = e.target.closest('[data-card]'); if (row) t.showCard(row.getAttribute('data-card'));
       });
+      if (opts.onExport) {
+        var expBtn = document.getElementById('cp-cards-export');
+        expBtn.addEventListener('click', function() { opts.onExport(expBtn); });
+      }
       apply();
     }
 
@@ -3888,7 +3801,10 @@
         } else {
           draw();
         }
-      }
+      },
+      // exposto para outras abas (ex.: Detalhamento) reutilizarem o mesmo modal de cards,
+      // em vez de duplicar o componente — mantém aparência/comportamento 100% consistentes.
+      openCards: openCards
     };
   })();
 
