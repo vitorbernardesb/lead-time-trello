@@ -484,8 +484,13 @@
     .cp-intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
     .cp-intro h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
     .cp-intro p { font-size: 12px; color: var(--muted); max-width: 520px; }
-    .cp-intro-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-    .cp-slots-hint { font-size: 11px; color: var(--muted); align-self: center; }
+    .cp-intro-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .cp-slots-hint {
+      font-size: 11px; color: var(--muted); align-self: center; font-weight: 600;
+      margin: 0 22px; padding-left: 22px; border-left: 1px solid var(--border-2);
+      cursor: default; user-select: none;
+    }
+    @media (max-width: 560px) { .cp-slots-hint { margin: 4px 0; padding-left: 0; border-left: none; width: 100%; } }
     .cp-empty {
       text-align: center; padding: 48px 24px; background: var(--card);
       border: 1px dashed var(--border-2); border-radius: var(--radius-lg); color: var(--muted);
@@ -524,9 +529,30 @@
     .cp-label-chip {
       display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px;
       font-size: 11px; font-weight: 600; background: rgba(10,10,15,0.04); color: var(--ink-2);
-      border: 1px solid var(--border);
+      border: 1px solid var(--border); cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.1s;
     }
+    .cp-label-chip:hover { border-color: var(--cp-color); color: var(--ink); transform: translateY(-1px); }
     .cp-label-chip .cp-lc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cp-color); }
+    .cp-label-chip.cp-label-sel {
+      background: var(--cp-color); border-color: var(--cp-color); color: #fff;
+    }
+    .cp-label-chip.cp-label-sel .cp-lc-dot { background: #fff; }
+    /* indicador de filtro ativo */
+    .cp-filter-bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+      margin: 0 18px 12px; padding: 8px 12px; background: color-mix(in srgb, var(--cp-color) 9%, transparent);
+      border: 1px solid color-mix(in srgb, var(--cp-color) 30%, transparent); border-radius: 8px;
+    }
+    .cp-filter-text { font-size: 12px; color: var(--ink-2); }
+    .cp-filter-text b { color: var(--ink); }
+    .cp-filter-label { font-weight: 700; color: var(--ink); margin-right: 4px; }
+    .cp-filter-count { color: var(--muted); font-weight: 600; }
+    .cp-filter-clear {
+      font-size: 11px; font-weight: 700; color: var(--ink); background: var(--card);
+      border: 1px solid var(--border-2); border-radius: 999px; padding: 4px 12px; cursor: pointer;
+      flex-shrink: 0; transition: background 0.12s, border-color 0.12s;
+    }
+    .cp-filter-clear:hover { background: rgba(255,207,6,0.14); border-color: var(--brand); }
     /* corpo expansível do painel */
     .cp-panel-body { display: none; border-top: 1px solid var(--border); padding: 18px; }
     .cp-panel.cp-open .cp-panel-body { display: block; animation: fadeIn 0.2s ease-in; }
@@ -596,7 +622,7 @@
       transform: translateY(8px) scale(0.99); transition: transform 0.16s ease;
     }
     .cp-overlay.on .cp-modal { transform: none; }
-    .cp-modal.cp-modal-lg { max-width: 720px; }
+    .cp-modal.cp-modal-lg { max-width: 1180px; }
     .cp-modal-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; background: #0A0A0A; color: #F9F9F9; flex-shrink: 0; }
     .cp-modal-head .cp-mh-swatch { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
     .cp-modal-title { font-size: 14px; font-weight: 700; color: var(--brand); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -638,19 +664,32 @@
     .cp-cards-controls { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
     .cp-cards-controls .cp-input { flex: 1; min-width: 160px; }
     .cp-cards-controls select { padding: 9px 12px; border: 1px solid var(--border-2); border-radius: 8px; font-size: 13px; font-family: inherit; background: var(--card); color: var(--ink); cursor: pointer; }
-    .cp-vlist { max-height: 52vh; overflow-y: auto; position: relative; border: 1px solid var(--border); border-radius: 10px; }
+    .cp-vlist { max-height: 58vh; overflow: auto; position: relative; border: 1px solid var(--border); border-radius: 10px; }
     .cp-vlist-inner { position: relative; }
+    /* colunas compartilhadas entre cabeçalho e linhas — larguras mínimas com "fr" para
+       ocupar o espaço extra do modal; só ultrapassam o container (com scroll-x) em telas mínimas. */
+    .cp-ctable-head, .cp-crow {
+      display: grid;
+      grid-template-columns: minmax(170px,2.4fr) minmax(120px,1.4fr) minmax(120px,1.3fr) 100px 118px 104px minmax(110px,1.2fr);
+      gap: 10px; align-items: center; box-sizing: border-box; padding: 0 14px;
+    }
+    .cp-ctable-head {
+      position: sticky; top: 0; z-index: 1; height: 36px; background: #FAFAFB;
+      border-bottom: 1px solid var(--border-2);
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
+    }
+    .cp-ctable-head > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cp-crow {
-      position: absolute; left: 0; right: 0; box-sizing: border-box; padding: 11px 14px;
+      position: absolute; left: 0; height: 48px;
       border-bottom: 1px solid var(--border); cursor: pointer; background: var(--card);
-      transition: background 0.1s; overflow: hidden;
+      transition: background 0.1s;
     }
     .cp-crow:hover { background: rgba(255,207,6,0.07); }
-    .cp-crow-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-    .cp-crow-name { font-weight: 600; font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .cp-crow-list { font-size: 11px; color: var(--muted); flex-shrink: 0; }
-    .cp-crow-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-    .cp-tagmini { font-size: 10px; padding: 1px 7px; border-radius: 999px; background: rgba(10,10,15,0.05); color: var(--ink-2); font-weight: 600; }
+    .cp-crow-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--ink-2); }
+    .cp-crow-cell.cp-crow-name { font-weight: 600; font-size: 13px; color: var(--ink); }
+    .cp-crow-cell.cp-crow-center { text-align: center; }
+    .cp-cell-muted { color: var(--muted); }
+    .cp-tagmini { font-size: 10px; padding: 1px 7px; border-radius: 999px; background: rgba(10,10,15,0.05); color: var(--ink-2); font-weight: 600; display: inline-block; }
     .cp-tagmini.cp-nivel { color: #fff; }
     .cp-tagmini.cp-rw { background: var(--danger-bg); color: var(--danger-text); }
     .cp-cards-empty { text-align: center; padding: 32px; color: var(--muted); font-size: 13px; }
@@ -2979,6 +3018,9 @@
       }
     };
     function strategyOf(p) { return STRATEGIES[p.criterion] || STRATEGIES.labels; }
+    // Filtro rápido (transiente, não persistido): subconjunto das etiquetas do painel.
+    // Vazio = considera todas as etiquetas configuradas no painel (comportamento atual).
+    function effectiveValues(p) { return (p.__filterSel && p.__filterSel.length) ? p.__filterSel : (p.values || []); }
 
     // ── helpers numéricos/cor (derivados; não tocam o pipeline) ──
     function nf(x) { return String(x).replace('.', ','); }
@@ -3022,12 +3064,13 @@
 
     // ── COMPUTE de um painel — reutiliza integralmente o pipeline existente ──
     function computePanel(p) {
-      if (computeCache[p.id]) return computeCache[p.id];
+      var vals = effectiveValues(p);
+      var cacheKey = p.id + '::' + vals.slice().sort().join('');
+      if (computeCache[cacheKey]) return computeCache[cacheKey];
       var strat = strategyOf(p);
       var open = (cachedData && cachedData.cards) ? cachedData.cards : [];
       var arch = (cachedData && cachedData.archived) ? cachedData.archived : [];
       var cfg = (cachedData && cachedData.config) ? cachedData.config : DEFAULTS;
-      var vals = p.values || [];
       var sub = vals.length ? open.filter(function(c) { return strat.matches(c, vals); }) : [];
       var subArch = vals.length ? arch.filter(function(c) { return strat.matches(c, vals); }) : [];
       var subAll = sub.concat(subArch); // arquivados só entram na 1ª entrega (igual ao realtime)
@@ -3054,7 +3097,7 @@
         tempoMedio: mean(horas), tempoMediano: median(horas),
         participacao: totalBoard ? round1(sub.length / totalBoard * 100) : 0
       };
-      computeCache[p.id] = r;
+      computeCache[cacheKey] = r;
       return r;
     }
 
@@ -3375,8 +3418,20 @@
           h += '<span class="cp-chevron">▾</span>';
           h += '</div></div>';
           if (p.values.length) {
+            var filterSel = p.__filterSel || [];
+            if (filterSel.length) {
+              h += '<div class="cp-filter-bar">';
+              h += '<div class="cp-filter-text"><span class="cp-filter-label">Filtrando por:</span>' +
+                filterSel.map(function(v) { return '<b>' + escHtml(v) + '</b>'; }).join(' • ') +
+                ' <span class="cp-filter-count">(' + filterSel.length + ')</span></div>';
+              h += '<button class="cp-filter-clear" data-act="clearfilter">Limpar filtros</button>';
+              h += '</div>';
+            }
             h += '<div class="cp-labels-row">';
-            p.values.forEach(function(v) { h += '<span class="cp-label-chip"><span class="cp-lc-dot"></span>' + escHtml(v) + '</span>'; });
+            p.values.forEach(function(v) {
+              var sel = filterSel.indexOf(v) !== -1;
+              h += '<span class="cp-label-chip' + (sel ? ' cp-label-sel' : '') + '" data-act="filterchip" data-value="' + escHtml(v) + '"><span class="cp-lc-dot"></span>' + escHtml(v) + '</span>';
+            });
             h += '</div>';
           }
           h += '<div class="cp-panel-body" data-body="' + p.id + '">' + (open ? buildPanelBody(p) : '') + '</div>';
@@ -3423,6 +3478,8 @@
           if (act === 'config') { e.stopPropagation(); openConfig(id); return; }
           if (act === 'dup') { e.stopPropagation(); duplicatePanel(id); return; }
           if (act === 'del') { e.stopPropagation(); deletePanel(id); return; }
+          if (act === 'filterchip') { e.stopPropagation(); toggleFilterChip(id, actEl.getAttribute('data-value')); return; }
+          if (act === 'clearfilter') { e.stopPropagation(); clearFilter(id); return; }
         }
         if (e.target.closest('#cp-refresh')) { loadRealtime(true); return; }
         if (e.target.closest('#cp-new') || e.target.closest('#cp-new-2')) { openConfig(null); return; }
@@ -3444,6 +3501,21 @@
       var panelEl = el.closest('.cp-panel');
       if (panelEl) return panelEl.style.getPropertyValue('--cp-color') || '#0A0A0A';
       return '#0A0A0A';
+    }
+
+    // filtro rápido por etiqueta: clique alterna seleção (OR); toggle vazio = volta à visão completa.
+    // 100% client-side sobre cachedData já carregado — nenhuma consulta nova ao Trello.
+    function toggleFilterChip(id, value) {
+      var p = byId(id); if (!p) return;
+      p.__filterSel = p.__filterSel || [];
+      var idx = p.__filterSel.indexOf(value);
+      if (idx !== -1) p.__filterSel.splice(idx, 1); else p.__filterSel.push(value);
+      draw();
+    }
+    function clearFilter(id) {
+      var p = byId(id); if (!p) return;
+      p.__filterSel = [];
+      draw();
     }
 
     function togglePanel(id) {
@@ -3526,6 +3598,7 @@
       function commit() {
         panel.values = sel.slice();
         panel.updatedAt = Date.now();
+        if (panel.__filterSel) panel.__filterSel = panel.__filterSel.filter(function(v) { return sel.indexOf(v) !== -1; });
         if (panel.__new) { delete panel.__new; panels.push(panel); configState.isNew = isNew = false; }
         persist();
         flashSaved();
@@ -3598,7 +3671,7 @@
     function openCards(title, cards, color) {
       var over = getOverlay('cp-modal-lg');
       var state = { q: '', sort: 'name', list: cards.slice() };
-      var ROW_H = 94;
+      var ROW_H = 48;
 
       function apply() {
         var arr = cards.slice();
@@ -3615,15 +3688,20 @@
         var cnt = document.getElementById('cp-cards-count'); if (cnt) cnt.textContent = arr.length + ' de ' + cards.length + ' card(s)';
       }
       function rowHtml(c, top) {
-        var cliente = (c.labels || []).length ? (c.labels || []).slice(0, 3).map(function(l) { return '<span class="cp-tagmini">' + escHtml(l) + '</span>'; }).join('') : '<span class="cp-tagmini" style="opacity:.6">sem etiqueta</span>';
-        var resp = (c.members || []).length ? (c.members || []).join(', ') : '—';
-        var nivel = c.nivelEsforco ? '<span class="cp-tagmini cp-nivel" style="background:' + (nivelCor(color)[c.nivelEsforco] || color) + '">' + c.nivelEsforco + '</span>' : '';
-        var rw = c.retrabalho > 0 ? '<span class="cp-tagmini cp-rw">↻ ' + c.retrabalho + '</span>' : '';
-        var pe = c.primeiraEntrega ? '<span class="cp-tagmini">1ª entrega ' + fmtHoras(c.primeiraEntrega.horas) + '</span>' : '';
-        return '<div class="cp-crow" style="height:' + ROW_H + 'px;top:' + top + 'px" data-card="' + escHtml(c.id) + '">' +
-          '<div class="cp-crow-top"><span class="cp-crow-name">' + escHtml(c.name || '(sem título)') + '</span><span class="cp-crow-list">' + escHtml(c.currentListName || '') + '</span></div>' +
-          '<div class="cp-crow-meta">' + nivel + rw + pe + '<span class="cp-tagmini" title="Responsáveis">👤 ' + escHtml(resp) + '</span></div>' +
-          '<div class="cp-crow-meta">' + cliente + '</div></div>';
+        var clienteTxt = (c.labels || []).length ? (c.labels || []).join(', ') : '—';
+        var respTxt = (c.members || []).length ? (c.members || []).join(', ') : '—';
+        var nivel = c.nivelEsforco ? '<span class="cp-tagmini cp-nivel" style="background:' + (nivelCor(color)[c.nivelEsforco] || color) + '">' + c.nivelEsforco + '</span>' : '<span class="cp-cell-muted">—</span>';
+        var rw = c.retrabalho > 0 ? '<span class="cp-tagmini cp-rw">↻ ' + c.retrabalho + '</span>' : '<span class="cp-cell-muted">—</span>';
+        var peTxt = c.primeiraEntrega ? fmtHoras(c.primeiraEntrega.horas) : '—';
+        return '<div class="cp-crow" style="top:' + top + 'px" data-card="' + escHtml(c.id) + '" title="' + escHtml(c.name || '') + '">' +
+          '<span class="cp-crow-cell cp-crow-name">' + escHtml(c.name || '(sem título)') + '</span>' +
+          '<span class="cp-crow-cell" title="' + escHtml(clienteTxt) + '">' + escHtml(clienteTxt) + '</span>' +
+          '<span class="cp-crow-cell" title="' + escHtml(respTxt) + '">' + escHtml(respTxt) + '</span>' +
+          '<span class="cp-crow-cell cp-crow-center">' + nivel + '</span>' +
+          '<span class="cp-crow-cell cp-crow-center">' + escHtml(peTxt) + '</span>' +
+          '<span class="cp-crow-cell cp-crow-center">' + rw + '</span>' +
+          '<span class="cp-crow-cell" title="' + escHtml(c.currentListName || '') + '">' + escHtml(c.currentListName || '—') + '</span>' +
+          '</div>';
       }
       var vport, inner;
       function renderRows() {
@@ -3641,7 +3719,11 @@
       var body = '<div class="cp-cards-controls">' +
         '<input class="cp-input" id="cp-cards-q" placeholder="Buscar por nome ou etiqueta…">' +
         '<select id="cp-cards-sort"><option value="name">Nome (A–Z)</option><option value="rw">Mais retrabalho</option><option value="pe">Maior tempo 1ª entrega</option><option value="list">Lista atual</option></select>' +
-        '</div><div class="cp-vlist" id="cp-cards-vlist"><div class="cp-vlist-inner" id="cp-cards-inner"></div></div>';
+        '</div><div class="cp-vlist" id="cp-cards-vlist">' +
+        '<div class="cp-ctable-head"><span>Nome do Card</span><span>Cliente</span><span>Responsáveis</span>' +
+        '<span class="cp-crow-center">Dificuldade</span><span class="cp-crow-center">1ª Entrega</span>' +
+        '<span class="cp-crow-center">Retrabalhos</span><span>Lista Atual</span></div>' +
+        '<div class="cp-vlist-inner" id="cp-cards-inner"></div></div>';
       var foot = '<span class="cp-modal-sub" id="cp-cards-count" style="color:var(--muted)"></span>';
 
       setModal(over, { swatch: color, title: escHtml(title), sub: 'Detalhes dos cards', body: body, foot: foot });
