@@ -59,8 +59,12 @@
       z-index: 10;
     }
     .header h1 { font-size: 16px; font-weight: 400; letter-spacing: 0.01em; margin-bottom: 14px; }
-    .tabs { display: flex; gap: 2px; }
+    /* flex-wrap: sem ele, com 5 abas o rótulo longo "Análises Personalizadas" estourava a
+       largura do iframe estreito do Power-Up e as abas à direita eram recortadas (sumiam).
+       Quebra para uma 2ª linha só quando não cabe; em telas largas fica idêntico a antes. */
+    .tabs { display: flex; flex-wrap: wrap; gap: 2px; }
     .tab {
+      white-space: nowrap;
       padding: 9px 16px 11px;
       background: transparent;
       color: #A2A2AA;
