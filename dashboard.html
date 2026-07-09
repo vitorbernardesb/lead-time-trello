@@ -144,6 +144,12 @@
     }
     /* realce sutil ao passar o mouse (transform/box-shadow → barato p/ o compositor) */
     .kpi-card:hover { box-shadow: var(--shadow-2); transform: translateY(-2px); border-color: var(--border-2); }
+    /* KPI clicável: cursor + realce em marca + rótulo "N cards →" revelado no hover/foco */
+    .kpi-card.kpi-clickable { cursor: pointer; }
+    .kpi-card.kpi-clickable:hover { border-color: var(--brand); }
+    .kpi-card.kpi-clickable:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+    .kpi-cardcount { font-size: 10px; font-weight: 700; color: var(--muted); margin-top: 8px; letter-spacing: 0.03em; text-transform: uppercase; opacity: 0; transform: translateY(-2px); transition: opacity 0.15s, transform 0.15s, color 0.15s; }
+    .kpi-card.kpi-clickable:hover .kpi-cardcount, .kpi-card.kpi-clickable:focus-visible .kpi-cardcount { opacity: 1; transform: none; color: var(--ink); }
     /* nome: rótulo discreto; min-height alinha os valores entre cards de 1 ou 2 linhas */
     .kpi-card .kpi-name { font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em; line-height: 1.3; min-height: 28px; }
     /* valor: protagonista do card; dígitos proporcionais (tabular só em colunas de tabela) */
@@ -291,6 +297,12 @@
     }
     .summary-card .sc-value { font-size: 27px; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; }
     .summary-card .sc-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    /* quadro-resumo clicável: mesma linguagem de interação dos KPI/painéis */
+    .summary-card.sc-clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
+    .summary-card.sc-clickable:hover { border-color: var(--brand); box-shadow: var(--shadow-2); transform: translateY(-2px); }
+    .summary-card.sc-clickable:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+    .summary-card .sc-cardcount { display: block; font-size: 10px; font-weight: 700; color: var(--muted); margin-top: 6px; letter-spacing: 0.03em; text-transform: uppercase; opacity: 0; transition: opacity 0.15s, color 0.15s; }
+    .summary-card.sc-clickable:hover .sc-cardcount, .summary-card.sc-clickable:focus-visible .sc-cardcount { opacity: 1; color: var(--ink); }
     .funnel-table { margin-bottom: 24px; }
     /* barra fina (marca discreta); a contagem numérica ao lado carrega o valor exato */
     .funnel-bar { height: 8px; background: var(--brand); border-radius: 999px; min-width: 4px; }
@@ -1321,13 +1333,15 @@
   // Definição única dos KPIs exibidos — usada pelo dashboard E pela imagem exportada
   // (evita duplicar nomes/metas/tipos em dois lugares).
   function buildKpiCards(kpis, config) {
+    // `bucket` = campo de kpis com o subconjunto de cards; `bucketTitle` = título do modal.
+    // (só usados pelo click-through no dashboard vivo; ignorados na imagem exportada.)
     return [
-      { name: 'Cards vencidos', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'Limite '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'B' },
-      { name: 'Retrabalhos', display: kpis.kpi2, metaLabel: 'Limite '+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B' },
-      { name: 'Tempo médio de entrega', display: kpis.kpi6+' d.u.', metaLabel: 'Meta '+config.meta_leadtime_real+' d.u.', valor: kpis.kpi6, meta: config.meta_leadtime_real, tipo: 'B' },
-      { name: 'Tempo médio na etapa', display: kpis.kpi3+' d.u.', metaLabel: 'Limite '+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B' },
-      { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'Meta '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A' },
-      { name: 'Conformidade', display: kpis.kpi5+'%', metaLabel: 'Meta '+config.meta_conformidade+'%', valor: kpis.kpi5, meta: config.meta_conformidade, tipo: 'A' }
+      { name: 'Cards vencidos', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'Limite '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'B', bucket: 'cardsVencidos', bucketTitle: 'Cards vencidos' },
+      { name: 'Retrabalhos', display: kpis.kpi2, metaLabel: 'Limite '+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B', bucket: 'cardsComRetrabalho', bucketTitle: 'Cards com retrabalho' },
+      { name: 'Tempo médio de entrega', display: kpis.kpi6+' d.u.', metaLabel: 'Meta '+config.meta_leadtime_real+' d.u.', valor: kpis.kpi6, meta: config.meta_leadtime_real, tipo: 'B', bucket: 'cardsLeadTime', bucketTitle: 'Concluídos nos últimos 30 dias' },
+      { name: 'Tempo médio na etapa', display: kpis.kpi3+' d.u.', metaLabel: 'Limite '+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B', bucket: 'cardsAging', bucketTitle: 'Cards em produção ativa' },
+      { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'Meta '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A', bucket: 'cardsVazao', bucketTitle: 'Concluídos no mês' },
+      { name: 'Conformidade', display: kpis.kpi5+'%', metaLabel: 'Meta '+config.meta_conformidade+'%', valor: kpis.kpi5, meta: config.meta_conformidade, tipo: 'A', bucket: 'cardsNaoConformes', bucketTitle: 'Cards não conformes' }
     ];
   }
 
@@ -1870,6 +1884,7 @@
     var totalRw = 0;
     cards.forEach(function(c){ totalRw += c.retrabalho; });
     var kpi2 = totalRw;
+    var cardsComRetrabalho = cards.filter(function(c){ return c.retrabalho > 0; }); // subconjunto p/ click-through
 
     // KPI3 — AGING / Tempo na etapa atual: média de dias úteis que os cards ativos
     // permanecem na etapa em que estão agora. Mede WIP aging (cards parados), NÃO lead time.
@@ -1882,10 +1897,12 @@
 
     // KPI4 — VAZÃO MENSAL / throughput: nº de cards CONCLUÍDOS no mês corrente
     // (pela data real de entrada em Concluído). Mede entregas no período, não due dates.
-    var kpi4 = cards.filter(function(c){ return c.concluidoNoMes; }).length;
+    var cardsVazao = cards.filter(function(c){ return c.concluidoNoMes; });
+    var kpi4 = cardsVazao.length;
 
     var cardsParaConformidade = cards.filter(function(c){ return !c.isConcluido; });
-    var conformes = cardsParaConformidade.filter(function(c){ return c.isConforme; }).length;
+    var cardsNaoConformes = cardsParaConformidade.filter(function(c){ return !c.isConforme; }); // subconjunto p/ click-through
+    var conformes = cardsParaConformidade.length - cardsNaoConformes.length;
     var kpi5 = cardsParaConformidade.length ? Math.round(conformes / cardsParaConformidade.length * 1000) / 10 : 0;
 
     // KPI6 — LEAD TIME REAL / Tempo de entrega: tempo médio de atravessamento do fluxo
@@ -1927,7 +1944,15 @@
       score_through: score_through,
       score_conformidade: score_conformidade,
       healthScore: healthScore,
-      totalCards: cards.length
+      totalCards: cards.length,
+      // Subconjuntos de cards por KPI (ADITIVO — não entram em nenhum cálculo; servem só
+      // para o click-through abrir os cards subjacentes no modal, como na aba Análises).
+      cardsVencidos: vencidos,
+      cardsComRetrabalho: cardsComRetrabalho,
+      cardsAging: prodCards,
+      cardsLeadTime: concluidosNaJanela,
+      cardsVazao: cardsVazao,
+      cardsNaoConformes: cardsNaoConformes
     };
   }
 
@@ -2312,11 +2337,15 @@
       k.pct = kpiBarPct(k.valor, k.meta);
       k.score = kpiHealth(k.valor, k.meta, k.tipo);
       var cor = statusColor(k.score);
-      html += '<div class="kpi-card">';
+      // clicável quando há cards subjacentes → abre o mesmo modal da aba Análises
+      var subCount = (kpis[k.bucket] || []).length;
+      var clickable = subCount > 0;
+      html += '<div class="kpi-card'+(clickable?' kpi-clickable':'')+'"'+(clickable?' data-kpi="'+i+'" role="button" tabindex="0" title="Ver os '+subCount+' card'+(subCount>1?'s':'')+'"':'')+'>';
       html += '<div class="kpi-name">'+k.name+'</div>';
       html += '<div class="kpi-value">'+k.display+'</div>';
       html += '<div class="kpi-meta">'+k.metaLabel+'</div>';
       html += '<div class="kpi-bar-bg" style="background:'+statusColorSoft(k.score)+'"><div class="kpi-bar-fill" id="bar-kpi-'+i+'" style="width:0%;background:'+cor+';"></div></div>';
+      if (clickable) html += '<span class="kpi-cardcount">'+subCount+' card'+(subCount>1?'s':'')+' →</span>';
       html += '</div>';
     });
     html += '</div>';
@@ -2379,6 +2408,22 @@
       });
     }, 120);
 
+    // Click-through dos KPI cards → abre os cards subjacentes no MESMO modal da aba
+    // Análises Personalizadas (CP.openCards). Reutiliza componente, sem duplicar.
+    if (typeof CP !== 'undefined' && CP && typeof CP.openCards === 'function') {
+      document.querySelectorAll('.kpi-clickable').forEach(function(cardEl) {
+        var k = kpiCards[+cardEl.getAttribute('data-kpi')];
+        function open() {
+          var sub = kpis[k.bucket] || [];
+          if (sub.length) CP.openCards(k.bucketTitle, sub, '#0A0A0A');
+        }
+        cardEl.addEventListener('click', open);
+        cardEl.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+        });
+      });
+    }
+
     // cliques em .card-link são tratados pela delegação global (registrada 1x)
     document.getElementById('btn-refresh').addEventListener('click', function() { loadRealtime(true); });
     var btnCache = document.getElementById('btn-refresh-cache');
@@ -2420,6 +2465,7 @@
     var slaAlerts = computeSLAAlerts(cards, config);
 
     var perList = {};
+    var aboveSLACards = []; // subconjunto p/ click-through do quadro "Cards acima do SLA"
     FLOW_LISTS.forEach(function(n) { perList[n] = { cards: [], aboveSLA: 0 }; });
     cards.forEach(function(c) {
       if (perList[c.currentListName]) {
@@ -2427,6 +2473,7 @@
         var limit = sla[c.currentListName];
         if (limit !== undefined && limit < 999 && c.daysInCurrent > limit) {
           perList[c.currentListName].aboveSLA++;
+          aboveSLACards.push(c);
         }
       }
     });
@@ -2435,21 +2482,31 @@
     var totalInProgress = 0;
     var bottleneckName = '', bottleneckCount = 0;
     var totalAboveSLA = 0;
+    var cardsInProgress = []; // subconjunto p/ click-through do quadro "Cards em andamento"
     FLOW_LISTS.forEach(function(n) {
       var cnt = perList[n].cards.length;
       if (cnt > maxCards) maxCards = cnt;
       if (n !== 'Concluído 🏆') {
         totalInProgress += cnt;
+        cardsInProgress = cardsInProgress.concat(perList[n].cards);
         if (cnt > bottleneckCount) { bottleneckCount = cnt; bottleneckName = n; }
       }
       totalAboveSLA += perList[n].aboveSLA;
     });
 
     var html = '';
+    // quadros-resumo clicáveis → abrem os cards subjacentes no mesmo modal (CP.openCards)
+    function scCard(count, label, bucket, color) {
+      var clickable = count > 0;
+      return '<div class="summary-card'+(clickable?' sc-clickable':'')+'"'+(clickable?' data-sc="'+bucket+'" role="button" tabindex="0" title="Ver os cards"':'')+'>'
+        + '<div class="sc-value"'+(color?' style="color:'+color+'"':'')+'>'+count+'</div>'
+        + '<div class="sc-label">'+label+'</div>'
+        + (clickable?'<span class="sc-cardcount">ver cards →</span>':'') + '</div>';
+    }
     html += '<div class="summary-cards">';
-    html += '<div class="summary-card"><div class="sc-value">'+totalInProgress+'</div><div class="sc-label">Cards em andamento</div></div>';
-    html += '<div class="summary-card"><div class="sc-value">'+bottleneckCount+'</div><div class="sc-label">'+escHtml(bottleneckName)+'</div></div>';
-    html += '<div class="summary-card"><div class="sc-value" style="color:'+(totalAboveSLA>0?'#B3272F':'#1E7A46')+'">'+totalAboveSLA+'</div><div class="sc-label">Cards acima do SLA</div></div>';
+    html += scCard(totalInProgress, 'Cards em andamento', 'inprogress', null);
+    html += scCard(bottleneckCount, escHtml(bottleneckName), 'bottleneck', null);
+    html += scCard(totalAboveSLA, 'Cards acima do SLA', 'abovesla', totalAboveSLA>0?'#B3272F':'#1E7A46');
     html += '</div>';
 
     html += '<div class="table-header-row">';
@@ -2536,6 +2593,23 @@
 
     el.innerHTML = html;
     // cliques em .card-link e .etapa-count-btn são tratados pela delegação global
+
+    // Click-through dos quadros-resumo → mesmo modal de cards da aba Análises (CP.openCards).
+    if (typeof CP !== 'undefined' && CP && typeof CP.openCards === 'function') {
+      var scBuckets = {
+        inprogress: { title: 'Cards em andamento', cards: cardsInProgress },
+        bottleneck: { title: 'Gargalo · ' + bottleneckName, cards: (perList[bottleneckName] ? perList[bottleneckName].cards : []) },
+        abovesla:   { title: 'Cards acima do SLA', cards: aboveSLACards }
+      };
+      el.querySelectorAll('.sc-clickable').forEach(function(scEl) {
+        var b = scBuckets[scEl.getAttribute('data-sc')];
+        function open() { if (b && b.cards.length) CP.openCards(b.title, b.cards, '#0A0A0A'); }
+        scEl.addEventListener('click', open);
+        scEl.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+        });
+      });
+    }
 
     document.getElementById('btn-dl-funnel').addEventListener('click', function() {
       var rows = [['Etapa','Cards agora','Acima do SLA','SLA','Saídas no mês','Status']];
