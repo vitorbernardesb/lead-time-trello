@@ -198,10 +198,16 @@
     .table-scroll > .funnel-table, .table-scroll > .history-table { min-width: 560px; }
     /* ── Tempo até 1ª entrega por nível de esforço ── */
     .pe-section { margin-bottom: 24px; }
-    .pe-title-row { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .pe-title-row { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+    .pe-title-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .pe-title-row h3 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
     .pe-hint { font-size: 12px; font-weight: 500; color: var(--muted); }
     .pe-epoch { font-size: 11px; color: var(--muted); }
+    /* seletor segmentado Média / Mediana (padrão SaaS: trilho + pílula ativa em elevação) */
+    .pe-metric { display: inline-flex; background: rgba(10,10,15,0.05); border: 1px solid var(--border); border-radius: 999px; padding: 3px; gap: 2px; flex-shrink: 0; }
+    .pe-metric-opt { border: none; background: transparent; font-family: inherit; font-size: 12px; font-weight: 700; color: var(--muted); padding: 5px 14px; border-radius: 999px; cursor: pointer; transition: background 0.15s, color 0.15s, box-shadow 0.15s; }
+    .pe-metric-opt:hover:not(.on) { color: var(--ink); }
+    .pe-metric-opt.on { background: var(--card); color: var(--ink); box-shadow: var(--shadow-1); }
     .pe-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
     /* Card: mesma linguagem do .kpi-card (raio/borda/hover) + acento de cor por nível no topo. */
     .pe-card {
@@ -244,12 +250,35 @@
     .pe-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 8px 18px 4px; font-weight: 700; }
     .pe-table td { padding: 6px 18px; font-size: 12px; border-bottom: 1px solid var(--border); }
     .pe-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
-    .pe-stats { padding: 10px 18px 14px; }
-    .pe-stats > div { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 3px 0; }
-    .pe-stats span { color: var(--muted); }
-    .pe-stats b { color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
+    /* ── stat tiles (padrão SaaS premium): rótulo, valor protagonista, nota/badge ── */
+    .pe-stats-grid { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 12px 18px 4px; }
+    .pe-stat { display: flex; flex-direction: column; gap: 4px; text-align: left; width: 100%;
+      background: #FBFBFC; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-family: inherit; }
+    .pe-stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .pe-stat-value { font-size: 17px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 6px; }
+    .pe-stat-note { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .pe-stat-of { font-size: 12px; font-weight: 600; color: var(--muted); }
+    .pe-stat-pct { margin-left: auto; align-self: center; font-size: 12px; font-weight: 700; color: var(--pe-cor, var(--ink));
+      background: color-mix(in srgb, var(--pe-cor, #A9A9B2) 14%, #fff); padding: 2px 9px; border-radius: 999px; }
+    .pe-stat-tag { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--danger-text);
+      background: var(--danger-bg); border: 1px solid var(--danger-line); padding: 1px 6px; border-radius: 999px; }
+    .pe-stat-click { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s, background 0.15s; }
+    .pe-stat-click:hover { border-color: var(--pe-cor, var(--border-2)); box-shadow: var(--shadow-1); transform: translateY(-1px); background: var(--card); }
+    .pe-stat-rw[disabled] { cursor: default; }
+    /* amplitude mín–máx: trilho na cor do nível + marcador na posição da tendência central */
+    .pe-range { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+    .pe-range-cap { font-size: 11px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .pe-range-track { position: relative; flex: 1; height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--pe-cor, #A9A9B2) 16%, #fff); }
+    .pe-range-mark { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%; background: var(--pe-cor, var(--faint));
+      border: 2px solid var(--card); box-shadow: var(--shadow-1); transform: translate(-50%, -50%); }
+    /* link → abre o MESMO modal de cards da aba Análises Personalizadas */
+    .pe-cards-link { display: block; margin: 8px 18px 14px; text-align: center; background: transparent;
+      border: 1px dashed var(--border-2); border-radius: 10px; padding: 9px; font-family: inherit; font-size: 12px; font-weight: 600;
+      color: var(--ink-2); cursor: pointer; transition: background 0.14s, border-color 0.14s, color 0.14s; }
+    .pe-cards-link:hover { background: rgba(255,207,6,0.10); border-color: var(--brand); color: var(--ink); }
     .pe-foot { font-size: 11px; color: var(--muted); margin-top: 10px; }
     @media (max-width: 700px) { .pe-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 480px) { .pe-title-row { align-items: flex-start; } .pe-metric { width: 100%; } .pe-metric-opt { flex: 1; text-align: center; } }
     /* tag de campo faltante = aviso → tom âmbar (o emoji ⚠️ acompanha o texto) */
     .missing-tag {
       display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
@@ -1055,6 +1084,13 @@
   function mean(arr) {
     if (!arr || !arr.length) return 0;
     return round1(arr.reduce(function(a,b){return a+b;},0) / arr.length);
+  }
+  // Mediana (resistente a outliers) — aditiva; não altera nenhum KPI existente.
+  function median(arr) {
+    if (!arr || !arr.length) return 0;
+    var s = arr.slice().sort(function(a,b){ return a-b; });
+    var m = Math.floor(s.length / 2);
+    return round1(s.length % 2 ? s[m] : (s[m-1] + s[m]) / 2);
   }
 
   // ─── TEMPO ATÉ PRIMEIRA ENTREGA ─────────────────
@@ -1923,14 +1959,24 @@
       ETAPAS_PRE_ENTREGA.forEach(function(etapa) {
         breakdown[etapa] = mean(lista.map(function(c){ return (c.primeiraEntrega.breakdown[etapa] || 0); }));
       });
+      // breakdown MEDIANO por etapa (aditivo; alimenta a visão "mediana" resistente a outliers).
+      var breakdownMed = {};
+      ETAPAS_PRE_ENTREGA.forEach(function(etapa) {
+        breakdownMed[etapa] = median(lista.map(function(c){ return (c.primeiraEntrega.breakdown[etapa] || 0); }));
+      });
       // headline agregada = soma das médias do breakdown → FECHA com as linhas exibidas.
       var avgHorasFechada = 0;
       ETAPAS_PRE_ENTREGA.forEach(function(etapa){ avgHorasFechada += breakdown[etapa]; });
       avgHorasFechada = round1(avgHorasFechada);
 
+      // cards que reentraram em "Em andamento" (retrabalho) — subconjunto para click-through.
+      var retrabalhoCards = lista.filter(function(c){ return c.primeiraEntrega.entradasEmAndamento > 1; });
+
       out.niveis[nivel] = {
         n: lista.length,
+        cards: lista,                                 // ◀ retido p/ o modal de detalhes (não entra em KPI)
         avgHoras: avgHorasFechada, avgDias: mean(dias),
+        medHoras: median(horas), medDias: median(dias),
         stdHoras: stdDev(horas), stdDias: stdDev(dias),
         minHoras: horas.length ? Math.min.apply(null, horas) : 0,
         maxHoras: horas.length ? Math.max.apply(null, horas) : 0,
@@ -1938,7 +1984,10 @@
         maxDias:  dias.length ? Math.max.apply(null, dias) : 0,
         avgEntradas: mean(entradas),
         retrabalhoCount: entradas.filter(function(e){ return e > 1; }).length, // reentrou em Em andamento
-        breakdown: breakdown
+        retrabalhoCards: retrabalhoCards,
+        retrabalhoPct: lista.length ? round1(retrabalhoCards.length / lista.length * 100) : 0,
+        breakdown: breakdown,
+        breakdownMed: breakdownMed
       };
     });
     return out;
@@ -2061,20 +2110,39 @@
 
   function fmtHoras(h) { return String(h).replace('.', ',') + 'h'; }
   function fmtDias(d)  { return String(d).replace('.', ',') + ' d.u.'; }
+  function fmtPct(p)   { return String(round1(p)).replace('.', ',') + '%'; }
+
+  // Modo de tendência central da seção "Tempo até 1ª entrega": 'mean' (média) | 'median' (mediana).
+  // Transiente (não persiste) — apenas alterna a visualização sobre os dados JÁ carregados.
+  var peMetricMode = 'mean';
 
   // Monta os 3 cards expandíveis (BAIXO/MÉDIO/ALTO). Usa classe .pe-toggle própria
   // (não .collapse-toggle) para não colidir com o handler genérico que reescreve textContent.
-  function renderPrimeiraEntregaHTML(cards) {
+  // `mode` = 'mean' | 'median' controla a tendência central exibida (headline, barra, breakdown).
+  function renderPrimeiraEntregaHTML(cards, mode) {
+    mode = mode === 'median' ? 'median' : 'mean';
+    var isMed = mode === 'median';
     var pe = calcPrimeiraEntrega(cards);
+    // seletor por modo (mantém o pipeline intocado — só escolhe qual saída exibir)
+    function central(g)   { return isMed ? g.medHoras : g.avgHoras; }
+    function centralD(g)  { return isMed ? g.medDias  : g.avgDias;  }
+    function stageVal(g,e) { return isMed ? g.breakdownMed[e] : g.breakdown[e]; }
+    var centralLabel = isMed ? 'Tempo mediano até 1ª entrega' : 'Tempo médio até 1ª entrega';
+
     var h = '';
     h += '<div class="pe-section">';
-    h += '<div class="pe-title-row"><h3>Tempo até primeira entrega <span class="pe-hint">por nível de esforço</span></h3>';
+    h += '<div class="pe-title-row"><div class="pe-title-left"><h3>Tempo até primeira entrega <span class="pe-hint">por nível de esforço</span></h3>';
     h += '<span class="pe-epoch">contando cards criados a partir de '+fmtDateBR(PRIMEIRA_ENTREGA_EPOCH)+'</span></div>';
+    // seletor Média / Mediana (segmented control) — resistente a outliers na opção Mediana
+    h += '<div class="pe-metric" role="group" aria-label="Métrica de tendência central">';
+    h += '<button class="pe-metric-opt'+(isMed?'':' on')+'" data-metric="mean" aria-pressed="'+(!isMed)+'">Média</button>';
+    h += '<button class="pe-metric-opt'+(isMed?' on':'')+'" data-metric="median" aria-pressed="'+isMed+'">Mediana</button>';
+    h += '</div></div>';
     h += '<div class="pe-grid">';
 
-    // Escala COMPARTILHADA para as mini-barras: maior média (h úteis) entre os 3 níveis.
-    var maxAvg = 0;
-    NIVEIS_ESFORCO.forEach(function(n){ if (pe.niveis[n].avgHoras > maxAvg) maxAvg = pe.niveis[n].avgHoras; });
+    // Escala COMPARTILHADA para as mini-barras: maior valor central (h úteis) do modo atual.
+    var maxCentral = 0;
+    NIVEIS_ESFORCO.forEach(function(n){ var v = central(pe.niveis[n]); if (v > maxCentral) maxCentral = v; });
 
     NIVEIS_ESFORCO.forEach(function(nivel) {
       var g = pe.niveis[nivel];
@@ -2085,30 +2153,51 @@
       h += '<div class="pe-head"><span class="pe-chip"><span class="pe-dot"></span>'+nivel+'</span>';
       h += '<span class="pe-arrow">'+(temDados?'▼':'')+'</span></div>';
       if (temDados) {
-        h += '<div class="pe-main"><span class="pe-value">'+fmtHoras(g.avgHoras)+'</span><span class="pe-unit">úteis</span></div>';
-        h += '<div class="pe-days">'+fmtDias(g.avgDias)+'</div>';
-        var pct = maxAvg > 0 ? Math.round(g.avgHoras / maxAvg * 100) : 0;
+        h += '<div class="pe-main"><span class="pe-value">'+fmtHoras(central(g))+'</span><span class="pe-unit">úteis</span></div>';
+        h += '<div class="pe-days">'+fmtDias(centralD(g))+'</div>';
+        var pct = maxCentral > 0 ? Math.round(central(g) / maxCentral * 100) : 0;
         h += '<div class="pe-compare"><div class="pe-compare-fill" style="width:'+pct+'%"></div></div>';
-        h += '<div class="pe-sub">Tempo médio até 1ª entrega · '+g.n+' card'+(g.n>1?'s':'')+'</div>';
+        h += '<div class="pe-sub">'+centralLabel+' · '+g.n+' card'+(g.n>1?'s':'')+'</div>';
       } else {
         h += '<div class="pe-main pe-empty">Sem dados ainda</div>';
         h += '<div class="pe-sub">Nenhum card entregue neste nível</div>';
       }
       h += '</button>';
 
-      // corpo expandível: breakdown por etapa + volatilidade + min/máx + retrabalho
+      // corpo expandível: breakdown por etapa + tiles premium (volatilidade / amplitude / retrabalho)
       h += '<div class="pe-body" id="pe-body-'+nivel+'">';
       if (temDados) {
-        h += '<table class="pe-table"><thead><tr><th>Etapa</th><th>h úteis médias</th></tr></thead><tbody>';
+        h += '<table class="pe-table"><thead><tr><th>Etapa</th><th>'+(isMed?'h úteis medianas':'h úteis médias')+'</th></tr></thead><tbody>';
         ETAPAS_PRE_ENTREGA.forEach(function(etapa) {
-          h += '<tr><td>'+escHtml(etapa)+'</td><td>'+fmtHoras(g.breakdown[etapa])+'</td></tr>';
+          h += '<tr><td>'+escHtml(etapa)+'</td><td>'+fmtHoras(stageVal(g, etapa))+'</td></tr>';
         });
         h += '</tbody></table>';
-        h += '<div class="pe-stats">';
-        h += '<div><span>Desvio padrão</span><b>'+fmtHoras(g.stdHoras)+' · '+fmtDias(g.stdDias)+'</b></div>';
-        h += '<div><span>Mín – Máx</span><b>'+fmtHoras(g.minHoras)+' – '+fmtHoras(g.maxHoras)+'</b></div>';
-        h += '<div><span>Reentradas em "Em andamento" (retrabalho)</span><b>'+g.retrabalhoCount+' de '+g.n+'</b></div>';
+
+        // ── stat tiles (padrão SaaS premium) ──
+        h += '<div class="pe-stats-grid">';
+        // Desvio padrão (dispersão)
+        h += '<div class="pe-stat"><span class="pe-stat-label">Desvio padrão</span>'
+          +  '<span class="pe-stat-value">'+fmtHoras(g.stdHoras)+'</span>'
+          +  '<span class="pe-stat-note">'+fmtDias(g.stdDias)+'</span></div>';
+        // Amplitude Mín–Máx (com marcador da tendência central na posição real)
+        var span = g.maxHoras - g.minHoras;
+        var markPct = span > 0 ? Math.round((central(g) - g.minHoras) / span * 100) : 50;
+        markPct = Math.max(0, Math.min(100, markPct));
+        h += '<div class="pe-stat pe-stat-range"><span class="pe-stat-label">Amplitude (mín–máx)</span>'
+          +  '<div class="pe-range"><span class="pe-range-cap">'+fmtHoras(g.minHoras)+'</span>'
+          +  '<div class="pe-range-track"><span class="pe-range-mark" style="left:'+markPct+'%" title="'+escHtml(centralLabel)+': '+fmtHoras(central(g))+'"></span></div>'
+          +  '<span class="pe-range-cap">'+fmtHoras(g.maxHoras)+'</span></div></div>';
+        // Reentradas em "Em andamento" (retrabalho) — clicável → abre os cards (interação estilo Análises)
+        var rwClickable = g.retrabalhoCount > 0;
+        h += '<button class="pe-stat pe-stat-rw'+(rwClickable?' pe-stat-click':'')+'"'
+          +  (rwClickable ? ' data-pe-rw="'+nivel+'" title="Ver os cards que reentraram em Em andamento"' : ' disabled')+'>'
+          +  '<span class="pe-stat-label">Reentradas em “Em andamento” <span class="pe-stat-tag">retrabalho</span></span>'
+          +  '<span class="pe-stat-value">'+g.retrabalhoCount+' <span class="pe-stat-of">de '+g.n+'</span>'
+          +  '<span class="pe-stat-pct">'+fmtPct(g.retrabalhoPct)+'</span></span></button>';
         h += '</div>';
+
+        // link de detalhamento (abre o MESMO modal de cards da aba Análises Personalizadas)
+        h += '<button class="pe-cards-link" data-pe-cards="'+nivel+'">Ver os '+g.n+' card'+(g.n>1?'s':'')+' deste nível →</button>';
       }
       h += '</div></div>';
     });
@@ -2119,6 +2208,74 @@
     }
     h += '</div>';
     return h;
+  }
+
+  // Renderiza (ou re-renderiza) a seção "Tempo até 1ª entrega" no host dedicado, preservando
+  // quais níveis estão expandidos, e re-conecta os handlers. Lê os dados JÁ em cache — sem
+  // novas consultas ao Trello (mesma filosofia da aba Análises Personalizadas).
+  function renderPESection() {
+    var host = document.getElementById('pe-host');
+    if (!host || !cachedData) return;
+    // preserva estado de expansão entre alternâncias de métrica
+    var openSet = {};
+    host.querySelectorAll('.pe-body.open').forEach(function(b) {
+      var id = b.id.replace('pe-body-', ''); openSet[id] = true;
+    });
+    var lista = (cachedData.cards || []).concat(cachedData.archived || []);
+    host.innerHTML = renderPrimeiraEntregaHTML(lista, peMetricMode);
+    // reabre os que estavam abertos
+    Object.keys(openSet).forEach(function(nivel) {
+      var body = document.getElementById('pe-body-' + nivel);
+      var btn = host.querySelector('.pe-toggle[data-pe="' + nivel + '"]');
+      if (body && btn) {
+        body.classList.add('open'); btn.classList.add('open');
+        var arrow = btn.querySelector('.pe-arrow'); if (arrow) arrow.textContent = '▲';
+      }
+    });
+    wirePE();
+  }
+
+  // Conecta interações da seção PE: expandir/colapsar, seletor Média/Mediana e click-through
+  // para o modal de detalhes de cards (CP.openCards — reutilizado, sem componente duplicado).
+  function wirePE() {
+    var host = document.getElementById('pe-host');
+    if (!host) return;
+    var pe = cachedData ? calcPrimeiraEntrega((cachedData.cards || []).concat(cachedData.archived || [])) : null;
+
+    host.querySelectorAll('.pe-toggle').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var body = document.getElementById('pe-body-' + btn.getAttribute('data-pe'));
+        if (!body) return;
+        var open = body.classList.toggle('open');
+        btn.classList.toggle('open', open);
+        var arrow = btn.querySelector('.pe-arrow');
+        if (arrow) arrow.textContent = open ? '▲' : '▼';
+      });
+    });
+
+    host.querySelectorAll('.pe-metric-opt').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var m = btn.getAttribute('data-metric');
+        if (m === peMetricMode) return;
+        peMetricMode = m;
+        renderPESection();
+      });
+    });
+
+    if (pe && typeof CP !== 'undefined' && CP && typeof CP.openCards === 'function') {
+      host.querySelectorAll('[data-pe-rw]').forEach(function(el) {
+        el.addEventListener('click', function() {
+          var nivel = el.getAttribute('data-pe-rw'); var g = pe.niveis[nivel];
+          if (g && g.retrabalhoCards.length) CP.openCards('Retrabalho · ' + nivel + ' — 1ª entrega', g.retrabalhoCards, COR_NIVEL[nivel] || '#0A0A0A');
+        });
+      });
+      host.querySelectorAll('[data-pe-cards]').forEach(function(el) {
+        el.addEventListener('click', function() {
+          var nivel = el.getAttribute('data-pe-cards'); var g = pe.niveis[nivel];
+          if (g && g.cards.length) CP.openCards('1ª entrega · ' + nivel, g.cards, COR_NIVEL[nivel] || '#0A0A0A');
+        });
+      });
+    }
   }
 
   function fmtDateBR(d) {
@@ -2165,8 +2322,9 @@
     html += '</div>';
 
     // Tempo até 1ª entrega por Nível de Esforço (3 cards expandíveis).
-    // Inclui os arquivados elegíveis (só este indicador os vê).
-    html += renderPrimeiraEntregaHTML(cards.concat(archived || []));
+    // Host dedicado: a seção é renderizada por renderPESection() para permitir alternar
+    // Média/Mediana sem recarregar dados. Inclui os arquivados elegíveis (só este indicador os vê).
+    html += '<div id="pe-host"></div>';
 
     // Non-conforming cards
     var nonConforming = cards.filter(function(c) { return !c.isConforme && !c.isConcluido; });
@@ -2201,6 +2359,9 @@
     el.classList.add('fade-in');
     document.getElementById('rt-loading').style.display = 'none';
     document.getElementById('rt-error').style.display = 'none';
+
+    // Renderiza a seção "Tempo até 1ª entrega" no host e conecta suas interações.
+    renderPESection();
 
     setTimeout(function() {
       var progressArc = document.getElementById('score-ring-progress');
@@ -2243,17 +2404,8 @@
       });
     });
 
-    // Toggles do "Tempo até 1ª entrega" (handler próprio: não reescreve o innerHTML rico)
-    document.querySelectorAll('.pe-toggle').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        var body = document.getElementById('pe-body-' + btn.getAttribute('data-pe'));
-        if (!body) return;
-        var open = body.classList.toggle('open');
-        btn.classList.toggle('open', open);
-        var arrow = btn.querySelector('.pe-arrow');
-        if (arrow) arrow.textContent = open ? '▲' : '▼';
-      });
-    });
+    // Interações da seção "Tempo até 1ª entrega" (expandir, métrica, click-through) são
+    // conectadas por wirePE(), chamado dentro de renderPESection() acima.
   }
 
   // ─── RENDER FUNNEL ──────────────────────────────
