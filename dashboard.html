@@ -358,6 +358,32 @@
     .hist-delta.neutral { color: var(--ink-2); background: rgba(10,10,15,0.05); border: 1px solid var(--border); }
     .hist-vs { font-size: 10px; color: var(--muted); }
     .hist-spark { display: block; width: 100%; height: 26px; margin-top: auto; padding-top: 10px; }
+    /* cabeçalho da tendência + seletor de datas da comparação */
+    .hist-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .hist-head h3 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+    .hist-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .hist-controls label, .hist-controls-sep { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .hist-select {
+      padding: 6px 10px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--card);
+      font-size: 12px; font-weight: 600; font-family: inherit; color: var(--ink); cursor: pointer;
+      transition: border-color 0.14s, box-shadow 0.14s;
+    }
+    .hist-select:hover { border-color: var(--brand); }
+    .hist-select:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(255,207,6,0.35); }
+    /* tile clicável (mesma linguagem dos KPI cards) → abre a evolução do indicador */
+    .hist-tile.hist-clickable { cursor: pointer; }
+    .hist-tile.hist-clickable:hover { border-color: var(--brand); }
+    .hist-tile.hist-clickable:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+    .hist-drill { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); margin-top: 6px; opacity: 0; transition: opacity 0.15s, color 0.15s; }
+    .hist-tile.hist-clickable:hover .hist-drill, .hist-tile.hist-clickable:focus-visible .hist-drill { opacity: 1; color: var(--ink); }
+    /* nota de rodapé do gráfico + estado "coletando dados" */
+    .hist-note { font-size: 11px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+    .hist-collect {
+      display: flex; flex-direction: column; gap: 6px; text-align: center;
+      padding: 28px 22px; border: 1px dashed var(--border-2); border-radius: 12px;
+      background: #FBFBFC; color: var(--muted); font-size: 12px; line-height: 1.5;
+    }
+    .hist-collect b { color: var(--ink); font-size: 13px; }
     .config-section { background: var(--card); border-radius: 12px; padding: 22px; border: 1px solid var(--border); box-shadow: var(--shadow-1); margin-bottom: 20px; }
     .config-section h3 { font-size: 15px; margin-bottom: 16px; color: var(--ink); font-weight: 700; letter-spacing: -0.01em; }
     .config-row { margin-bottom: 16px; }
@@ -2810,6 +2836,65 @@
     return t.set('board', 'shared', key, snap);
   }
 
+  // ─── SNAPSHOT SEMANAL ───────────────────────────
+  // Os 5 KPIs "fotografia do momento" (vencidos, retrabalho, aging, conformidade,
+  // health) não são reconstruíveis no passado — por isso passamos a REGISTRÁ-LOS por
+  // semana daqui pra frente. Guardados num ÚNICO objeto (não uma chave por semana),
+  // podado às últimas WEEKLY_KEEP semanas: evita explodir o storage do Power-Up e
+  // mantém a leitura barata (o t.get('board','shared') do Histórico já traz tudo).
+  var WEEKLY_KEY = 'weeklySnaps';
+  var WEEKLY_KEEP = 26;
+
+  // Semana ISO (segunda a domingo) — a mesma convenção de semana usada nos gráficos.
+  function isoWeekOf(d) {
+    var dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var dow = (dt.getDay() + 6) % 7;          // 0 = segunda
+    dt.setDate(dt.getDate() - dow + 3);       // quinta-feira da semana ISO
+    var firstThu = new Date(dt.getFullYear(), 0, 4);
+    var fdow = (firstThu.getDay() + 6) % 7;
+    firstThu.setDate(firstThu.getDate() - fdow + 3);
+    return { year: dt.getFullYear(), week: 1 + Math.round((dt - firstThu) / 604800000) };
+  }
+  function weekKeyOf(d) {
+    var w = isoWeekOf(d);
+    return w.year + '_W' + String(w.week).padStart(2, '0');
+  }
+  // Segunda-feira da semana de `d` (mesma regra do gráfico de evolução das Análises).
+  function weekStartOf(d) {
+    var x = new Date(d); x.setHours(0, 0, 0, 0);
+    x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+    return x;
+  }
+  function weekLabel(d) { return fmtDateBR(d).slice(0, 5); }   // dd/mm
+
+  function weeklySnapPayload(kpis, now) {
+    return {
+      score: kpis.healthScore,
+      kpi1: kpis.kpi1, kpi2: kpis.kpi2, kpi3: kpis.kpi3,
+      kpi4: kpis.kpi4, kpi5: kpis.kpi5, kpi6: kpis.kpi6,
+      totalCards: kpis.totalCards,
+      savedAt: now.toISOString()
+    };
+  }
+  function pruneWeekly(map) {
+    var keys = Object.keys(map).sort();                  // "YYYY_Www" ordena cronologicamente
+    while (keys.length > WEEKLY_KEEP) { delete map[keys.shift()]; }
+    return map;
+  }
+  // Grava a semana corrente se ainda não existir (idempotente). `force` sobrescreve.
+  function saveWeeklySnapshot(kpis, force) {
+    var now = new Date();
+    var wk = weekKeyOf(now);
+    return t.get('board', 'shared', WEEKLY_KEY).then(function(map) {
+      map = (map && typeof map === 'object') ? map : {};
+      if (!force && map[wk]) return;                     // semana já registrada
+      map[wk] = weeklySnapPayload(kpis, now);
+      return t.set('board', 'shared', WEEKLY_KEY, pruneWeekly(map));
+    }).catch(function(err) {
+      console.warn('[SNAPSHOT] Falha ao salvar snapshot semanal:', err && err.message ? err.message : String(err));
+    });
+  }
+
   // ─── LOAD REALTIME ──────────────────────────────
   function loadRealtime(forceRefresh) {
     document.getElementById('rt-content').style.display = 'none';
@@ -2844,6 +2929,7 @@
           renderRealtime(kpis, config, data.cards, null, data.archived || []);
           renderAlertBanner(slaAlerts);
           saveSnapshotIfNeeded(kpis, config);
+          saveWeeklySnapshot(kpis, false);   // registra a semana corrente (1x por semana)
         });
       })
       .catch(function(err) {
@@ -2895,61 +2981,249 @@
       '</svg>';
   }
 
-  // snapshots: ordenados do mais recente para o mais antigo (como em loadHistory).
-  function renderHistTrend(snapshots, monthNames) {
+  // ── SÉRIES SEMANAIS ──────────────────────────────
+  // Dois regimes, por natureza do indicador:
+  //  • DERIVADO (retroativo): kpi4/Vazão e kpi6/Tempo de entrega saem dos próprios cards
+  //    (concludedAt + leadTimeReal), então a série semanal existe desde sempre.
+  //  • REGISTRADO: os demais são "fotografia do momento" e vêm dos snapshots semanais
+  //    (weeklySnaps) — enchem a partir de agora.
+  var HIST_DERIVAVEL = { kpi4: true, kpi6: true };
+  var HIST_WEEKS = 12;
+
+  // Vazão e Tempo de entrega por semana, a partir dos cards em cache. Sem consulta nova.
+  function histWeeklyDerived(metricKey, cards, nWeeks) {
+    var done = (cards || []).filter(function(c) { return c.concludedAt; });
+    var byWeek = {};
+    done.forEach(function(c) {
+      var k = weekStartOf(new Date(c.concludedAt)).getTime();
+      (byWeek[k] = byWeek[k] || []).push(c);
+    });
+    // janela contínua terminando na semana corrente (semanas vazias entram como 0 na vazão)
+    var end = weekStartOf(new Date()).getTime(), WEEK = 604800000;
+    var pts = [];
+    for (var i = nWeeks - 1; i >= 0; i--) {
+      var k2 = end - i * WEEK;
+      var cs = byWeek[k2] || [];
+      var label = weekLabel(new Date(k2));
+      if (metricKey === 'kpi4') {
+        pts.push({ label: label, value: cs.length, n: cs.length });
+      } else { // kpi6 — média do lead time real das conclusões da semana
+        var lts = cs.map(function(c) { return c.leadTimeReal; }).filter(function(v) { return v !== null && v !== undefined; });
+        if (!lts.length) continue;               // semana sem entrega: não plota "0 d.u." (seria mentira)
+        pts.push({ label: label, value: mean(lts), n: lts.length });
+      }
+    }
+    return pts;
+  }
+
+  // Série semanal registrada (weeklySnaps) → pontos cronológicos.
+  function histWeeklyRecorded(metricKey, weeklyMap, nWeeks) {
+    var keys = Object.keys(weeklyMap || {}).sort().slice(-nWeeks);
+    var pts = [];
+    keys.forEach(function(k) {
+      var v = weeklyMap[k][metricKey];
+      if (!histHas(v)) return;
+      var wk = k.split('_W');
+      pts.push({ label: 'S' + wk[1], value: v, n: 1 });
+    });
+    return pts;
+  }
+
+  function histMonthlyPoints(metricKey, snapshots, monthNames) {
+    return snapshots.slice().reverse()                     // cronológico
+      .map(function(s) { return { label: monthNames[s.month] + '/' + String(s.year).slice(2), value: s.data[metricKey] }; })
+      .filter(function(p) { return histHas(p.value); });
+  }
+
+  // ── estado da comparação (transiente; nada persistido) ──
+  var histSnapshots = [];       // ordenados do mais recente p/ o mais antigo
+  var histWeekly = {};          // mapa weeklySnaps
+  var histMonthNames = [];
+  var histBaseIdx = 0;          // índice em histSnapshots do mês "atual" da comparação
+  var histRefIdx = 1;           // índice do mês de referência (base de comparação)
+
+  function histMetricByKey(k) {
+    for (var i = 0; i < HIST_METRICS.length; i++) if (HIST_METRICS[i].key === k) return HIST_METRICS[i];
+    return null;
+  }
+  function histMonthLabel(s) { return histMonthNames[s.month] + '/' + s.year; }
+
+  // Calcula o estado de um tile (valor, delta, cor) — isolado p/ ficar testável.
+  function histTileState(m, base, ref) {
+    var v = base ? base.data[m.key] : undefined;
+    var pv = ref ? ref.data[m.key] : undefined;
+    var temV = histHas(v);
+    // delta só existe se AMBOS os meses tiverem o indicador (snapshots antigos não
+    // gravavam kpi5/kpi6 — nesse caso mostramos "—" em vez de inventar um número).
+    var temDelta = temV && histHas(pv);
+    var delta = temDelta ? round1(v - pv) : 0;
+    var classe, seta;
+    if (!temDelta || delta === 0) { classe = 'neutral'; seta = '•'; }
+    else {
+      var bom = (m.tipo === 'A') ? delta > 0 : delta < 0;   // tipo B: cair é BOM
+      classe = bom ? 'good' : 'bad';
+      seta = delta > 0 ? '▲' : '▼';
+    }
+    return { v: v, temV: temV, temDelta: temDelta, delta: delta, classe: classe, seta: seta, cor: HIST_COR[classe] };
+  }
+
+  function renderHistTrend() {
+    var snapshots = histSnapshots;
     if (!snapshots.length) return '';
-    var cur = snapshots[0];
-    var prev = snapshots.length > 1 ? snapshots[1] : null;
-    // "mês anterior REGISTRADO" — pode não ser o mês-1 se houver lacunas; o rótulo diz qual é.
-    var vsLabel = prev ? 'vs ' + monthNames[prev.month] + '/' + prev.year : 'primeiro registro';
-    var asc = snapshots.slice().reverse().slice(-12); // cronológico, últimos 12 p/ o sparkline
+    var base = snapshots[histBaseIdx] || snapshots[0];
+    var ref = snapshots[histRefIdx] || null;
+    var asc = snapshots.slice().reverse().slice(-12);       // cronológico p/ o sparkline
+
+    function opts(sel, exclude) {
+      var o = '';
+      snapshots.forEach(function(s, i) {
+        if (i === exclude) return;
+        o += '<option value="' + i + '"' + (i === sel ? ' selected' : '') + '>' + escHtml(histMonthLabel(s)) + '</option>';
+      });
+      return o;
+    }
 
     var h = '';
-    h += '<div class="table-header-row">';
-    h += '<h3>Tendência <span class="pe-hint">' + monthNames[cur.month] + '/' + cur.year + '</span></h3>';
-    h += '<span class="hist-vs">' + (prev ? 'variação vs. ' + monthNames[prev.month] + '/' + prev.year : 'sem mês anterior para comparar') + '</span>';
-    h += '</div>';
+    h += '<div class="hist-head">';
+    h += '<h3>Tendência</h3>';
+    h += '<div class="hist-controls">';
+    h += '<label for="hist-base">Comparar</label>';
+    h += '<select class="hist-select" id="hist-base">' + opts(histBaseIdx, histRefIdx) + '</select>';
+    h += '<span class="hist-controls-sep">com</span>';
+    h += '<select class="hist-select" id="hist-ref">' + (snapshots.length > 1 ? opts(histRefIdx, histBaseIdx) : '<option>—</option>') + '</select>';
+    h += '</div></div>';
+
+    if (!ref) h += '<div class="hist-note">Apenas um mês registrado — não há base de comparação ainda.</div>';
+
     h += '<div class="hist-trend">';
-
     HIST_METRICS.forEach(function(m) {
-      var v = cur.data[m.key];
-      var pv = prev ? prev.data[m.key] : undefined;
-      var temV = histHas(v);
-      // delta só existe se AMBOS os meses tiverem o indicador (snapshots antigos não
-      // gravavam kpi5/kpi6 — nesse caso mostramos "—" em vez de inventar um número).
-      var temDelta = temV && histHas(pv);
-      var delta = temDelta ? round1(v - pv) : 0;
-
-      var classe, seta;
-      if (!temDelta || delta === 0) { classe = 'neutral'; seta = '•'; }
-      else {
-        var bom = (m.tipo === 'A') ? delta > 0 : delta < 0;
-        classe = bom ? 'good' : 'bad';
-        seta = delta > 0 ? '▲' : '▼';
-      }
-      var cor = HIST_COR[classe];
-
+      var st = histTileState(m, base, ref);
       var serie = asc.map(function(s) { return s.data[m.key]; }).filter(histHas);
 
-      h += '<div class="hist-tile">';
+      h += '<div class="hist-tile hist-clickable" data-hist="' + m.key + '" role="button" tabindex="0" title="Ver evolução de ' + escHtml(m.name) + '">';
       h += '<div class="hist-tile-name">' + escHtml(m.name) + '</div>';
-      h += '<div class="hist-tile-value">' + (temV ? escHtml(histNum(v) + m.unit) : '—') + '</div>';
+      h += '<div class="hist-tile-value">' + (st.temV ? escHtml(histNum(st.v) + m.unit) : '—') + '</div>';
       h += '<div class="hist-tile-foot">';
-      if (temDelta) {
-        var sinal = delta > 0 ? '+' : (delta < 0 ? '-' : '');
-        h += '<span class="hist-delta ' + classe + '">' + seta + ' ' + sinal + escHtml(histNum(Math.abs(delta)) + m.du) + '</span>';
-        h += '<span class="hist-vs">' + escHtml(vsLabel) + '</span>';
+      if (st.temDelta) {
+        var sinal = st.delta > 0 ? '+' : (st.delta < 0 ? '-' : '');
+        h += '<span class="hist-delta ' + st.classe + '">' + st.seta + ' ' + sinal + escHtml(histNum(Math.abs(st.delta)) + m.du) + '</span>';
+        h += '<span class="hist-vs">vs ' + escHtml(histMonthLabel(ref)) + '</span>';
       } else {
         h += '<span class="hist-delta neutral">—</span>';
-        h += '<span class="hist-vs">' + escHtml(prev ? 'sem base de comparação' : 'primeiro registro') + '</span>';
+        h += '<span class="hist-vs">' + escHtml(ref ? 'sem base de comparação' : 'primeiro registro') + '</span>';
       }
       h += '</div>';
-      h += histSpark(serie, cor);
+      h += histSpark(serie, st.cor);
+      h += '<span class="hist-drill">ver evolução →</span>';
       h += '</div>';
     });
-
     h += '</div>';
     return h;
+  }
+
+  // Redesenha só a faixa de tendência (sem recarregar nada) e reconecta os handlers.
+  function renderHistTrendInto() {
+    var host = document.getElementById('hist-trend-host');
+    if (!host) return;
+    host.innerHTML = renderHistTrend();
+    wireHistTrend();
+  }
+
+  function wireHistTrend() {
+    var host = document.getElementById('hist-trend-host');
+    if (!host) return;
+
+    var baseSel = document.getElementById('hist-base');
+    var refSel = document.getElementById('hist-ref');
+    if (baseSel) baseSel.addEventListener('change', function() {
+      var v = +baseSel.value;
+      if (v === histRefIdx) histRefIdx = histBaseIdx;   // troca em vez de comparar consigo mesmo
+      histBaseIdx = v;
+      renderHistTrendInto();
+    });
+    if (refSel) refSel.addEventListener('change', function() {
+      var v = +refSel.value;
+      if (isNaN(v)) return;
+      if (v === histBaseIdx) histBaseIdx = histRefIdx;
+      histRefIdx = v;
+      renderHistTrendInto();
+    });
+
+    host.querySelectorAll('.hist-clickable').forEach(function(el) {
+      function open() { openHistChart(el.getAttribute('data-hist')); }
+      el.addEventListener('click', open);
+      el.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+      });
+    });
+  }
+
+  // ── drill-down: evolução do indicador (Semanal / Mensal) ──
+  // Reutiliza o modal e o gráfico de linha da aba Análises (CP.openModal / CP.lineChart).
+  function openHistChart(metricKey) {
+    if (typeof CP === 'undefined' || !CP || typeof CP.openModal !== 'function') return;
+    var m = histMetricByKey(metricKey);
+    if (!m) return;
+    var base = histSnapshots[histBaseIdx] || histSnapshots[0];
+    var st = base ? histTileState(m, base, histSnapshots[histRefIdx] || null) : { cor: HIST_COR.neutral };
+    var cor = st.cor;
+    var modo = 'week';
+
+    function chartHtml() {
+      var pts, nota;
+      if (modo === 'week') {
+        if (HIST_DERIVAVEL[metricKey]) {
+          if (!cachedData) return '<div class="hist-collect"><b>Sem dados carregados.</b><span>Abra a aba <b>Tempo real</b> uma vez para calcular a série semanal.</span></div>';
+          pts = histWeeklyDerived(metricKey, cachedData.cards, HIST_WEEKS);
+          nota = 'Série semanal calculada a partir da data de conclusão dos cards (retroativa).';
+        } else {
+          pts = histWeeklyRecorded(metricKey, histWeekly, HIST_WEEKS);
+          if (pts.length < 2) {
+            var n = pts.length;
+            return '<div class="hist-collect"><b>Coletando dados…</b>' +
+              '<span>' + n + ' de 4 semanas registradas.</span>' +
+              '<span>Este indicador é uma fotografia do momento — não é reconstruível no passado, ' +
+              'então a série semanal começa a ser registrada agora, a cada acesso ao dashboard.</span>' +
+              '<span>Enquanto isso, veja a evolução <b>mensal</b> acima.</span></div>';
+          }
+          nota = 'Série semanal registrada a partir dos snapshots semanais.';
+        }
+      } else {
+        pts = histMonthlyPoints(metricKey, histSnapshots, histMonthNames);
+        nota = 'Série mensal a partir dos snapshots já registrados.';
+      }
+      if (!pts.length) return CP.emptyChart('Sem dados para plotar.');
+      // O lineChart do CP embute o `tip` num <title> SVG (tooltip nativo) já escapado —
+      // por isso o texto vai PURO aqui: tags HTML apareceriam literais no tooltip.
+      pts.forEach(function(p) {
+        p.tip = p.label + ': ' + histNum(p.value) + m.unit;
+      });
+      return CP.lineChart(pts, cor) + '<div class="hist-note">' + escHtml(nota) + '</div>';
+    }
+
+    function body() {
+      var h = '<div class="pe-metric" role="group" aria-label="Periodicidade" id="hist-modo">';
+      h += '<button class="pe-metric-opt' + (modo === 'week' ? ' on' : '') + '" data-modo="week">Semanal</button>';
+      h += '<button class="pe-metric-opt' + (modo === 'month' ? ' on' : '') + '" data-modo="month">Mensal</button>';
+      h += '</div>';
+      h += '<div id="hist-chart">' + chartHtml() + '</div>';
+      return h;
+    }
+
+    var over = CP.openModal({
+      title: m.name, sub: 'Evolução do indicador', color: cor, size: 'lg', body: body()
+    });
+
+    over.addEventListener('click', function(e) {
+      var b = e.target.closest('[data-modo]');
+      if (!b) return;
+      var novo = b.getAttribute('data-modo');
+      if (novo === modo) return;
+      modo = novo;
+      over.querySelectorAll('[data-modo]').forEach(function(x) { x.classList.toggle('on', x === b); });
+      var c = over.querySelector('#hist-chart');
+      if (c) c.innerHTML = chartHtml();
+    });
   }
 
   // ─── HISTORY ────────────────────────────────────
@@ -2973,12 +3247,20 @@
       var curMonth = now.getMonth()+1, curYear = now.getFullYear();
       var monthNames = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
+      // Estado da faixa de tendência. weeklySnaps vem NO MESMO t.get acima (o Trello
+      // devolve todo o 'board/shared') — nenhuma consulta extra.
+      histSnapshots = snapshots;
+      histWeekly = (data && data[WEEKLY_KEY] && typeof data[WEEKLY_KEY] === 'object') ? data[WEEKLY_KEY] : {};
+      histMonthNames = monthNames;
+      histBaseIdx = 0;
+      histRefIdx = snapshots.length > 1 ? 1 : -1;
+
       var html = '';
       if (!snapshots.length) {
         html = '<div class="history-empty"><p>O histórico será gerado automaticamente a partir do próximo acesso mensal.</p></div>';
       } else {
-        // Cards de tendência (aditivo) — usa os MESMOS snapshots já lidos acima.
-        html += renderHistTrend(snapshots, monthNames);
+        // Cards de tendência (aditivo) — host próprio p/ re-render local ao trocar as datas.
+        html += '<div id="hist-trend-host"></div>';
 
         html += '<div class="table-header-row">';
         html += '<h3>Snapshots mensais</h3>';
@@ -3014,13 +3296,18 @@
       el.style.display = '';
       document.getElementById('hist-loading').style.display = 'none';
 
+      // Preenche a faixa de tendência e conecta seletor de datas + drill-down.
+      renderHistTrendInto();
+
       document.getElementById('btn-force-snap').addEventListener('click', function() {
         if (!cachedData) {
           alert('Acesse a aba "Tempo real" primeiro para carregar os dados.');
           return;
         }
         var kpis = calcKPIs(cachedData.cards, cachedData.config);
-        forceSnapshot(kpis, cachedData.config)
+        // Salva o snapshot do mês E o da semana corrente (sobrescrevendo), para que o
+        // botão popule a série semanal imediatamente.
+        Promise.all([ forceSnapshot(kpis, cachedData.config), saveWeeklySnapshot(kpis, true) ])
           .then(function() { loadHistory(); })
           .catch(function() { alert('Não foi possível salvar o snapshot. Tente novamente.'); });
       });
@@ -4154,7 +4441,21 @@
       },
       // exposto para outras abas (ex.: Detalhamento) reutilizarem o mesmo modal de cards,
       // em vez de duplicar o componente — mantém aparência/comportamento 100% consistentes.
-      openCards: openCards
+      openCards: openCards,
+      // Modal genérico (mesma casca/animação do modal de cards) + gráfico de linha —
+      // expostos para a aba Histórico montar seu drill-down SEM duplicar componente.
+      // Retorna o overlay para o chamador conectar handlers internos.
+      openModal: function(o) {
+        var over = getOverlay(o && o.size === 'lg' ? 'cp-modal-lg' : '');
+        setModal(over, {
+          swatch: o.color, title: escHtml(o.title || ''), sub: o.sub || '',
+          body: o.body || '', foot: o.foot || ''
+        });
+        showOverlay(over);
+        return over;
+      },
+      lineChart: lineChart,
+      emptyChart: emptyChart
     };
   })();
 
