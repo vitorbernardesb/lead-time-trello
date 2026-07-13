@@ -337,6 +337,27 @@
     .alert-row .ar-excess { background: var(--danger-bg); color: var(--danger-text); padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid var(--danger-line); }
     .history-table tr.current-month td { background: rgba(255,207,6,0.10); border-left: 3px solid var(--brand); font-weight: 600; }
     .history-empty { text-align: center; padding: 40px; color: var(--muted); }
+    /* ── Histórico: cards de tendência (variação vs. o mês anterior registrado) ──
+       Mesma linguagem do .kpi-card (raio/borda/sombra/hover). O delta usa DUPLA
+       codificação: a seta dá a direção e a cor dá o juízo (bom/ruim), respeitando
+       o tipo do KPI — em indicadores "quanto menor melhor" (tipo B) uma queda é boa. */
+    .hist-trend { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 14px; margin-bottom: 24px; }
+    .hist-tile {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 14px 16px; box-shadow: var(--shadow-1);
+      display: flex; flex-direction: column; min-height: 130px;
+      transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+    }
+    .hist-tile:hover { box-shadow: var(--shadow-2); transform: translateY(-2px); border-color: var(--border-2); }
+    .hist-tile-name { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); line-height: 1.3; min-height: 26px; }
+    .hist-tile-value { font-size: 24px; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; line-height: 1.1; margin-top: 4px; }
+    .hist-tile-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+    .hist-delta { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+    .hist-delta.good { color: var(--ok-text); background: var(--ok-bg); border: 1px solid var(--ok-line); }
+    .hist-delta.bad { color: var(--danger-text); background: var(--danger-bg); border: 1px solid var(--danger-line); }
+    .hist-delta.neutral { color: var(--ink-2); background: rgba(10,10,15,0.05); border: 1px solid var(--border); }
+    .hist-vs { font-size: 10px; color: var(--muted); }
+    .hist-spark { display: block; width: 100%; height: 26px; margin-top: auto; padding-top: 10px; }
     .config-section { background: var(--card); border-radius: 12px; padding: 22px; border: 1px solid var(--border); box-shadow: var(--shadow-1); margin-bottom: 20px; }
     .config-section h3 { font-size: 15px; margin-bottom: 16px; color: var(--ink); font-weight: 700; letter-spacing: -0.01em; }
     .config-row { margin-bottom: 16px; }
@@ -2835,6 +2856,102 @@
 
   document.getElementById('rt-retry').addEventListener('click', function() { loadRealtime(); });
 
+  // ─── HISTORY: CARDS DE TENDÊNCIA ────────────────
+  // Derivado 100% dos snapshots JÁ lidos por loadHistory (t.get 'board','shared') —
+  // nenhuma consulta nova ao Trello, nenhum KPI recalculado: apenas lê os agregados
+  // já persistidos e faz a diferença vs. o snapshot anterior.
+  // `tipo` segue a MESMA convenção de buildKpiCards/kpiHealth:
+  //   'A' = quanto maior melhor · 'B' = quanto menor melhor.
+  var HIST_METRICS = [
+    { key: 'score', name: 'Health Score',      tipo: 'A', unit: '',       du: ''     },
+    { key: 'kpi1',  name: 'Cards vencidos',    tipo: 'B', unit: '%',      du: ' pp'  },
+    { key: 'kpi2',  name: 'Retrabalhos',       tipo: 'B', unit: '',       du: ''     },
+    { key: 'kpi6',  name: 'Tempo de entrega',  tipo: 'B', unit: ' d.u.',  du: ' d.u.'},
+    { key: 'kpi3',  name: 'Tempo na etapa',    tipo: 'B', unit: ' d.u.',  du: ' d.u.'},
+    { key: 'kpi4',  name: 'Vazão mensal',      tipo: 'A', unit: '',       du: ''     },
+    { key: 'kpi5',  name: 'Conformidade',      tipo: 'A', unit: '%',      du: ' pp'  }
+  ];
+  var HIST_COR = { good: '#1E7A46', bad: '#B3272F', neutral: '#75757F' };
+
+  function histNum(v) { return String(round1(v)).replace('.', ','); }
+  function histHas(v) { return v !== undefined && v !== null && !isNaN(v); }
+
+  // Sparkline (linha + área) — SVG inline, sem eixos nem libs. Estica na horizontal
+  // (preserveAspectRatio="none") e mantém a espessura do traço via vector-effect.
+  function histSpark(values, cor) {
+    if (!values || values.length < 2) return '';
+    var W = 120, H = 26, pad = 2;
+    var min = Math.min.apply(null, values), max = Math.max.apply(null, values);
+    var span = max - min;
+    var n = values.length;
+    function px(i) { return pad + (i / (n - 1)) * (W - pad * 2); }
+    function py(v) { return span > 0 ? (H - pad) - ((v - min) / span) * (H - pad * 2) : H / 2; }
+    var d = '';
+    values.forEach(function(v, i) { d += (i ? 'L' : 'M') + px(i).toFixed(1) + ' ' + py(v).toFixed(1) + ' '; });
+    var area = 'M' + px(0).toFixed(1) + ' ' + H + ' ' + d.replace('M', 'L') + 'L' + px(n - 1).toFixed(1) + ' ' + H + ' Z';
+    return '<svg class="hist-spark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true" focusable="false">' +
+      '<path d="' + area + '" fill="' + cor + '" opacity="0.10"/>' +
+      '<path d="' + d + '" fill="none" stroke="' + cor + '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
+      '</svg>';
+  }
+
+  // snapshots: ordenados do mais recente para o mais antigo (como em loadHistory).
+  function renderHistTrend(snapshots, monthNames) {
+    if (!snapshots.length) return '';
+    var cur = snapshots[0];
+    var prev = snapshots.length > 1 ? snapshots[1] : null;
+    // "mês anterior REGISTRADO" — pode não ser o mês-1 se houver lacunas; o rótulo diz qual é.
+    var vsLabel = prev ? 'vs ' + monthNames[prev.month] + '/' + prev.year : 'primeiro registro';
+    var asc = snapshots.slice().reverse().slice(-12); // cronológico, últimos 12 p/ o sparkline
+
+    var h = '';
+    h += '<div class="table-header-row">';
+    h += '<h3>Tendência <span class="pe-hint">' + monthNames[cur.month] + '/' + cur.year + '</span></h3>';
+    h += '<span class="hist-vs">' + (prev ? 'variação vs. ' + monthNames[prev.month] + '/' + prev.year : 'sem mês anterior para comparar') + '</span>';
+    h += '</div>';
+    h += '<div class="hist-trend">';
+
+    HIST_METRICS.forEach(function(m) {
+      var v = cur.data[m.key];
+      var pv = prev ? prev.data[m.key] : undefined;
+      var temV = histHas(v);
+      // delta só existe se AMBOS os meses tiverem o indicador (snapshots antigos não
+      // gravavam kpi5/kpi6 — nesse caso mostramos "—" em vez de inventar um número).
+      var temDelta = temV && histHas(pv);
+      var delta = temDelta ? round1(v - pv) : 0;
+
+      var classe, seta;
+      if (!temDelta || delta === 0) { classe = 'neutral'; seta = '•'; }
+      else {
+        var bom = (m.tipo === 'A') ? delta > 0 : delta < 0;
+        classe = bom ? 'good' : 'bad';
+        seta = delta > 0 ? '▲' : '▼';
+      }
+      var cor = HIST_COR[classe];
+
+      var serie = asc.map(function(s) { return s.data[m.key]; }).filter(histHas);
+
+      h += '<div class="hist-tile">';
+      h += '<div class="hist-tile-name">' + escHtml(m.name) + '</div>';
+      h += '<div class="hist-tile-value">' + (temV ? escHtml(histNum(v) + m.unit) : '—') + '</div>';
+      h += '<div class="hist-tile-foot">';
+      if (temDelta) {
+        var sinal = delta > 0 ? '+' : (delta < 0 ? '-' : '');
+        h += '<span class="hist-delta ' + classe + '">' + seta + ' ' + sinal + escHtml(histNum(Math.abs(delta)) + m.du) + '</span>';
+        h += '<span class="hist-vs">' + escHtml(vsLabel) + '</span>';
+      } else {
+        h += '<span class="hist-delta neutral">—</span>';
+        h += '<span class="hist-vs">' + escHtml(prev ? 'sem base de comparação' : 'primeiro registro') + '</span>';
+      }
+      h += '</div>';
+      h += histSpark(serie, cor);
+      h += '</div>';
+    });
+
+    h += '</div>';
+    return h;
+  }
+
   // ─── HISTORY ────────────────────────────────────
   function loadHistory() {
     document.getElementById('hist-loading').style.display = '';
@@ -2860,8 +2977,11 @@
       if (!snapshots.length) {
         html = '<div class="history-empty"><p>O histórico será gerado automaticamente a partir do próximo acesso mensal.</p></div>';
       } else {
+        // Cards de tendência (aditivo) — usa os MESMOS snapshots já lidos acima.
+        html += renderHistTrend(snapshots, monthNames);
+
         html += '<div class="table-header-row">';
-        html += '<span></span>';
+        html += '<h3>Snapshots mensais</h3>';
         html += '<button class="btn-table-download" id="btn-dl-history">⬇ Exportar histórico</button>';
         html += '</div>';
         html += '<div class="table-scroll"><table class="history-table"><thead><tr>';
