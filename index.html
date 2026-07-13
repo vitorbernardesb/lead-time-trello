@@ -840,7 +840,10 @@
     if (typeof XLSX !== 'undefined') return callback();
     var script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
-    script.onload = callback;
+    // NÃO usar `script.onload = callback` — o handler recebe o Event de load como 1º
+    // argumento, que chega no callback como `err` truthy e aborta a exportação mesmo
+    // quando a lib carregou. O wrapper descarta o Event (igual ao loadScriptOnce do dashboard).
+    script.onload = function() { callback(); };
     script.onerror = function() { callback(new Error('Falha ao carregar biblioteca XLSX.')); };
     document.head.appendChild(script);
   }
