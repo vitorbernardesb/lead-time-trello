@@ -35,7 +35,6 @@
   3. Sem etiquetas + fora de Planejamento → mover p/ Planejamento
   5. Sem data de entrega + fora de Planejamento → mover p/ Planejamento
   6. Saiu de Captação de Imagem (últimos 10min) → add label "CAPTAÇÃO REALIZADA"
-  7. Entrou em Alterações (últimos 10min) → incrementar Retrabalhos +1
   8. Entrou em Revisões em Atraso (últimos 10min) → Prioridade = "ALTO"
   9. Entrou em Alterações (últimos 10min) → definir data de início = agora
   10. Não conforme em Captação/A fazer/Em andamento → reverter p/ Planejamento + comentário
@@ -199,7 +198,7 @@
       .then(function(r) { return r.json(); })
       .then(function(fields) {
         if (!Array.isArray(fields)) return null;
-        var result = { conformidade: null, prioridade: null, retrabalho: null, savedAt: Date.now() };
+        var result = { conformidade: null, prioridade: null, savedAt: Date.now() };
         fields.forEach(function(field) {
           if (field.name === 'Status de conformidade') {
             var options = {};
@@ -218,9 +217,6 @@
               });
             }
             result.prioridade = { fieldId: field.id, options: pOpts };
-          }
-          if (field.name === 'Retrabalhos') {
-            result.retrabalho = { fieldId: field.id };
           }
         });
         t.set('board', 'private', 'customFieldsCache', result).catch(function() {});
@@ -1042,7 +1038,7 @@
     console.warn('[AUTO] Falha na automação:', err && err.message ? err.message : String(err));
   }
 
-  function runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache, isConforme, missingItems) {
+  function runAutomations(t, card, lists, actions, fields, token, autoCache, labelsCache, isConforme, missingItems) {
     if (_automationLock[card.id]) return;
     _automationLock[card.id] = true;
     setTimeout(function() { delete _automationLock[card.id]; }, 5000);
@@ -1101,8 +1097,8 @@
       }
     }
 
-    // 7+9. Entrou em Alterações (últimos 10min) → Retrabalhos +1 AND start = agora
-    if (cooled('retrabalhoAlt')) {
+    // 9. Entrou em Alterações (últimos 10min) → start = agora
+    if (cooled('startDateAlt')) {
       var enteredAlt = false;
       for (var j = 0; j < actions.length; j++) {
         if (actions[j].type === 'updateCard' && actions[j].data.listAfter &&
@@ -1112,29 +1108,11 @@
         }
       }
       if (enteredAlt) {
-        // Increment Retrabalhos
-        if (fields && fields.retrabalho) {
-          var rwVal = 0;
-          if (Array.isArray(cfItems)) {
-            for (var ri = 0; ri < cfItems.length; ri++) {
-              if (cfItems[ri].idCustomField === fields.retrabalho.fieldId) {
-                var v = cfItems[ri].value;
-                rwVal = v ? (Number(v.number) || 0) : 0;
-                break;
-              }
-            }
-          }
-          queuedFetch('https://api.trello.com/1/card/' + card.id + '/customField/' + fields.retrabalho.fieldId + '/item?key=' + APP_KEY + '&token=' + token, {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ value: { number: String(rwVal + 1) } })
-          }).then(assertOk).catch(logAutoFail);
-        }
-        // Set start date
         queuedFetch(apiUrl('/cards/' + card.id, token), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ start: new Date().toISOString() })
         }).then(assertOk).catch(logAutoFail);
-        mark('retrabalhoAlt');
+        mark('startDateAlt');
       }
     }
 
@@ -1330,7 +1308,7 @@
           t.set('card', 'private', 'badgeCache', { badges: badges, cachedAt: Date.now() }).catch(function() {});
 
           try {
-            runAutomations(t, card, lists, actions, cfItems, fields, token, autoCache, labelsCache, isConforme, missingItems);
+            runAutomations(t, card, lists, actions, fields, token, autoCache, labelsCache, isConforme, missingItems);
           } catch(e) {
             console.error('[AUTOMATIONS] Erro:', e && e.message ? e.message : String(e));
           }
