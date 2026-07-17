@@ -1601,73 +1601,110 @@
     }
   });
 
-  // ─── FETCH DATA ─────────────────────────────────
-  function fetchWithRetry(url, token, maxRetries) {
-    var attempt = 0;
-    function tryFetch() {
-      return fetch(apiUrl(url, token))
-        .then(function(r) {
-          if (r.status === 401) {
-            console.error('[DASHBOARD] 401 Unauthorized — token expirado, url:', url.substring(0, 60));
-            throw new Error('401_UNAUTHORIZED');
-          }
-          if ((r.status === 429 || r.status >= 500) && attempt < maxRetries) {
-            attempt++;
-            var backoff = Math.min(1000 * Math.pow(2, attempt), 8000);
-            console.warn('[DASHBOARD] ' + r.status + ' retry', attempt, 'in', backoff + 'ms');
-            return new Promise(function(resolve) { setTimeout(resolve, backoff); }).then(tryFetch);
-          }
-          return r.json();
-        })
-        .then(function(data) {
-          if (data && data.error && attempt < maxRetries) {
-            attempt++;
-            var wait = 2000 * attempt;
-            return new Promise(function(resolve){ setTimeout(resolve, wait); }).then(tryFetch);
-          }
-          return data;
-        })
-        .catch(function(err) {
-          if (err && err.message === '401_UNAUTHORIZED') throw err;
-          if (attempt < maxRetries) {
-            attempt++;
-            var backoff = Math.min(1000 * Math.pow(2, attempt), 8000);
-            console.warn('[DASHBOARD] Network error, retry', attempt, ':', err.message || String(err));
-            return new Promise(function(resolve) { setTimeout(resolve, backoff); }).then(tryFetch);
-          }
-          throw err;
-        });
-    }
-    return tryFetch();
+  // ─── FETCH DATA (fila com pacing proativo) ──────
+  // Antes: o burst inicial (lists/cards/members/customFields) saía direto via
+  // Promise.all sem nenhum controle, e o loop de actions por card só limitava
+  // CONCORRÊNCIA (lotes de 10 a cada 1200ms) — nada limitava a VELOCIDADE de
+  // disparo. Com muitos cards, os dois juntos conseguiam ultrapassar os
+  // ~100 req/10s do Trello antes do primeiro 429 voltar para acionar o
+  // backoff (reativo por natureza — sempre tarde demais para evitar o burst).
+  // Agora toda chamada — burst inicial incluído — passa pela MESMA fila com
+  // teto de disparos por segundo (proativo) além do teto de concorrência.
+  var API_CONCURRENCY = 4;
+  var API_RATE_PER_SEC = 6;
+  var API_MAX_RETRIES = 2;
+  var _apiQueue = [];
+  var _apiRunning = 0;
+  var _apiDispatchTimes = [];       // timestamps dos disparos na janela de 1s corrente
+  var _apiDrainScheduled = false;
+
+  function apiWithinRateBudget() {
+    var now = Date.now();
+    while (_apiDispatchTimes.length && now - _apiDispatchTimes[0] >= 1000) _apiDispatchTimes.shift();
+    return _apiDispatchTimes.length < API_RATE_PER_SEC;
   }
 
-  function throttledFetch(urls, token, batchSize, delayMs) {
-    var results = new Array(urls.length);
-    var idx = 0;
-    function nextBatch() {
-      if (idx >= urls.length) return Promise.resolve(results);
-      var end = Math.min(idx + batchSize, urls.length);
-      var batch = [];
-      for (var b = idx; b < end; b++) {
-        (function(i) {
-          batch.push(
-            fetchWithRetry(urls[i], token, 2)
-              .then(function(data){ results[i] = data; })
-              .catch(function(err) {
-                // erro de UM card não derruba o load inteiro: fica undefined
-                // (tratado como [] adiante), exatamente como o consumo já espera.
-                console.warn('[DASHBOARD] Falha em', urls[i].substring(0, 60), '—', err && err.message ? err.message : String(err));
-              })
-          );
-        })(b);
-      }
-      idx = end;
-      return Promise.all(batch).then(function() {
-        if (idx >= urls.length) return results;
-        return new Promise(function(resolve){ setTimeout(resolve, delayMs); }).then(nextBatch);
+  function apiScheduleDrain() {
+    if (_apiDrainScheduled) return;
+    _apiDrainScheduled = true;
+    setTimeout(function() { _apiDrainScheduled = false; apiDrainQueue(); }, 120);
+  }
+
+  function apiRetry(item, delay) {
+    _apiRunning--;
+    setTimeout(function() { _apiQueue.unshift(item); apiDrainQueue(); }, delay);
+  }
+
+  function apiDispatch(item) {
+    fetch(apiUrl(item.url, item.token))
+      .then(function(r) {
+        if (r.status === 401) {
+          console.error('[DASHBOARD] 401 Unauthorized — token expirado, url:', item.url.substring(0, 60));
+          _apiRunning--;
+          item.reject(new Error('401_UNAUTHORIZED'));
+          apiDrainQueue();
+          return;
+        }
+        if ((r.status === 429 || r.status >= 500) && item.attempt < API_MAX_RETRIES) {
+          item.attempt++;
+          var backoff = Math.min(1000 * Math.pow(2, item.attempt), 8000);
+          console.warn('[DASHBOARD] ' + r.status + ' retry', item.attempt, 'in', backoff + 'ms');
+          apiRetry(item, backoff);
+          return;
+        }
+        return r.json().then(function(data) {
+          if (data && data.error && item.attempt < API_MAX_RETRIES) {
+            item.attempt++;
+            apiRetry(item, 1500 * item.attempt);
+            return;
+          }
+          _apiRunning--;
+          item.resolve(data);
+          apiDrainQueue();
+        });
+      })
+      .catch(function(err) {
+        if (err && err.message === '401_UNAUTHORIZED') { _apiRunning--; item.reject(err); apiDrainQueue(); return; }
+        if (item.attempt < API_MAX_RETRIES) {
+          item.attempt++;
+          var backoff = Math.min(1000 * Math.pow(2, item.attempt), 8000);
+          console.warn('[DASHBOARD] Network error, retry', item.attempt, ':', err.message || String(err));
+          apiRetry(item, backoff);
+        } else {
+          _apiRunning--;
+          item.reject(err);
+          apiDrainQueue();
+        }
       });
+  }
+
+  function apiDrainQueue() {
+    while (_apiQueue.length > 0 && _apiRunning < API_CONCURRENCY) {
+      if (!apiWithinRateBudget()) { apiScheduleDrain(); return; }
+      _apiDispatchTimes.push(Date.now());
+      _apiRunning++;
+      apiDispatch(_apiQueue.shift());
     }
-    return nextBatch();
+  }
+
+  function fetchWithRetry(url, token) {
+    return new Promise(function(resolve, reject) {
+      _apiQueue.push({ url: url, token: token, resolve: resolve, reject: reject, attempt: 0 });
+      apiDrainQueue();
+    });
+  }
+
+  // Substitui o antigo throttledFetch de lotes manuais: a pacing já é feita
+  // pela fila acima, então basta disparar tudo e deixar a fila regular a
+  // velocidade real. Falha de UM card não derruba o load inteiro — fica
+  // undefined (tratado como [] adiante), igual ao comportamento anterior.
+  function throttledFetch(urls, token) {
+    return Promise.all(urls.map(function(url) {
+      return fetchWithRetry(url, token).catch(function(err) {
+        console.warn('[DASHBOARD] Falha em', url.substring(0, 60), '—', err && err.message ? err.message : String(err));
+        return undefined;
+      });
+    }));
   }
 
   function fetchData(token, boardId) {
@@ -1682,15 +1719,15 @@
 
     return fieldCachePromise.then(function(cachedField) {
       var phase1 = [
-        fetchWithRetry('/boards/'+boardId+'/lists?fields=name', token, 2),
+        fetchWithRetry('/boards/'+boardId+'/lists?fields=name', token),
         // idMembers adicionado de forma ADITIVA: alimenta só o campo "Responsáveis" do
         // módulo de Análises Personalizadas. Nenhum KPI/fórmula lê este campo.
-        fetchWithRetry('/boards/'+boardId+'/cards?filter=all&fields=name,desc,due,dueComplete,dateLastActivity,labels,idList,idMembers,shortUrl,closed&customFieldItems=true', token, 2),
+        fetchWithRetry('/boards/'+boardId+'/cards?filter=all&fields=name,desc,due,dueComplete,dateLastActivity,labels,idList,idMembers,shortUrl,closed&customFieldItems=true', token),
         // membros do board (nome legível) — busca leve, uma vez por load; só para exibição.
-        fetchWithRetry('/boards/'+boardId+'/members?fields=fullName,username', token, 2)
+        fetchWithRetry('/boards/'+boardId+'/members?fields=fullName,username', token)
       ];
       if (!cachedField) {
-        phase1.push(fetchWithRetry('/boards/'+boardId+'/customFields', token, 2));
+        phase1.push(fetchWithRetry('/boards/'+boardId+'/customFields', token));
       }
       return Promise.all(phase1).then(function(initial) {
         var lists = initial[0], allBoardCards = initial[1], boardMembers = initial[2], customFields = initial[3] || [];
@@ -1798,7 +1835,7 @@
           return '/cards/'+cards[i].id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000&fields=type,date,data&memberCreator=false&member=false';
         });
 
-        return throttledFetch(actionUrls, token, 10, 1200).then(function(fetched) {
+        return throttledFetch(actionUrls, token).then(function(fetched) {
           // falha de fetch fica undefined (processada como []), mas NUNCA entra no cache
           toFetch.forEach(function(cardIdx, j) {
             if (Array.isArray(fetched[j])) allActions[cardIdx] = fetched[j];
@@ -3029,30 +3066,30 @@
       '</svg>';
   }
 
-  // ── SÉRIES SEMANAIS ──────────────────────────────
+  // ── SÉRIES SEMANAIS E DIÁRIAS ────────────────────
   // Dois regimes, por natureza do indicador:
   //  • DERIVADO (retroativo): kpi4/Vazão e kpi6/Tempo de entrega saem dos próprios cards
-  //    (concludedAt + leadTimeReal), então a série semanal existe desde sempre.
-  //  • REGISTRADO: os demais são "fotografia do momento" e vêm dos snapshots semanais
-  //    (weeklySnaps) — enchem a partir de agora.
+  //    (concludedAt + leadTimeReal) — timestamp fixo no passado, então dá pra reconstruir
+  //    série semanal OU diária para qualquer período já coberto pelos cards em cache.
+  //  • REGISTRADO: os demais são "fotografia do momento" (estado do board AGORA) e só
+  //    existem daqui pra frente — vêm dos snapshots semanais (weeklySnaps) ou mensais
+  //    (histSnapshots), sem versão diária possível.
   var HIST_DERIVAVEL = { kpi4: true, kpi6: true };
-  var HIST_WEEKS = 12;
 
-  // Vazão e Tempo de entrega por semana, a partir dos cards em cache. Sem consulta nova.
-  function histWeeklyDerived(metricKey, cards, nWeeks) {
+  // Vazão e Tempo de entrega por semana, dentro de [start, end] — a partir dos
+  // cards já em cache (filter=all cobre abertos + arquivados). Sem consulta nova.
+  function histWeeklyDerived(metricKey, cards, start, end) {
     var done = (cards || []).filter(function(c) { return c.concludedAt; });
     var byWeek = {};
     done.forEach(function(c) {
       var k = weekStartOf(new Date(c.concludedAt)).getTime();
       (byWeek[k] = byWeek[k] || []).push(c);
     });
-    // janela contínua terminando na semana corrente (semanas vazias entram como 0 na vazão)
-    var end = weekStartOf(new Date()).getTime(), WEEK = 604800000;
+    var startWeek = weekStartOf(start).getTime(), endWeek = weekStartOf(end).getTime(), WEEK = 604800000;
     var pts = [];
-    for (var i = nWeeks - 1; i >= 0; i--) {
-      var k2 = end - i * WEEK;
-      var cs = byWeek[k2] || [];
-      var label = weekLabel(new Date(k2));
+    for (var k = startWeek; k <= endWeek; k += WEEK) {
+      var cs = byWeek[k] || [];
+      var label = weekLabel(new Date(k));
       if (metricKey === 'kpi4') {
         pts.push({ label: label, value: cs.length, n: cs.length });
       } else { // kpi6 — média do lead time real das conclusões da semana
@@ -3064,9 +3101,42 @@
     return pts;
   }
 
-  // Série semanal registrada (weeklySnaps) → pontos cronológicos.
-  function histWeeklyRecorded(metricKey, weeklyMap, nWeeks) {
-    var keys = Object.keys(weeklyMap || {}).sort().slice(-nWeeks);
+  // Vazão e Tempo de entrega por DIA, dentro de [start, end] — mesmo princípio
+  // do semanal, só que agrupando por dia em vez de semana ISO. Antes, o toggle
+  // "Mensal" plotava 1 ponto por SNAPSHOT mensal já registrado (não por dia);
+  // com poucos meses de histórico isso desenhava quase nenhum ponto. Só se
+  // aplica aos indicadores DERIVÁVEIS pelo mesmo motivo do semanal.
+  function histDailyDerived(metricKey, cards, start, end) {
+    var done = (cards || []).filter(function(c) { return c.concludedAt; });
+    var byDay = {};
+    done.forEach(function(c) {
+      var d = new Date(c.concludedAt); d.setHours(0, 0, 0, 0);
+      (byDay[d.getTime()] = byDay[d.getTime()] || []).push(c);
+    });
+    var DAY = 86400000;
+    var s = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
+    var e = new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime();
+    var pts = [];
+    for (var k = s; k <= e; k += DAY) {
+      var cs = byDay[k] || [];
+      var label = fmtDateBR(new Date(k)).slice(0, 5); // dd/mm
+      if (metricKey === 'kpi4') {
+        pts.push({ label: label, value: cs.length, n: cs.length });
+      } else {
+        var lts = cs.map(function(c) { return c.leadTimeReal; }).filter(function(v) { return v !== null && v !== undefined; });
+        if (!lts.length) continue;               // dia sem entrega: não plota "0 d.u." (seria mentira)
+        pts.push({ label: label, value: mean(lts), n: lts.length });
+      }
+    }
+    return pts;
+  }
+
+  // Série semanal registrada (weeklySnaps) → pontos cronológicos dentro de [start, end].
+  function histWeeklyRecorded(metricKey, weeklyMap, start, end) {
+    var keys = Object.keys(weeklyMap || {}).sort().filter(function(k) {
+      var monday = isoWeekKeyToMonday(k);
+      return monday >= start && monday <= end;
+    });
     var pts = [];
     keys.forEach(function(k) {
       var v = weeklyMap[k][metricKey];
@@ -3075,6 +3145,22 @@
       pts.push({ label: 'S' + wk[1], value: v, n: 1 });
     });
     return pts;
+  }
+
+  // Inverso de weekKeyOf: reconstrói a segunda-feira da semana ISO representada
+  // pela chave "YYYY_Www" (mesma convenção usada para gravar weeklySnaps).
+  function isoWeekKeyToMonday(key) {
+    var parts = key.split('_W');
+    var year = parseInt(parts[0], 10), week = parseInt(parts[1], 10);
+    var jan4 = new Date(year, 0, 4);
+    var jan4Dow = (jan4.getDay() + 6) % 7;
+    var week1Monday = new Date(year, 0, 4 - jan4Dow);
+    return new Date(week1Monday.getFullYear(), week1Monday.getMonth(), week1Monday.getDate() + (week - 1) * 7);
+  }
+
+  function histEarliestWeeklyMonday(weeklyMap) {
+    var keys = Object.keys(weeklyMap || {}).sort(); // "YYYY_Www" ordena cronologicamente
+    return keys.length ? isoWeekKeyToMonday(keys[0]) : null;
   }
 
   function histMonthlyPoints(metricKey, snapshots, monthNames) {
@@ -3146,6 +3232,22 @@
 
   function histSnapshotDate(s) { return new Date(s.year, s.month - 1, 1); }
   function histMonthLabelOf(date) { return histMonthNames[date.getMonth()+1] + '/' + date.getFullYear(); }
+
+  // Janela do drill-down (Semanal/Mensal) = o período escolhido no seletor
+  // Início/Fim acima (histRefIdx → histBaseIdx), não mais um "últimas N
+  // semanas"/"todos os meses" fixo — conecta o seletor de período à evolução
+  // mostrada no modal de cada tile.
+  function histSelectedPeriod() {
+    var base = histSnapshots[histBaseIdx] || histSnapshots[0];
+    if (!base) return null;
+    var ref = histSnapshots[histRefIdx];
+    var baseMonthStart = histSnapshotDate(base);
+    var start = (ref && histSnapshotDate(ref) <= baseMonthStart) ? histSnapshotDate(ref) : baseMonthStart;
+    var end = new Date(baseMonthStart.getFullYear(), baseMonthStart.getMonth() + 1, 0); // último dia do mês base
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    if (end > today) end = today; // mês corrente ainda não terminou
+    return { start: start, end: end };
+  }
 
   function showHistDateError(msg) {
     var el = document.getElementById('hist-date-error');
@@ -3417,31 +3519,53 @@
     var st = base ? histTileState(m, base, histSnapshots[histRefIdx] || null) : { cor: HIST_COR.neutral };
     var cor = st.cor;
     var modo = 'week';
+    var periodo = histSelectedPeriod();
+    var periodoLabel = periodo ? (formatBRDate(periodo.start) + ' – ' + formatBRDate(periodo.end)) : '';
 
     function chartHtml() {
       var pts, nota;
+      if (!periodo) return CP.emptyChart('Sem período selecionado.');
+
       if (modo === 'week') {
         if (HIST_DERIVAVEL[metricKey]) {
           if (!cachedData) return '<div class="hist-collect"><b>Sem dados carregados.</b><span>Abra a aba <b>Tempo real</b> uma vez para calcular a série semanal.</span></div>';
-          pts = histWeeklyDerived(metricKey, cachedData.cards, HIST_WEEKS);
-          nota = 'Série semanal calculada a partir da data de conclusão dos cards (retroativa).';
+          pts = histWeeklyDerived(metricKey, cachedData.cards, periodo.start, periodo.end);
+          nota = 'Série semanal calculada a partir da data de conclusão dos cards (retroativa) — período ' + escHtml(periodoLabel) + '.';
         } else {
-          pts = histWeeklyRecorded(metricKey, histWeekly, HIST_WEEKS);
+          // "Fotografia do momento": só existe dado a partir de quando o snapshot semanal
+          // começou a ser gravado. Se o período pedido é anterior a isso, o dado não
+          // existe e não vai ser inventado — avisa em vez de mostrar uma série vazia/errada.
+          var earliestWeekly = histEarliestWeeklyMonday(histWeekly);
+          if (!earliestWeekly || periodo.start < earliestWeekly) {
+            return '<div class="hist-collect"><b>Período fora de cobertura.</b>' +
+              '<span>Este indicador é uma fotografia do momento — só existe registro semanal ' +
+              (earliestWeekly ? ('a partir de ' + escHtml(formatBRDate(earliestWeekly)) + '.') : 'ainda não começou a ser coletado.') + '</span>' +
+              '<span>O período selecionado (' + escHtml(periodoLabel) + ') começa antes disso: os pontos anteriores não existem e não serão inventados.</span>' +
+              '<span>Enquanto isso, veja a evolução <b>mensal</b> acima.</span></div>';
+          }
+          pts = histWeeklyRecorded(metricKey, histWeekly, periodo.start, periodo.end);
           if (pts.length < 2) {
-            var n = pts.length;
             return '<div class="hist-collect"><b>Coletando dados…</b>' +
-              '<span>' + n + ' de 4 semanas registradas.</span>' +
+              '<span>' + pts.length + ' semana(s) registrada(s) dentro do período selecionado.</span>' +
               '<span>Este indicador é uma fotografia do momento — não é reconstruível no passado, ' +
               'então a série semanal começa a ser registrada agora, a cada acesso ao dashboard.</span>' +
               '<span>Enquanto isso, veja a evolução <b>mensal</b> acima.</span></div>';
           }
-          nota = 'Série semanal registrada a partir dos snapshots semanais.';
+          nota = 'Série semanal registrada a partir dos snapshots semanais — período ' + escHtml(periodoLabel) + '.';
         }
       } else {
-        pts = histMonthlyPoints(metricKey, histSnapshots, histMonthNames);
-        nota = 'Série mensal a partir dos snapshots já registrados.';
+        if (HIST_DERIVAVEL[metricKey]) {
+          if (!cachedData) return '<div class="hist-collect"><b>Sem dados carregados.</b><span>Abra a aba <b>Tempo real</b> uma vez para calcular a série diária.</span></div>';
+          pts = histDailyDerived(metricKey, cachedData.cards, periodo.start, periodo.end);
+          nota = 'Série diária calculada a partir da data de conclusão dos cards (retroativa) — período ' + escHtml(periodoLabel) + '.';
+        } else {
+          // Sem versão diária possível (ver nota de HIST_DERIVAVEL) — mostra a lista de
+          // snapshots mensais já registrados, deixando claro que a granularidade é mensal.
+          pts = histMonthlyPoints(metricKey, histSnapshots, histMonthNames);
+          nota = 'Este indicador só tem granularidade mensal (fotografia do momento no dia do snapshot) — não é possível plotar por dia.';
+        }
       }
-      if (!pts.length) return CP.emptyChart('Sem dados para plotar.');
+      if (!pts.length) return CP.emptyChart('Sem dados para plotar no período selecionado.');
       // O lineChart do CP embute o `tip` num <title> SVG (tooltip nativo) já escapado —
       // por isso o texto vai PURO aqui: tags HTML apareceriam literais no tooltip.
       pts.forEach(function(p) {
@@ -3450,10 +3574,15 @@
       return CP.lineChart(pts, cor) + '<div class="hist-note">' + escHtml(nota) + '</div>';
     }
 
+    // Rótulo do 2º modo reflete o que ele de fato mostra: "Diário" quando dá pra
+    // reconstruir por dia (indicador derivável), "Mensal" quando só existe a
+    // granularidade grossa dos snapshots mensais.
+    var modoMonthLabel = HIST_DERIVAVEL[metricKey] ? 'Diário' : 'Mensal';
+
     function body() {
       var h = '<div class="pe-metric" role="group" aria-label="Periodicidade" id="hist-modo">';
       h += '<button class="pe-metric-opt' + (modo === 'week' ? ' on' : '') + '" data-modo="week">Semanal</button>';
-      h += '<button class="pe-metric-opt' + (modo === 'month' ? ' on' : '') + '" data-modo="month">Mensal</button>';
+      h += '<button class="pe-metric-opt' + (modo === 'month' ? ' on' : '') + '" data-modo="month">' + modoMonthLabel + '</button>';
       h += '</div>';
       h += '<div id="hist-chart">' + chartHtml() + '</div>';
       return h;

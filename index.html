@@ -323,9 +323,21 @@
 
   var _API_QUEUE = [];
   var _API_RUNNING = 0;
-  var _API_CONCURRENCY = 6;
+  var _API_CONCURRENCY = 4;         // baixado de 6: menos conexões simultâneas em voo
   var _API_MAX_RETRIES = 3;
   var _API_TOKEN_DEAD = false;
+
+  // Pacing proativo: no máx. _API_RATE_PER_SEC NOVOS disparos por janela de 1s,
+  // além do teto de concorrência. _API_CONCURRENCY sozinho só limitava quantas
+  // requisições ficavam simultâneas — não a VELOCIDADE de disparo. Card-badges
+  // é chamado pelo Trello uma vez por card visível no board, todos na mesma
+  // instância deste iframe; com muitos cards, a fila drenava rápido demais e
+  // estourava os ~100 req/10s do Trello antes do primeiro 429 voltar (o backoff
+  // abaixo é reativo — sempre tarde demais para EVITAR o burst, só amortece o
+  // que já aconteceu).
+  var _API_RATE_PER_SEC = 6;
+  var _API_DISPATCH_TIMES = [];      // timestamps dos disparos na janela de 1s corrente
+  var _API_DRAIN_SCHEDULED = false;
 
   function _flushQueueOnDeadToken() {
     var err = new Error('TOKEN_EXPIRED');
@@ -335,9 +347,28 @@
     }
   }
 
+  function _apiWithinRateBudget() {
+    var now = Date.now();
+    while (_API_DISPATCH_TIMES.length && now - _API_DISPATCH_TIMES[0] >= 1000) _API_DISPATCH_TIMES.shift();
+    return _API_DISPATCH_TIMES.length < _API_RATE_PER_SEC;
+  }
+
+  function _apiScheduleDrain() {
+    if (_API_DRAIN_SCHEDULED) return;
+    _API_DRAIN_SCHEDULED = true;
+    setTimeout(function() { _API_DRAIN_SCHEDULED = false; drainQueue(); }, 120);
+  }
+
+  function _apiRetry(item, delay) {
+    _API_RUNNING--;
+    setTimeout(function() { _API_QUEUE.unshift(item); drainQueue(); }, delay);
+  }
+
   function drainQueue() {
     if (_API_TOKEN_DEAD) { _flushQueueOnDeadToken(); return; }
     while (_API_QUEUE.length > 0 && _API_RUNNING < _API_CONCURRENCY) {
+      if (!_apiWithinRateBudget()) { _apiScheduleDrain(); return; }
+      _API_DISPATCH_TIMES.push(Date.now());
       (function() {
         var item = _API_QUEUE.shift();
         _API_RUNNING++;
@@ -347,11 +378,7 @@
               item.attempt++;
               var backoff = Math.min(1000 * Math.pow(2, item.attempt), 8000);
               console.warn('[API] 429 rate limited, retry', item.attempt, 'in', backoff + 'ms');
-              setTimeout(function() {
-                _API_RUNNING--;
-                _API_QUEUE.unshift(item);
-                drainQueue();
-              }, backoff);
+              _apiRetry(item, backoff);
               return;
             }
             if (resp.status === 401) {
@@ -368,13 +395,13 @@
             drainQueue();
           })
           .catch(function(err) {
-            _API_RUNNING--;
             if (item.attempt < _API_MAX_RETRIES) {
               item.attempt++;
+              var backoff = Math.min(1000 * Math.pow(2, item.attempt), 8000);
               console.warn('[API] Network error, retry', item.attempt, ':', err.message || String(err));
-              _API_QUEUE.unshift(item);
-              drainQueue();
+              _apiRetry(item, backoff);
             } else {
+              _API_RUNNING--;
               console.error('[API] Failed after', _API_MAX_RETRIES, 'retries:', err.message || String(err));
               item.reject(err);
               drainQueue();
@@ -1189,6 +1216,18 @@
   // requisições e as gravações de pluginData por card com o board aberto.
   var BADGE_CACHE_TTL = 60000;
   var BADGE_ERROR_TTL = 10000;
+
+  // Jitter determinístico por card (0–20s) somado ao TTL do badge: sem isso,
+  // todos os cards carregados juntos (abertura do board) expiram no MESMÍSSIMO
+  // instante e todos reconsultam a API ao mesmo tempo — o "thundering herd"
+  // que gerava o burst de 429 a cada minuto. Determinístico (hash do id) em
+  // vez de aleatório a cada checagem, para o TTL efetivo de um card não ficar
+  // mudando de valor a cada chamada.
+  function badgeCacheTtlFor(cardId) {
+    var hash = 0;
+    for (var i = 0; i < cardId.length; i++) hash = (hash * 31 + cardId.charCodeAt(i)) >>> 0;
+    return BADGE_CACHE_TTL + (hash % 20000);
+  }
   var _dueCompleteProcessed = {};
   var _healthConfigCache = null;
   var _healthConfigCachedAt = 0;
@@ -1355,7 +1394,7 @@
         }
 
         return t.get('card', 'private', 'badgeCache').then(function(cached) {
-          if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
+          if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < badgeCacheTtlFor(card.id))) {
             return cached.badges;
           }
           return fetchAndComputeBadges(t);
@@ -1364,11 +1403,13 @@
     },
 
     'card-detail-badges': function(t) {
-      return t.get('card', 'private', 'badgeCache').then(function(cached) {
-        if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < BADGE_CACHE_TTL)) {
-          return cached.badges;
-        }
-        return fetchAndComputeBadges(t);
+      return t.card('id').then(function(card) {
+        return t.get('card', 'private', 'badgeCache').then(function(cached) {
+          if (cached && cached.badges && cached.cachedAt && (Date.now() - cached.cachedAt < badgeCacheTtlFor(card.id))) {
+            return cached.badges;
+          }
+          return fetchAndComputeBadges(t);
+        });
       }).catch(function() { return []; });
     },
 
