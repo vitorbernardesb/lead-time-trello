@@ -378,6 +378,54 @@
     .hist-tile.hist-clickable:hover .hist-drill, .hist-tile.hist-clickable:focus-visible .hist-drill { opacity: 1; color: var(--ink); }
     /* nota de rodapé do gráfico + estado "coletando dados" */
     .hist-note { font-size: 11px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+
+    /* ── seletor de período (dd/mm/aaaa + calendário) que substitui os selects
+       "Comparar <mês> com <mês>" na faixa de Tendência ── */
+    .histdate-picker { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; position: relative; }
+    .histdate-field { display: flex; flex-direction: column; gap: 3px; }
+    .histdate-field label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .histdate-field input {
+      padding: 6px 9px; border: 1px solid var(--border-2); border-radius: 8px;
+      font-size: 12px; font-family: inherit; font-weight: 600; background: var(--card); color: var(--ink); width: 96px;
+    }
+    .histdate-field input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(255,207,6,0.35); }
+    .histdate-sep { color: var(--muted); padding-bottom: 7px; font-size: 12px; }
+    .histdate-cal-btn {
+      display: flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+      background: var(--card); border: 1px solid var(--border-2); border-radius: 8px; cursor: pointer; padding: 0;
+    }
+    .histdate-cal-btn:hover { border-color: var(--brand); background: rgba(255,207,6,0.08); }
+    .histdate-cal-btn img { width: 15px; height: 15px; opacity: 0.75; }
+    .histdate-error { color: var(--danger-text) !important; }
+    .histdate-popover {
+      position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; width: 280px;
+      background: var(--card); border: 1px solid var(--border-2); border-radius: var(--radius); box-shadow: var(--shadow-pop); padding: 12px;
+    }
+    .histdate-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; max-height: 74px; overflow-y: auto; }
+    .histdate-chip {
+      background: var(--surface); border: 1px solid var(--border-2); color: var(--ink);
+      border-radius: 999px; padding: 3px 10px; font-size: 11px; font-family: inherit; font-weight: 600; cursor: pointer;
+    }
+    .histdate-chip:hover { border-color: var(--brand); background: rgba(255,207,6,0.10); }
+    .histdate-cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 6px; }
+    .histdate-cal-title { font-size: 12px; font-weight: 700; color: var(--ink); }
+    .histdate-cal-nodata { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: none; letter-spacing: 0; }
+    .histdate-cal-nav {
+      background: transparent; border: 1px solid var(--border-2); border-radius: 6px; width: 22px; height: 22px;
+      cursor: pointer; color: var(--ink); font-size: 13px; line-height: 1; flex-shrink: 0;
+    }
+    .histdate-cal-nav:hover { border-color: var(--brand); background: rgba(255,207,6,0.10); }
+    .histdate-cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; margin-bottom: 4px; }
+    .histdate-cal-weekdays span { font-size: 9px; color: var(--muted); font-weight: 700; }
+    .histdate-cal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+    .histdate-cal-day { display: flex; align-items: center; justify-content: center; height: 25px; font-size: 11px; color: var(--faint); border-radius: 5px; cursor: default; }
+    .histdate-cal-day.empty { cursor: default; }
+    .histdate-cal-day.has-data { color: var(--ink); cursor: pointer; }
+    .histdate-cal-day.has-data:hover { background: rgba(255,207,6,0.15); }
+    .histdate-cal-day.today { font-weight: 700; text-decoration: underline; text-decoration-color: var(--brand); }
+    .histdate-cal-day.in-range { background: rgba(255,207,6,0.15); }
+    .histdate-cal-day.selected { background: var(--brand); color: var(--ink); font-weight: 700; }
+    .histdate-cal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
     .hist-collect {
       display: flex; flex-direction: column; gap: 6px; text-align: center;
       padding: 28px 22px; border: 1px dashed var(--border-2); border-radius: 12px;
@@ -3048,6 +3096,234 @@
   }
   function histMonthLabel(s) { return histMonthNames[s.month] + '/' + s.year; }
 
+  // ─── HIST: SELETOR DE PERÍODO (dd/mm/aaaa + calendário) ─────────────
+  // Cada snapshot é mensal, então "escolher um período" aqui significa escolher
+  // 2 meses já registrados para comparar — o texto/calendário só é uma forma
+  // mais direta de apontar esses 2 meses. "Fim" vira o mês base (o que está
+  // sendo avaliado agora, 1º dropdown de antes) e "Início" vira o mês de
+  // referência (2º dropdown) — reaproveita 100% do motor de tendência já
+  // existente (histTileState, sparkline, drill-down), sem lógica de cálculo nova.
+  var HISTDATE_WEEKDAYS = ['D','S','T','Q','Q','S','S'];
+  var histCalViewDate = new Date();
+  var histCalPendingStart = null;  // seleção em andamento no popover, antes de "Aplicar"
+  var histCalPendingEnd = null;
+
+  function formatBRDate(date) {
+    if (!date) return '';
+    return String(date.getDate()).padStart(2,'0')+'/'+String(date.getMonth()+1).padStart(2,'0')+'/'+date.getFullYear();
+  }
+
+  function parseBRDate(str) {
+    if (typeof str !== 'string') return null;
+    var m = str.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return null;
+    var day = parseInt(m[1], 10), month = parseInt(m[2], 10), year = parseInt(m[3], 10);
+    if (month < 1 || month > 12) return null;
+    var date = new Date(year, month - 1, day);
+    // new Date() rola dias inválidos (ex: 31/02) para o mês seguinte; comparar
+    // os componentes de volta garante que só aceitamos datas de calendário reais.
+    if (date.getDate() !== day || date.getMonth() !== month - 1 || date.getFullYear() !== year) return null;
+    date.setHours(0,0,0,0);
+    return date;
+  }
+
+  function attachDateMask(input) {
+    input.addEventListener('input', function() {
+      var digits = input.value.replace(/\D/g, '').slice(0, 8);
+      var out = digits;
+      if (digits.length > 4) out = digits.slice(0,2)+'/'+digits.slice(2,4)+'/'+digits.slice(4);
+      else if (digits.length > 2) out = digits.slice(0,2)+'/'+digits.slice(2);
+      input.value = out;
+    });
+  }
+
+  function histIndexForMonth(year, month1) {
+    for (var i = 0; i < histSnapshots.length; i++) {
+      if (histSnapshots[i].year === year && histSnapshots[i].month === month1) return i;
+    }
+    return -1;
+  }
+
+  function histSnapshotDate(s) { return new Date(s.year, s.month - 1, 1); }
+  function histMonthLabelOf(date) { return histMonthNames[date.getMonth()+1] + '/' + date.getFullYear(); }
+
+  function showHistDateError(msg) {
+    var el = document.getElementById('hist-date-error');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.style.display = msg ? '' : 'none';
+  }
+
+  function applyHistDateRange(startDate, endDate) {
+    if (startDate > endDate) { showHistDateError('A data de início deve ser anterior à data de fim.'); return; }
+    var startIdx = histIndexForMonth(startDate.getFullYear(), startDate.getMonth() + 1);
+    var endIdx = histIndexForMonth(endDate.getFullYear(), endDate.getMonth() + 1);
+    if (startIdx !== -1 && startIdx === endIdx) { showHistDateError('Escolha datas em meses diferentes para comparar.'); return; }
+    if (startIdx === -1 || endIdx === -1) {
+      var faltante = startIdx === -1 ? histMonthLabelOf(startDate) : histMonthLabelOf(endDate);
+      showHistDateError('Não há snapshot registrado em ' + faltante + '.');
+      return;
+    }
+    histBaseIdx = endIdx;
+    histRefIdx = startIdx;
+    showHistDateError('');
+    renderHistTrendInto();
+  }
+
+  var handleHistDateTextChange = debounce(function() {
+    var startEl = document.getElementById('hist-date-start');
+    var endEl = document.getElementById('hist-date-end');
+    if (!startEl || !endEl) return;
+    var startVal = startEl.value.trim(), endVal = endEl.value.trim();
+    if (!startVal || !endVal) return; // aguarda os dois campos antes de validar
+    var start = parseBRDate(startVal), end = parseBRDate(endVal);
+    if (!start) { showHistDateError('Data de início inválida. Use dd/mm/aaaa.'); return; }
+    if (!end) { showHistDateError('Data de fim inválida. Use dd/mm/aaaa.'); return; }
+    applyHistDateRange(start, end);
+  }, 400);
+
+  function histDaysInMonth(year, month0) { return new Date(year, month0 + 1, 0).getDate(); }
+  function histIsSameDay(a, b) { return !!a && !!b && a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+  function histIsDateInRange(d, start, end) { return !!start && !!end && d > start && d < end; }
+
+  function renderHistCalendarGrid(viewDate, start, end) {
+    var year = viewDate.getFullYear(), month0 = viewDate.getMonth();
+    var firstDow = new Date(year, month0, 1).getDay();
+    var total = histDaysInMonth(year, month0);
+    var temSnapshotNoMes = histIndexForMonth(year, month0 + 1) !== -1;
+    var h = '<div class="histdate-cal-header">';
+    h += '<button type="button" class="histdate-cal-nav" id="histdate-cal-prev">‹</button>';
+    h += '<span class="histdate-cal-title">' + histMonthNames[month0+1] + ' de ' + year + '</span>';
+    if (!temSnapshotNoMes) h += '<span class="histdate-cal-nodata">sem snapshot</span>';
+    h += '<button type="button" class="histdate-cal-nav" id="histdate-cal-next">›</button>';
+    h += '</div>';
+    h += '<div class="histdate-cal-weekdays">';
+    HISTDATE_WEEKDAYS.forEach(function(w) { h += '<span>' + w + '</span>'; });
+    h += '</div><div class="histdate-cal-days">';
+    for (var blank=0; blank<firstDow; blank++) h += '<span class="histdate-cal-day empty"></span>';
+    for (var day=1; day<=total; day++) {
+      var d = new Date(year, month0, day);
+      var cls = 'histdate-cal-day' + (temSnapshotNoMes ? ' has-data' : '');
+      if (histIsSameDay(d, start) || histIsSameDay(d, end)) cls += ' selected';
+      else if (histIsDateInRange(d, start, end)) cls += ' in-range';
+      if (histIsSameDay(d, new Date())) cls += ' today';
+      h += '<span class="' + cls + '" data-date="' + d.getTime() + '">' + day + '</span>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  // Escolha rápida e confiável dos meses com snapshot (navegar mês a mês no
+  // calendário até achar um mês com dado seria tedioso se houver lacunas).
+  function renderHistMonthChips() {
+    if (!histSnapshots.length) return '';
+    var h = '<div class="histdate-chips">';
+    histSnapshots.slice().reverse().forEach(function(s) { // cronológico, mais antigo primeiro
+      h += '<button type="button" class="histdate-chip" data-chip-date="' + histSnapshotDate(s).getTime() + '">' + escHtml(histMonthLabel(s)) + '</button>';
+    });
+    h += '</div>';
+    return h;
+  }
+
+  function histDateOutsideClick(e) {
+    var pop = document.getElementById('hist-date-popover');
+    var btn = document.getElementById('hist-date-cal-btn');
+    if (pop && btn && !pop.contains(e.target) && !btn.contains(e.target)) closeHistDatePopover();
+  }
+
+  function pickHistCalDate(clicked) {
+    if (!histCalPendingStart || histCalPendingEnd) { histCalPendingStart = clicked; histCalPendingEnd = null; }
+    else if (clicked < histCalPendingStart) { histCalPendingEnd = histCalPendingStart; histCalPendingStart = clicked; }
+    else { histCalPendingEnd = clicked; }
+  }
+
+  function renderHistDatePopover() {
+    var pop = document.getElementById('hist-date-popover');
+    if (!pop) return;
+    var h = renderHistMonthChips();
+    h += renderHistCalendarGrid(histCalViewDate, histCalPendingStart, histCalPendingEnd);
+    h += '<div class="histdate-cal-footer">';
+    h += '<button type="button" class="btn btn-secondary" id="histdate-cal-cancel">Cancelar</button>';
+    h += '<button type="button" class="btn" id="histdate-cal-apply">Aplicar</button>';
+    h += '</div>';
+    pop.innerHTML = h;
+
+    pop.querySelector('#histdate-cal-prev').addEventListener('click', function() {
+      histCalViewDate = new Date(histCalViewDate.getFullYear(), histCalViewDate.getMonth()-1, 1);
+      renderHistDatePopover();
+    });
+    pop.querySelector('#histdate-cal-next').addEventListener('click', function() {
+      histCalViewDate = new Date(histCalViewDate.getFullYear(), histCalViewDate.getMonth()+1, 1);
+      renderHistDatePopover();
+    });
+    pop.querySelectorAll('.histdate-cal-day:not(.empty)').forEach(function(el) {
+      el.addEventListener('click', function() {
+        pickHistCalDate(new Date(parseInt(this.getAttribute('data-date'), 10)));
+        renderHistDatePopover();
+      });
+    });
+    pop.querySelectorAll('.histdate-chip').forEach(function(el) {
+      el.addEventListener('click', function() {
+        var clicked = new Date(parseInt(this.getAttribute('data-chip-date'), 10));
+        pickHistCalDate(clicked);
+        histCalViewDate = clicked;
+        renderHistDatePopover();
+      });
+    });
+    pop.querySelector('#histdate-cal-cancel').addEventListener('click', closeHistDatePopover);
+    pop.querySelector('#histdate-cal-apply').addEventListener('click', function() {
+      if (histCalPendingStart && histCalPendingEnd) applyHistDateRange(histCalPendingStart, histCalPendingEnd);
+      closeHistDatePopover();
+    });
+  }
+
+  function openHistDatePopover() {
+    var base = histSnapshots[histBaseIdx], ref = histSnapshots[histRefIdx];
+    histCalPendingStart = ref ? histSnapshotDate(ref) : null;
+    histCalPendingEnd = base ? histSnapshotDate(base) : null;
+    histCalViewDate = histCalPendingEnd || new Date();
+    var pop = document.getElementById('hist-date-popover');
+    if (!pop) return;
+    pop.style.display = '';
+    renderHistDatePopover();
+    setTimeout(function() { document.addEventListener('click', histDateOutsideClick); }, 0);
+  }
+
+  function closeHistDatePopover() {
+    var pop = document.getElementById('hist-date-popover');
+    if (pop) pop.style.display = 'none';
+    document.removeEventListener('click', histDateOutsideClick);
+  }
+
+  function renderHistDatePickerHtml() {
+    var base = histSnapshots[histBaseIdx], ref = histSnapshots[histRefIdx];
+    var startVal = ref ? formatBRDate(histSnapshotDate(ref)) : '';
+    var endVal = base ? formatBRDate(histSnapshotDate(base)) : '';
+    var h = '<div class="histdate-picker">';
+    h += '<div class="histdate-field"><label>Início</label><input type="text" id="hist-date-start" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" value="' + startVal + '"></div>';
+    h += '<span class="histdate-sep">–</span>';
+    h += '<div class="histdate-field"><label>Fim</label><input type="text" id="hist-date-end" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" value="' + endVal + '"></div>';
+    h += '<button type="button" class="histdate-cal-btn" id="hist-date-cal-btn" title="Selecionar período no calendário"><img src="https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/calendar.svg" alt="Calendário" width="15" height="15"></button>';
+    h += '<div class="histdate-popover" id="hist-date-popover" style="display:none;"></div>';
+    h += '</div>';
+    h += '<p class="hist-note histdate-error" id="hist-date-error" style="display:none;"></p>';
+    return h;
+  }
+
+  function wireHistDatePicker() {
+    var startInput = document.getElementById('hist-date-start');
+    var endInput = document.getElementById('hist-date-end');
+    if (!startInput || !endInput) return;
+    attachDateMask(startInput);
+    attachDateMask(endInput);
+    startInput.addEventListener('input', handleHistDateTextChange);
+    endInput.addEventListener('input', handleHistDateTextChange);
+    document.getElementById('hist-date-cal-btn').addEventListener('click', function(e) {
+      e.stopPropagation();
+      openHistDatePopover();
+    });
+  }
+
   // Calcula o estado de um tile (valor, delta, cor) — isolado p/ ficar testável.
   function histTileState(m, base, ref) {
     var v = base ? base.data[m.key] : undefined;
@@ -3074,24 +3350,11 @@
     var ref = snapshots[histRefIdx] || null;
     var asc = snapshots.slice().reverse().slice(-12);       // cronológico p/ o sparkline
 
-    function opts(sel, exclude) {
-      var o = '';
-      snapshots.forEach(function(s, i) {
-        if (i === exclude) return;
-        o += '<option value="' + i + '"' + (i === sel ? ' selected' : '') + '>' + escHtml(histMonthLabel(s)) + '</option>';
-      });
-      return o;
-    }
-
     var h = '';
     h += '<div class="hist-head">';
     h += '<h3>Tendência</h3>';
-    h += '<div class="hist-controls">';
-    h += '<label for="hist-base">Comparar</label>';
-    h += '<select class="hist-select" id="hist-base">' + opts(histBaseIdx, histRefIdx) + '</select>';
-    h += '<span class="hist-controls-sep">com</span>';
-    h += '<select class="hist-select" id="hist-ref">' + (snapshots.length > 1 ? opts(histRefIdx, histBaseIdx) : '<option>—</option>') + '</select>';
-    h += '</div></div>';
+    if (snapshots.length > 1) h += renderHistDatePickerHtml();
+    h += '</div>';
 
     if (!ref) h += '<div class="hist-note">Apenas um mês registrado — não há base de comparação ainda.</div>';
 
@@ -3133,21 +3396,7 @@
     var host = document.getElementById('hist-trend-host');
     if (!host) return;
 
-    var baseSel = document.getElementById('hist-base');
-    var refSel = document.getElementById('hist-ref');
-    if (baseSel) baseSel.addEventListener('change', function() {
-      var v = +baseSel.value;
-      if (v === histRefIdx) histRefIdx = histBaseIdx;   // troca em vez de comparar consigo mesmo
-      histBaseIdx = v;
-      renderHistTrendInto();
-    });
-    if (refSel) refSel.addEventListener('change', function() {
-      var v = +refSel.value;
-      if (isNaN(v)) return;
-      if (v === histBaseIdx) histBaseIdx = histRefIdx;
-      histRefIdx = v;
-      renderHistTrendInto();
-    });
+    wireHistDatePicker();
 
     host.querySelectorAll('.hist-clickable').forEach(function(el) {
       function open() { openHistChart(el.getAttribute('data-hist')); }
