@@ -3434,15 +3434,26 @@
     // delta só existe se AMBOS os meses tiverem o indicador (snapshots antigos não
     // gravavam kpi5/kpi6 — nesse caso mostramos "—" em vez de inventar um número).
     var temDelta = temV && histHas(pv);
-    var delta = temDelta ? round1(v - pv) : 0;
+    // Diferença calculada a partir dos MESMOS valores exibidos (já arredondados a 1
+    // casa por round1): garante que o número mostrado no delta corresponda exatamente
+    // à diferença entre os dois valores que o usuário vê nos snapshots.
+    var delta = temDelta ? round1(round1(v) - round1(pv)) : 0;
+    var semVariacao = temDelta && delta === 0;
     var classe, seta;
-    if (!temDelta || delta === 0) { classe = 'neutral'; seta = '•'; }
-    else {
-      var bom = (m.tipo === 'A') ? delta > 0 : delta < 0;   // tipo B: cair é BOM
+    if (!temDelta || semVariacao) {
+      classe = 'neutral';
+      seta = '•';
+    } else {
+      // "bom" = o indicador MELHOROU. Tipo A (quanto maior melhor): subir é bom.
+      // Tipo B (quanto menor melhor: vencidos, rework, aging, entrega): cair é bom.
+      var bom = (m.tipo === 'A') ? delta > 0 : delta < 0;
       classe = bom ? 'good' : 'bad';
-      seta = delta > 0 ? '▲' : '▼';
+      // A seta reflete o JUÍZO (melhorou/piorou), não a direção bruta do número:
+      // ▲ = melhorou (verde), ▼ = piorou (vermelho). Assim seta e cor sempre
+      // concordam, inclusive nos KPIs "quanto menor melhor" (onde uma QUEDA é boa).
+      seta = bom ? '▲' : '▼';
     }
-    return { v: v, temV: temV, temDelta: temDelta, delta: delta, classe: classe, seta: seta, cor: HIST_COR[classe] };
+    return { v: v, temV: temV, temDelta: temDelta, semVariacao: semVariacao, delta: delta, classe: classe, seta: seta, cor: HIST_COR[classe] };
   }
 
   function renderHistTrend() {
@@ -3469,9 +3480,13 @@
       h += '<div class="hist-tile-name">' + escHtml(m.name) + '</div>';
       h += '<div class="hist-tile-value">' + (st.temV ? escHtml(histNum(st.v) + m.unit) : '—') + '</div>';
       h += '<div class="hist-tile-foot">';
-      if (st.temDelta) {
+      if (st.temDelta && !st.semVariacao) {
         var sinal = st.delta > 0 ? '+' : (st.delta < 0 ? '-' : '');
         h += '<span class="hist-delta ' + st.classe + '">' + st.seta + ' ' + sinal + escHtml(histNum(Math.abs(st.delta)) + m.du) + '</span>';
+        h += '<span class="hist-vs">vs ' + escHtml(histMonthLabel(ref)) + '</span>';
+      } else if (st.semVariacao) {
+        // Sem variação: neutro limpo em vez de "• 0 d.u." (que parecia um delta real).
+        h += '<span class="hist-delta neutral">' + st.seta + ' estável</span>';
         h += '<span class="hist-vs">vs ' + escHtml(histMonthLabel(ref)) + '</span>';
       } else {
         h += '<span class="hist-delta neutral">—</span>';
