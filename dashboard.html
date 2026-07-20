@@ -2963,7 +2963,8 @@
   }
   function weekLabel(d) { return fmtDateBR(d).slice(0, 5); }   // dd/mm
 
-  function weeklySnapPayload(kpis, now) {
+  // Formato compartilhado pelo snapshot semanal E diário (mesmos campos).
+  function snapPayload(kpis, now) {
     return {
       score: kpis.healthScore,
       kpi1: kpis.kpi1, kpi2: kpis.kpi2, kpi3: kpis.kpi3,
@@ -2984,10 +2985,46 @@
     return t.get('board', 'shared', WEEKLY_KEY).then(function(map) {
       map = (map && typeof map === 'object') ? map : {};
       if (!force && map[wk]) return;                     // semana já registrada
-      map[wk] = weeklySnapPayload(kpis, now);
+      map[wk] = snapPayload(kpis, now);
       return t.set('board', 'shared', WEEKLY_KEY, pruneWeekly(map));
     }).catch(function(err) {
       console.warn('[SNAPSHOT] Falha ao salvar snapshot semanal:', err && err.message ? err.message : String(err));
+    });
+  }
+
+  // ─── SNAPSHOT DIÁRIO ────────────────────────────
+  // Mesmo mecanismo do semanal, só que por dia — é o que dá granularidade DIÁRIA aos
+  // indicadores "fotografia do momento" no drill-down do Histórico (antes só existia
+  // semanal para eles, então o toggle "Diário" caía numa lista de snapshots mensais
+  // esparsos e o gráfico saía quase reto). Podado às últimas DAILY_KEEP entradas.
+  //
+  // Formato COMPACTO (array de números, não objeto com nomes de campo repetidos): o
+  // Power-Up do Trello limita cada chave a ~4096 caracteres. No formato do snapshot
+  // semanal (objeto), 60 dias passaria bem desse limite; em array fica ~45 char/dia —
+  // 60 dias cabem com folga (~2,7 mil caracteres). Ver DAILY_FIELDS p/ o índice de cada KPI.
+  var DAILY_KEY = 'dailySnaps';
+  var DAILY_KEEP = 60; // ~2 meses de granularidade diária
+  var DAILY_FIELDS = ['score', 'kpi1', 'kpi2', 'kpi3', 'kpi4', 'kpi5', 'kpi6', 'totalCards'];
+
+  function dayKeyOf(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function pruneDaily(map) {
+    var keys = Object.keys(map).sort();                  // "YYYY-MM-DD" ordena cronologicamente
+    while (keys.length > DAILY_KEEP) { delete map[keys.shift()]; }
+    return map;
+  }
+  // Grava o dia corrente se ainda não existir (idempotente). `force` sobrescreve.
+  function saveDailySnapshot(kpis, force) {
+    var now = new Date();
+    var dk = dayKeyOf(now);
+    return t.get('board', 'shared', DAILY_KEY).then(function(map) {
+      map = (map && typeof map === 'object') ? map : {};
+      if (!force && map[dk]) return;                      // dia já registrado
+      map[dk] = DAILY_FIELDS.map(function(f) { return kpis[f === 'score' ? 'healthScore' : f]; });
+      return t.set('board', 'shared', DAILY_KEY, pruneDaily(map));
+    }).catch(function(err) {
+      console.warn('[SNAPSHOT] Falha ao salvar snapshot diário:', err && err.message ? err.message : String(err));
     });
   }
 
@@ -3026,6 +3063,7 @@
           renderAlertBanner(slaAlerts);
           saveSnapshotIfNeeded(kpis, config);
           saveWeeklySnapshot(kpis, false);   // registra a semana corrente (1x por semana)
+          saveDailySnapshot(kpis, false);    // registra o dia corrente (1x por dia)
         });
       })
       .catch(function(err) {
@@ -3078,13 +3116,15 @@
   }
 
   // ── SÉRIES SEMANAIS E DIÁRIAS ────────────────────
-  // Dois regimes, por natureza do indicador:
+  // Dois regimes, por natureza do indicador — mas AMBOS têm versão diária hoje:
   //  • DERIVADO (retroativo): kpi4/Vazão e kpi6/Tempo de entrega saem dos próprios cards
   //    (concludedAt + leadTimeReal) — timestamp fixo no passado, então dá pra reconstruir
-  //    série semanal OU diária para qualquer período já coberto pelos cards em cache.
-  //  • REGISTRADO: os demais são "fotografia do momento" (estado do board AGORA) e só
-  //    existem daqui pra frente — vêm dos snapshots semanais (weeklySnaps) ou mensais
-  //    (histSnapshots), sem versão diária possível.
+  //    série diária/semanal para qualquer período já coberto pelos cards em cache,
+  //    inclusive ANTES de a coleta de snapshots ter começado.
+  //  • REGISTRADO: os demais são "fotografia do momento" (estado do board AGORA) — não
+  //    reconstruíveis no passado, mas registrados dia a dia (dailySnaps) e semana a
+  //    semana (weeklySnaps) a partir de agora, então a série diária cresce sozinha a
+  //    cada acesso ao dashboard (ver histDailyRecorded/histWeeklyRecorded).
   var HIST_DERIVAVEL = { kpi4: true, kpi6: true };
 
   // Vazão e Tempo de entrega por semana, dentro de [start, end] — a partir dos
@@ -3102,21 +3142,20 @@
       var cs = byWeek[k] || [];
       var label = weekLabel(new Date(k));
       if (metricKey === 'kpi4') {
-        pts.push({ label: label, value: cs.length, n: cs.length });
+        pts.push({ label: label, value: cs.length, n: cs.length, cards: cs });
       } else { // kpi6 — média do lead time real das conclusões da semana
         var lts = cs.map(function(c) { return c.leadTimeReal; }).filter(function(v) { return v !== null && v !== undefined; });
         if (!lts.length) continue;               // semana sem entrega: não plota "0 d.u." (seria mentira)
-        pts.push({ label: label, value: mean(lts), n: lts.length });
+        pts.push({ label: label, value: mean(lts), n: lts.length, cards: cs });
       }
     }
     return pts;
   }
 
-  // Vazão e Tempo de entrega por DIA, dentro de [start, end] — mesmo princípio
-  // do semanal, só que agrupando por dia em vez de semana ISO. Antes, o toggle
-  // "Mensal" plotava 1 ponto por SNAPSHOT mensal já registrado (não por dia);
-  // com poucos meses de histórico isso desenhava quase nenhum ponto. Só se
-  // aplica aos indicadores DERIVÁVEIS pelo mesmo motivo do semanal.
+  // Vazão e Tempo de entrega por DIA, dentro de [start, end] — mesmo princípio do
+  // semanal, só que agrupando por dia em vez de semana ISO. Só se aplica aos
+  // indicadores DERIVÁVEIS (kpi4/kpi6): os demais usam histDailyRecorded, que lê do
+  // snapshot diário registrado em vez de reconstruir dos cards.
   function histDailyDerived(metricKey, cards, start, end) {
     var done = (cards || []).filter(function(c) { return c.concludedAt; });
     var byDay = {};
@@ -3132,11 +3171,11 @@
       var cs = byDay[k] || [];
       var label = fmtDateBR(new Date(k)).slice(0, 5); // dd/mm
       if (metricKey === 'kpi4') {
-        pts.push({ label: label, value: cs.length, n: cs.length });
+        pts.push({ label: label, value: cs.length, n: cs.length, cards: cs });
       } else {
         var lts = cs.map(function(c) { return c.leadTimeReal; }).filter(function(v) { return v !== null && v !== undefined; });
         if (!lts.length) continue;               // dia sem entrega: não plota "0 d.u." (seria mentira)
-        pts.push({ label: label, value: mean(lts), n: lts.length });
+        pts.push({ label: label, value: mean(lts), n: lts.length, cards: cs });
       }
     }
     return pts;
@@ -3174,15 +3213,42 @@
     return keys.length ? isoWeekKeyToMonday(keys[0]) : null;
   }
 
-  function histMonthlyPoints(metricKey, snapshots, monthNames) {
-    return snapshots.slice().reverse()                     // cronológico
-      .map(function(s) { return { label: monthNames[s.month] + '/' + String(s.year).slice(2), value: s.data[metricKey] }; })
-      .filter(function(p) { return histHas(p.value); });
+  // Série DIÁRIA registrada (dailySnaps) → mesmo princípio de histWeeklyRecorded, só
+  // que por dia. É o que dá granularidade diária aos indicadores "fotografia do
+  // momento" (score, vencidos, retrabalho, aging, conformidade) — que não são
+  // reconstruíveis no passado, mas passam a ser registrados dia a dia daqui pra frente.
+  // Cada dia é um ARRAY compacto (ver DAILY_FIELDS/saveDailySnapshot), não um objeto.
+  function histDailyRecorded(metricKey, dailyMap, start, end) {
+    var idx = DAILY_FIELDS.indexOf(metricKey);
+    if (idx === -1) return [];
+    var keys = Object.keys(dailyMap || {}).sort().filter(function(k) {
+      var d = dayKeyToDate(k);
+      return d >= start && d <= end;
+    });
+    var pts = [];
+    keys.forEach(function(k) {
+      var row = dailyMap[k];
+      var v = Array.isArray(row) ? row[idx] : undefined;
+      if (!histHas(v)) return;
+      pts.push({ label: fmtDateBR(dayKeyToDate(k)).slice(0, 5), value: v, n: 1 });
+    });
+    return pts;
+  }
+
+  function dayKeyToDate(key) {
+    var p = key.split('-');
+    return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+  }
+
+  function histEarliestDailyDay(dailyMap) {
+    var keys = Object.keys(dailyMap || {}).sort(); // "YYYY-MM-DD" ordena cronologicamente
+    return keys.length ? dayKeyToDate(keys[0]) : null;
   }
 
   // ── estado da comparação (transiente; nada persistido) ──
   var histSnapshots = [];       // ordenados do mais recente p/ o mais antigo
   var histWeekly = {};          // mapa weeklySnaps
+  var histDaily = {};           // mapa dailySnaps
   var histMonthNames = [];
   var histBaseIdx = 0;          // índice em histSnapshots do mês "atual" da comparação
   var histRefIdx = 1;           // índice do mês de referência (base de comparação)
@@ -3647,8 +3713,11 @@
     });
   }
 
-  // ── drill-down: evolução do indicador (Semanal / Mensal) ──
+  // ── drill-down: evolução do indicador (Semanal / Diário) ──
   // Reutiliza o modal e o gráfico de linha da aba Análises (CP.openModal / CP.lineChart).
+  // Todo indicador agora tem versão DIÁRIA: os deriváveis (kpi4/kpi6) são reconstruídos
+  // dos próprios cards para qualquer data passada; os demais ("fotografia do momento")
+  // passam a ser registrados dia a dia (dailySnaps) a partir de agora.
   function openHistChart(metricKey) {
     if (typeof CP === 'undefined' || !CP || typeof CP.openModal !== 'function') return;
     var m = histMetricByKey(metricKey);
@@ -3659,16 +3728,19 @@
     var modo = 'week';
     var periodo = histSelectedPeriod();
     var periodoLabel = periodo ? (formatBRDate(periodo.start) + ' – ' + formatBRDate(periodo.end)) : '';
+    var lastPts = [];    // pontos do último desenho — resolve o clique num ponto (drill-down p/ cards)
+    var hasClickable = false;
 
     function chartHtml() {
       var pts, nota;
+      lastPts = []; hasClickable = false;
       if (!periodo) return CP.emptyChart('Sem período selecionado.');
 
       if (modo === 'week') {
         if (HIST_DERIVAVEL[metricKey]) {
           if (!cachedData) return '<div class="hist-collect"><b>Sem dados carregados.</b><span>Abra a aba <b>Tempo real</b> uma vez para calcular a série semanal.</span></div>';
           pts = histWeeklyDerived(metricKey, cachedData.cards, periodo.start, periodo.end);
-          nota = 'Série semanal calculada a partir da data de conclusão dos cards (retroativa) — período ' + escHtml(periodoLabel) + '.';
+          nota = 'Série semanal calculada a partir da data de conclusão dos cards (retroativa) — período ' + escHtml(periodoLabel) + '. Clique num ponto para ver os cards da semana.';
         } else {
           // "Fotografia do momento": só existe registro semanal a partir de quando o
           // snapshot semanal começou. Em vez de recusar o período inteiro, RECORTA para
@@ -3690,36 +3762,52 @@
           }
           nota = 'Série semanal registrada' + (recortou ? ' a partir de ' + escHtml(formatBRDate(earliestWeekly)) + ' (início da coleta)' : '') + ' — período ' + escHtml(periodoLabel) + '.';
         }
-      } else {
+      } else { // modo === 'day'
         if (HIST_DERIVAVEL[metricKey]) {
           if (!cachedData) return '<div class="hist-collect"><b>Sem dados carregados.</b><span>Abra a aba <b>Tempo real</b> uma vez para calcular a série diária.</span></div>';
           pts = histDailyDerived(metricKey, cachedData.cards, periodo.start, periodo.end);
-          nota = 'Série diária calculada a partir da data de conclusão dos cards (retroativa) — período ' + escHtml(periodoLabel) + '.';
+          nota = 'Série diária calculada a partir da data de conclusão dos cards (retroativa) — período ' + escHtml(periodoLabel) + '. Clique num ponto para ver os cards do dia.';
         } else {
-          // Sem versão diária possível (ver nota de HIST_DERIVAVEL) — mostra a lista de
-          // snapshots mensais já registrados, deixando claro que a granularidade é mensal.
-          pts = histMonthlyPoints(metricKey, histSnapshots, histMonthNames);
-          nota = 'Este indicador só tem granularidade mensal (fotografia do momento no dia do snapshot) — não é possível plotar por dia.';
+          // Mesma lógica de "recorte de cobertura" do semanal, agora com o snapshot
+          // DIÁRIO (dailySnaps): só existe registro a partir de quando começou a ser
+          // gravado — não inventa pontos anteriores a isso.
+          var earliestDaily = histEarliestDailyDay(histDaily);
+          if (!earliestDaily) {
+            return '<div class="hist-collect"><b>Ainda coletando…</b>' +
+              '<span>Este indicador é uma fotografia do momento e o registro diário ainda não começou — passa a existir a partir do próximo acesso ao dashboard.</span>' +
+              '<span>Enquanto isso, veja a evolução <b>semanal</b> acima, ou <b>Vazão mensal</b>/<b>Tempo de entrega</b>, que têm série diária reconstruída dos próprios cards.</span></div>';
+          }
+          var dStart = periodo.start < earliestDaily ? earliestDaily : periodo.start;
+          var recortouD = periodo.start < earliestDaily;
+          pts = histDailyRecorded(metricKey, histDaily, dStart, periodo.end);
+          if (pts.length < 2) {
+            return '<div class="hist-collect"><b>Coletando dados…</b>' +
+              '<span>' + pts.length + ' dia(s) registrado(s) para este indicador até agora (coleta iniciada em ' + escHtml(formatBRDate(earliestDaily)) + ').</span>' +
+              '<span>É uma fotografia do momento — não é reconstruível no passado; a série cresce a cada acesso ao dashboard.</span>' +
+              '<span>Enquanto isso, veja a evolução <b>semanal</b> acima.</span></div>';
+          }
+          nota = 'Série diária registrada' + (recortouD ? ' a partir de ' + escHtml(formatBRDate(earliestDaily)) + ' (início da coleta)' : '') + ' — período ' + escHtml(periodoLabel) + '.';
         }
       }
       if (!pts.length) return CP.emptyChart('Sem dados para plotar no período selecionado.');
       // O lineChart do CP embute o `tip` num <title> SVG (tooltip nativo) já escapado —
       // por isso o texto vai PURO aqui: tags HTML apareceriam literais no tooltip.
-      pts.forEach(function(p) {
-        p.tip = p.label + ': ' + histNum(p.value) + m.unit;
+      // Pontos com `.cards` (indicadores deriváveis) viram clicáveis: `bucketId` aqui é
+      // só um índice local (não usa o registro de buckets da aba Análises, que não
+      // existe neste modal) — resolvido no listener de clique abaixo, via lastPts.
+      pts.forEach(function(p, i) {
+        var qtd = p.cards ? p.cards.length : (p.n > 1 ? p.n : null);
+        p.tip = p.label + ': ' + histNum(p.value) + m.unit + (qtd !== null ? ' · ' + qtd + ' card(s)' : '');
+        if (p.cards && p.cards.length) { p.bucketId = 'hpt' + i; hasClickable = true; }
       });
-      return CP.lineChart(pts, cor) + '<div class="hist-note">' + escHtml(nota) + '</div>';
+      lastPts = pts;
+      return CP.lineChart(pts, cor) + '<div class="hist-note">' + escHtml(nota) + (hasClickable ? ' <b>Clique num ponto</b> para ver os cards.' : '') + '</div>';
     }
-
-    // Rótulo do 2º modo reflete o que ele de fato mostra: "Diário" quando dá pra
-    // reconstruir por dia (indicador derivável), "Mensal" quando só existe a
-    // granularidade grossa dos snapshots mensais.
-    var modoMonthLabel = HIST_DERIVAVEL[metricKey] ? 'Diário' : 'Mensal';
 
     function body() {
       var h = '<div class="pe-metric" role="group" aria-label="Periodicidade" id="hist-modo">';
       h += '<button class="pe-metric-opt' + (modo === 'week' ? ' on' : '') + '" data-modo="week">Semanal</button>';
-      h += '<button class="pe-metric-opt' + (modo === 'month' ? ' on' : '') + '" data-modo="month">' + modoMonthLabel + '</button>';
+      h += '<button class="pe-metric-opt' + (modo === 'day' ? ' on' : '') + '" data-modo="day">Diário</button>';
       h += '</div>';
       h += '<div id="hist-chart">' + chartHtml() + '</div>';
       return h;
@@ -3730,14 +3818,25 @@
     });
 
     over.addEventListener('click', function(e) {
-      var b = e.target.closest('[data-modo]');
-      if (!b) return;
-      var novo = b.getAttribute('data-modo');
-      if (novo === modo) return;
-      modo = novo;
-      over.querySelectorAll('[data-modo]').forEach(function(x) { x.classList.toggle('on', x === b); });
-      var c = over.querySelector('#hist-chart');
-      if (c) c.innerHTML = chartHtml();
+      var modoBtn = e.target.closest('[data-modo]');
+      if (modoBtn) {
+        var novo = modoBtn.getAttribute('data-modo');
+        if (novo === modo) return;
+        modo = novo;
+        over.querySelectorAll('[data-modo]').forEach(function(x) { x.classList.toggle('on', x === modoBtn); });
+        var c = over.querySelector('#hist-chart');
+        if (c) c.innerHTML = chartHtml();
+        return;
+      }
+      // Clique num ponto do gráfico (só os marcados com bucketId, ver chartHtml) → abre
+      // a lista de cards daquele dia/semana, reaproveitando o mesmo modal de cards
+      // usado em Análises Personalizadas (CP.openCards) — sem duplicar componente.
+      var segEl = e.target.closest('[data-b]');
+      if (!segEl || typeof CP.openCards !== 'function') return;
+      var mm = /^hpt(\d+)$/.exec(segEl.getAttribute('data-b') || '');
+      if (!mm) return;
+      var p = lastPts[parseInt(mm[1], 10)];
+      if (p && p.cards && p.cards.length) CP.openCards(m.name + ' · ' + p.label, p.cards, cor);
     });
   }
 
@@ -3762,10 +3861,11 @@
       var curMonth = now.getMonth()+1, curYear = now.getFullYear();
       var monthNames = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
-      // Estado da faixa de tendência. weeklySnaps vem NO MESMO t.get acima (o Trello
-      // devolve todo o 'board/shared') — nenhuma consulta extra.
+      // Estado da faixa de tendência. weeklySnaps/dailySnaps vêm NO MESMO t.get acima
+      // (o Trello devolve todo o 'board/shared') — nenhuma consulta extra.
       histSnapshots = snapshots;
       histWeekly = (data && data[WEEKLY_KEY] && typeof data[WEEKLY_KEY] === 'object') ? data[WEEKLY_KEY] : {};
+      histDaily = (data && data[DAILY_KEY] && typeof data[DAILY_KEY] === 'object') ? data[DAILY_KEY] : {};
       histMonthNames = monthNames;
       histBaseIdx = 0;
       histRefIdx = snapshots.length > 1 ? 1 : -1;
@@ -3822,9 +3922,9 @@
           return;
         }
         var kpis = calcKPIs(cachedData.cards, cachedData.config);
-        // Salva o snapshot do mês E o da semana corrente (sobrescrevendo), para que o
-        // botão popule a série semanal imediatamente.
-        Promise.all([ forceSnapshot(kpis, cachedData.config), saveWeeklySnapshot(kpis, true) ])
+        // Salva o snapshot do mês, da semana E do dia correntes (sobrescrevendo), para
+        // que o botão popule as séries semanal e diária imediatamente.
+        Promise.all([ forceSnapshot(kpis, cachedData.config), saveWeeklySnapshot(kpis, true), saveDailySnapshot(kpis, true) ])
           .then(function() { loadHistory(); })
           .catch(function() { alert('Não foi possível salvar o snapshot. Tente novamente.'); });
       });
