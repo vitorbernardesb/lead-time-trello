@@ -397,6 +397,8 @@
     }
     .histdate-cal-btn:hover { border-color: var(--brand); background: rgba(255,207,6,0.08); }
     .histdate-cal-btn img { width: 15px; height: 15px; opacity: 0.75; }
+    .histdate-cal-btn svg { width: 15px; height: 15px; color: var(--ink-2); }
+    .histdate-cal-btn:hover svg { color: var(--ink); }
     .histdate-error { color: var(--danger-text) !important; }
     .histdate-popover {
       position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; width: 280px;
@@ -410,7 +412,7 @@
     .histdate-chip:hover { border-color: var(--brand); background: rgba(255,207,6,0.10); }
     .histdate-cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 6px; }
     .histdate-cal-title { font-size: 12px; font-weight: 700; color: var(--ink); }
-    .histdate-cal-nodata { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: none; letter-spacing: 0; }
+    .histdate-cal-hassnap { font-size: 10px; font-weight: 700; color: var(--ok-text); text-transform: none; letter-spacing: 0; }
     .histdate-cal-nav {
       background: transparent; border: 1px solid var(--border-2); border-radius: 6px; width: 22px; height: 22px;
       cursor: pointer; color: var(--ink); font-size: 13px; line-height: 1; flex-shrink: 0;
@@ -3177,6 +3179,11 @@
   var histMonthNames = [];
   var histBaseIdx = 0;          // índice em histSnapshots do mês "atual" da comparação
   var histRefIdx = 1;           // índice do mês de referência (base de comparação)
+  // Período CRU escolhido pelo usuário (texto ou calendário). Alimenta o drill-down
+  // por dia/semana com as datas EXATAS — os tiles (delta mês a mês) continuam usando
+  // os snapshots mensais mais próximos. null = sem escolha ainda (usa o padrão).
+  var histPeriodStart = null;
+  var histPeriodEnd = null;
 
   function histMetricByKey(k) {
     for (var i = 0; i < HIST_METRICS.length; i++) if (HIST_METRICS[i].key === k) return HIST_METRICS[i];
@@ -3240,15 +3247,32 @@
   // semanas"/"todos os meses" fixo — conecta o seletor de período à evolução
   // mostrada no modal de cada tile.
   function histSelectedPeriod() {
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    // 1) Se o usuário escolheu um período explícito, o drill-down usa exatamente essas
+    //    datas — é isso que dá a "apuração detalhada" por dia/semana no intervalo pedido.
+    if (histPeriodStart && histPeriodEnd) {
+      var end0 = new Date(histPeriodEnd); end0.setHours(0, 0, 0, 0);
+      if (end0 > today) end0 = today;
+      return { start: new Date(histPeriodStart), end: end0 };
+    }
+    // 2) Sem escolha: cai no intervalo derivado dos snapshots (ref → fim do mês base).
     var base = histSnapshots[histBaseIdx] || histSnapshots[0];
     if (!base) return null;
-    var ref = histSnapshots[histRefIdx];
+    var ref = (histRefIdx >= 0 ? histSnapshots[histRefIdx] : null);
     var baseMonthStart = histSnapshotDate(base);
     var start = (ref && histSnapshotDate(ref) <= baseMonthStart) ? histSnapshotDate(ref) : baseMonthStart;
     var end = new Date(baseMonthStart.getFullYear(), baseMonthStart.getMonth() + 1, 0); // último dia do mês base
-    var today = new Date(); today.setHours(0, 0, 0, 0);
     if (end > today) end = today; // mês corrente ainda não terminou
     return { start: start, end: end };
+  }
+
+  // Índice do snapshot mensal mais recente cujo mês começou EM OU ANTES de `date`.
+  // histSnapshots está do mais recente p/ o mais antigo, então o 1º que satisfaz vence.
+  function histSnapshotIdxOnOrBefore(date) {
+    for (var i = 0; i < histSnapshots.length; i++) {
+      if (histSnapshotDate(histSnapshots[i]) <= date) return i;
+    }
+    return -1;
   }
 
   function showHistDateError(msg) {
@@ -3258,20 +3282,32 @@
     el.style.display = msg ? '' : 'none';
   }
 
-  function applyHistDateRange(startDate, endDate) {
+  function applyHistDateRange(startDate, endDate, fromCalendar) {
     if (startDate > endDate) { showHistDateError('A data de início deve ser anterior à data de fim.'); return; }
-    var startIdx = histIndexForMonth(startDate.getFullYear(), startDate.getMonth() + 1);
-    var endIdx = histIndexForMonth(endDate.getFullYear(), endDate.getMonth() + 1);
-    if (startIdx !== -1 && startIdx === endIdx) { showHistDateError('Escolha datas em meses diferentes para comparar.'); return; }
-    if (startIdx === -1 || endIdx === -1) {
-      var faltante = startIdx === -1 ? histMonthLabelOf(startDate) : histMonthLabelOf(endDate);
-      showHistDateError('Não há snapshot registrado em ' + faltante + '.');
-      return;
+
+    // Período CRU → alimenta o gráfico detalhado (dia/semana) com o intervalo exato.
+    histPeriodStart = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    histPeriodEnd = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+
+    // Tiles (delta mês a mês): usa os snapshots mensais mais próximos (≤ cada data), em
+    // vez de exigir que a data caia exatamente num mês com snapshot. Assim o seletor
+    // aceita qualquer intervalo e o card se ancora no snapshot disponível mais próximo.
+    var endIdx = histSnapshotIdxOnOrBefore(endDate);
+    var startIdx = histSnapshotIdxOnOrBefore(startDate);
+
+    if (endIdx === -1 && startIdx === -1) {
+      // Não há snapshot mensal até nenhuma das datas — sem base p/ o delta dos tiles.
+      histBaseIdx = 0;
+      histRefIdx = -1;
+      showHistDateError('Ainda não há snapshot mensal até o período escolhido — o gráfico detalhado (dia/semana) funciona, mas os cards ficam sem variação.');
+    } else {
+      if (endIdx === -1) endIdx = startIdx;   // usa o único lado disponível
+      if (startIdx === -1) startIdx = endIdx;
+      histBaseIdx = endIdx;
+      histRefIdx = (startIdx === endIdx) ? -1 : startIdx; // mesmo mês → sem delta
+      showHistDateError('');
     }
-    histBaseIdx = endIdx;
-    histRefIdx = startIdx;
-    showHistDateError('');
-    renderHistTrendInto();
+    refreshHistTrend(!!fromCalendar);
   }
 
   var handleHistDateTextChange = debounce(function() {
@@ -3298,7 +3334,9 @@
     var h = '<div class="histdate-cal-header">';
     h += '<button type="button" class="histdate-cal-nav" id="histdate-cal-prev">‹</button>';
     h += '<span class="histdate-cal-title">' + histMonthNames[month0+1] + ' de ' + year + '</span>';
-    if (!temSnapshotNoMes) h += '<span class="histdate-cal-nodata">sem snapshot</span>';
+    // Marca (informativa, não restritiva) os meses que têm snapshot mensal — é onde o
+    // delta dos cards se ancora. Qualquer dia continua selecionável para o gráfico.
+    if (temSnapshotNoMes) h += '<span class="histdate-cal-hassnap">● snapshot</span>';
     h += '<button type="button" class="histdate-cal-nav" id="histdate-cal-next">›</button>';
     h += '</div>';
     h += '<div class="histdate-cal-weekdays">';
@@ -3307,7 +3345,9 @@
     for (var blank=0; blank<firstDow; blank++) h += '<span class="histdate-cal-day empty"></span>';
     for (var day=1; day<=total; day++) {
       var d = new Date(year, month0, day);
-      var cls = 'histdate-cal-day' + (temSnapshotNoMes ? ' has-data' : '');
+      // TODOS os dias são selecionáveis: o período é livre e o gráfico detalhado usa as
+      // datas exatas; os cards apenas se ancoram no snapshot mensal mais próximo.
+      var cls = 'histdate-cal-day has-data';
       if (histIsSameDay(d, start) || histIsSameDay(d, end)) cls += ' selected';
       else if (histIsDateInRange(d, start, end)) cls += ' in-range';
       if (histIsSameDay(d, new Date())) cls += ' today';
@@ -3376,7 +3416,9 @@
     });
     pop.querySelector('#histdate-cal-cancel').addEventListener('click', closeHistDatePopover);
     pop.querySelector('#histdate-cal-apply').addEventListener('click', function() {
-      if (histCalPendingStart && histCalPendingEnd) applyHistDateRange(histCalPendingStart, histCalPendingEnd);
+      // Um único dia clicado conta como início E fim (período de 1 dia é válido p/ o gráfico).
+      var ps = histCalPendingStart, pe = histCalPendingEnd || histCalPendingStart;
+      if (ps) applyHistDateRange(ps, pe, true);
       closeHistDatePopover();
     });
   }
@@ -3400,14 +3442,27 @@
   }
 
   function renderHistDatePickerHtml() {
-    var base = histSnapshots[histBaseIdx], ref = histSnapshots[histRefIdx];
+    var base = histSnapshots[histBaseIdx], ref = (histRefIdx >= 0 ? histSnapshots[histRefIdx] : null);
+    // Padrão coerente com o período que o gráfico realmente usa: Início = 1º dia do mês
+    // de referência; Fim = último dia do mês base (recortado a hoje se for o mês corrente).
     var startVal = ref ? formatBRDate(histSnapshotDate(ref)) : '';
-    var endVal = base ? formatBRDate(histSnapshotDate(base)) : '';
+    var endVal = '';
+    if (base) {
+      var bStart = histSnapshotDate(base);
+      var bEnd = new Date(bStart.getFullYear(), bStart.getMonth() + 1, 0);
+      var today = new Date(); today.setHours(0, 0, 0, 0);
+      if (bEnd > today) bEnd = today;
+      endVal = formatBRDate(bEnd);
+    }
+    // Ícone de calendário INLINE (self-contained) — o SVG externo por CDN podia não
+    // carregar no iframe do Power-Up, deixando o botão aparentemente "quebrado".
+    var calIcon = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>';
     var h = '<div class="histdate-picker">';
     h += '<div class="histdate-field"><label>Início</label><input type="text" id="hist-date-start" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" value="' + startVal + '"></div>';
     h += '<span class="histdate-sep">–</span>';
     h += '<div class="histdate-field"><label>Fim</label><input type="text" id="hist-date-end" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" value="' + endVal + '"></div>';
-    h += '<button type="button" class="histdate-cal-btn" id="hist-date-cal-btn" title="Selecionar período no calendário"><img src="https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/icons/calendar.svg" alt="Calendário" width="15" height="15"></button>';
+    h += '<button type="button" class="histdate-cal-btn" id="hist-date-cal-btn" title="Selecionar período no calendário">' + calIcon + '</button>';
     h += '<div class="histdate-popover" id="hist-date-popover" style="display:none;"></div>';
     h += '</div>';
     h += '<p class="hist-note histdate-error" id="hist-date-error" style="display:none;"></p>';
@@ -3460,20 +3515,36 @@
     return { v: v, temV: temV, temDelta: temDelta, semVariacao: semVariacao, delta: delta, classe: classe, seta: seta, cor: HIST_COR[classe] };
   }
 
+  // Cabeçalho + seletor de datas (renderizado UMA vez; nunca re-renderizado ao trocar
+  // o período, para que o campo de texto não seja destruído no meio da digitação).
   function renderHistTrend() {
     var snapshots = histSnapshots;
     if (!snapshots.length) return '';
-    var base = snapshots[histBaseIdx] || snapshots[0];
-    var ref = snapshots[histRefIdx] || null;
-    var asc = snapshots.slice().reverse().slice(-12);       // cronológico p/ o sparkline
-
     var h = '';
     h += '<div class="hist-head">';
     h += '<h3>Tendência</h3>';
     if (snapshots.length > 1) h += renderHistDatePickerHtml();
     h += '</div>';
+    // Só os tiles vivem num host próprio, que é o ÚNICO trecho re-renderizado quando
+    // o usuário muda as datas — preserva o foco/cursor do seletor acima.
+    h += '<div id="hist-tiles">' + renderHistTiles() + '</div>';
+    return h;
+  }
 
-    if (!ref) h += '<div class="hist-note">Apenas um mês registrado — não há base de comparação ainda.</div>';
+  // Grade de tiles + sparklines. Isolada para poder ser recalculada sozinha.
+  function renderHistTiles() {
+    var snapshots = histSnapshots;
+    if (!snapshots.length) return '';
+    var base = snapshots[histBaseIdx] || snapshots[0];
+    var ref = (histRefIdx >= 0 ? snapshots[histRefIdx] : null) || null;
+    var asc = snapshots.slice().reverse().slice(-12);       // cronológico p/ o sparkline
+
+    var h = '';
+    if (!ref) {
+      h += '<div class="hist-note">' + (snapshots.length > 1
+        ? 'O período escolhido cai num único mês com snapshot — mostrando os valores atuais, sem variação. Escolha datas em meses diferentes para comparar.'
+        : 'Apenas um mês registrado — não há base de comparação ainda.') + '</div>';
+    }
 
     h += '<div class="hist-trend">';
     HIST_METRICS.forEach(function(m) {
@@ -3506,7 +3577,7 @@
     return h;
   }
 
-  // Redesenha só a faixa de tendência (sem recarregar nada) e reconecta os handlers.
+  // Render COMPLETO (cabeçalho + tiles) — só no primeiro desenho da faixa.
   function renderHistTrendInto() {
     var host = document.getElementById('hist-trend-host');
     if (!host) return;
@@ -3514,12 +3585,31 @@
     wireHistTrend();
   }
 
+  // Atualiza APENAS os tiles quando o período muda. `syncInputs` regrava os campos de
+  // texto (usado quando a mudança veio do calendário; ao digitar não mexemos neles).
+  function refreshHistTrend(syncInputs) {
+    var tilesHost = document.getElementById('hist-tiles');
+    if (tilesHost) { tilesHost.innerHTML = renderHistTiles(); rewireHistTiles(); }
+    if (syncInputs) syncHistDateInputs();
+  }
+
+  function syncHistDateInputs() {
+    var s = document.getElementById('hist-date-start');
+    var e = document.getElementById('hist-date-end');
+    if (s && histPeriodStart) s.value = formatBRDate(histPeriodStart);
+    if (e && histPeriodEnd) e.value = formatBRDate(histPeriodEnd);
+  }
+
   function wireHistTrend() {
     var host = document.getElementById('hist-trend-host');
     if (!host) return;
-
     wireHistDatePicker();
+    rewireHistTiles();
+  }
 
+  function rewireHistTiles() {
+    var host = document.getElementById('hist-tiles');
+    if (!host) return;
     host.querySelectorAll('.hist-clickable').forEach(function(el) {
       function open() { openHistChart(el.getAttribute('data-hist')); }
       el.addEventListener('click', open);
@@ -3552,26 +3642,25 @@
           pts = histWeeklyDerived(metricKey, cachedData.cards, periodo.start, periodo.end);
           nota = 'Série semanal calculada a partir da data de conclusão dos cards (retroativa) — período ' + escHtml(periodoLabel) + '.';
         } else {
-          // "Fotografia do momento": só existe dado a partir de quando o snapshot semanal
-          // começou a ser gravado. Se o período pedido é anterior a isso, o dado não
-          // existe e não vai ser inventado — avisa em vez de mostrar uma série vazia/errada.
+          // "Fotografia do momento": só existe registro semanal a partir de quando o
+          // snapshot semanal começou. Em vez de recusar o período inteiro, RECORTA para
+          // a cobertura disponível e plota o que existe (sem inventar o que falta).
           var earliestWeekly = histEarliestWeeklyMonday(histWeekly);
-          if (!earliestWeekly || periodo.start < earliestWeekly) {
-            return '<div class="hist-collect"><b>Período fora de cobertura.</b>' +
-              '<span>Este indicador é uma fotografia do momento — só existe registro semanal ' +
-              (earliestWeekly ? ('a partir de ' + escHtml(formatBRDate(earliestWeekly)) + '.') : 'ainda não começou a ser coletado.') + '</span>' +
-              '<span>O período selecionado (' + escHtml(periodoLabel) + ') começa antes disso: os pontos anteriores não existem e não serão inventados.</span>' +
-              '<span>Enquanto isso, veja a evolução <b>mensal</b> acima.</span></div>';
+          if (!earliestWeekly) {
+            return '<div class="hist-collect"><b>Ainda coletando…</b>' +
+              '<span>Este indicador é uma fotografia do momento e o registro semanal ainda não começou.</span>' +
+              '<span>Para uma apuração detalhada agora, veja <b>Vazão mensal</b> e <b>Tempo de entrega</b> — esses têm série diária/semanal reconstruída dos próprios cards.</span></div>';
           }
-          pts = histWeeklyRecorded(metricKey, histWeekly, periodo.start, periodo.end);
+          var wStart = periodo.start < earliestWeekly ? earliestWeekly : periodo.start;
+          var recortou = periodo.start < earliestWeekly;
+          pts = histWeeklyRecorded(metricKey, histWeekly, wStart, periodo.end);
           if (pts.length < 2) {
             return '<div class="hist-collect"><b>Coletando dados…</b>' +
-              '<span>' + pts.length + ' semana(s) registrada(s) dentro do período selecionado.</span>' +
-              '<span>Este indicador é uma fotografia do momento — não é reconstruível no passado, ' +
-              'então a série semanal começa a ser registrada agora, a cada acesso ao dashboard.</span>' +
-              '<span>Enquanto isso, veja a evolução <b>mensal</b> acima.</span></div>';
+              '<span>' + pts.length + ' semana(s) registrada(s) para este indicador até agora (coleta iniciada em ' + escHtml(formatBRDate(earliestWeekly)) + ').</span>' +
+              '<span>É uma fotografia do momento — não é reconstruível no passado; a série cresce a cada acesso ao dashboard.</span>' +
+              '<span>Para detalhe já disponível, veja <b>Vazão mensal</b> e <b>Tempo de entrega</b>.</span></div>';
           }
-          nota = 'Série semanal registrada a partir dos snapshots semanais — período ' + escHtml(periodoLabel) + '.';
+          nota = 'Série semanal registrada' + (recortou ? ' a partir de ' + escHtml(formatBRDate(earliestWeekly)) + ' (início da coleta)' : '') + ' — período ' + escHtml(periodoLabel) + '.';
         }
       } else {
         if (HIST_DERIVAVEL[metricKey]) {
@@ -3652,6 +3741,8 @@
       histMonthNames = monthNames;
       histBaseIdx = 0;
       histRefIdx = snapshots.length > 1 ? 1 : -1;
+      histPeriodStart = null;   // reinicia o período escolhido a cada (re)carga do Histórico
+      histPeriodEnd = null;
 
       var html = '';
       if (!snapshots.length) {
