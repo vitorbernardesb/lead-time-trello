@@ -214,7 +214,7 @@
     .pe-metric-opt { border: none; background: transparent; font-family: inherit; font-size: 12px; font-weight: 700; color: var(--muted); padding: 5px 14px; border-radius: 999px; cursor: pointer; transition: background 0.15s, color 0.15s, box-shadow 0.15s; }
     .pe-metric-opt:hover:not(.on) { color: var(--ink); }
     .pe-metric-opt.on { background: var(--card); color: var(--ink); box-shadow: var(--shadow-1); }
-    .pe-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .pe-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
     /* Card: mesma linguagem do .kpi-card (raio/borda/hover) + acento de cor por nível no topo. */
     .pe-card {
       background: var(--card); border: 1px solid var(--border); border-radius: 12px;
@@ -283,7 +283,8 @@
       color: var(--ink-2); cursor: pointer; transition: background 0.14s, border-color 0.14s, color 0.14s; }
     .pe-cards-link:hover { background: rgba(255,207,6,0.10); border-color: var(--brand); color: var(--ink); }
     .pe-foot { font-size: 11px; color: var(--muted); margin-top: 10px; }
-    @media (max-width: 700px) { .pe-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .pe-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 480px) { .pe-grid { grid-template-columns: 1fr; } }
     @media (max-width: 480px) { .pe-title-row { align-items: flex-start; } .pe-metric { width: 100%; } .pe-metric-opt { flex: 1; text-align: center; } }
     /* tag de campo faltante = aviso → tom âmbar (o emoji ⚠️ acompanha o texto) */
     .missing-tag {
@@ -891,7 +892,7 @@
   // FECHE exatamente com o tempo total exibido — nada é descartado.
   var ETAPAS_PRE_ENTREGA = ['Planejamento', 'A fazer 👇', 'Em andamento 💪', 'Alterações ✏️', 'Revisão Interna 🔎', 'Outras etapas'];
   // Níveis de esforço esperados no custom field "Nível de Esforço".
-  var NIVEIS_ESFORCO = ['BAIXO', 'MÉDIO', 'ALTO'];
+  var NIVEIS_ESFORCO = ['BAIXO', 'MÉDIO', 'ALTO', 'MUITO ALTO'];
   // Data de início do indicador: só entram cards CRIADOS a partir daqui (abertos E
   // arquivados). Antes 30/06/2026; recuada para 04/05/2026 para considerar cards mais
   // antigos. Também limita o fetch de arquivados (não puxa histórico anterior a esta data).
@@ -1168,16 +1169,17 @@
     return { leadTime: countBusinessDays(startProd, concludedAt), concludedAt: concludedAt };
   }
 
-  // Normaliza o texto do "Nível de Esforço" para um dos buckets (BAIXO/MÉDIO/ALTO).
+  // Normaliza o texto do "Nível de Esforço" para um dos buckets (BAIXO/MÉDIO/ALTO/MUITO ALTO).
   // Tolerante a acentos e caixa: "Médio", "medio", "MEDIO" → "MÉDIO".
   function normalizeNivel(text) {
     if (!text) return null;
     var t = String(text).trim().toUpperCase()
       .replace(/[ÁÀÂÃÄ]/g,'A').replace(/[ÉÈÊË]/g,'E').replace(/[ÍÌÎÏ]/g,'I')
       .replace(/[ÓÒÔÕÖ]/g,'O').replace(/[ÚÙÛÜ]/g,'U');
-    if (t.indexOf('BAIX') === 0) return 'BAIXO';
-    if (t.indexOf('MED')  === 0) return 'MÉDIO';
-    if (t.indexOf('ALT')  === 0) return 'ALTO';
+    if (t.indexOf('BAIX')  === 0) return 'BAIXO';
+    if (t.indexOf('MED')   === 0) return 'MÉDIO';
+    if (t.indexOf('MUITO') === 0) return 'MUITO ALTO';
+    if (t.indexOf('ALT')   === 0) return 'ALTO';
     return null;
   }
 
@@ -1752,7 +1754,7 @@
         var retrabalhoOptions = {};
         var prioridadeFieldId = null;
         var nivelEsforcoFieldId = null;         // custom field "Nível de Esforço"
-        var nivelEsforcoOptions = {};           // optionId → texto (ALTO/MÉDIO/BAIXO)
+        var nivelEsforcoOptions = {};           // optionId → texto (BAIXO/MÉDIO/ALTO/MUITO ALTO)
         if (cachedField) {
           retrabalhoFieldId = cachedField.id;
           retrabalhoOptions = cachedField.options || {};
@@ -2263,7 +2265,7 @@
   }
 
   // Cores-rótulo por nível (apenas identificação visual, não é semáforo de saúde).
-  var COR_NIVEL = { 'BAIXO': '#2E9E5B', 'MÉDIO': '#F2B705', 'ALTO': '#E5484D' };
+  var COR_NIVEL = { 'BAIXO': '#2E9E5B', 'MÉDIO': '#F2B705', 'ALTO': '#E5484D', 'MUITO ALTO': '#B91C3C' };
 
   function fmtHoras(h) { return String(h).replace('.', ',') + 'h'; }
   function fmtDias(d)  { return String(d).replace('.', ',') + ' d.u.'; }
@@ -2273,7 +2275,7 @@
   // Transiente (não persiste) — apenas alterna a visualização sobre os dados JÁ carregados.
   var peMetricMode = 'mean';
 
-  // Monta os 3 cards expandíveis (BAIXO/MÉDIO/ALTO). Usa classe .pe-toggle própria
+  // Monta os cards expandíveis (BAIXO/MÉDIO/ALTO/MUITO ALTO). Usa classe .pe-toggle própria
   // (não .collapse-toggle) para não colidir com o handler genérico que reescreve textContent.
   // `mode` = 'mean' | 'median' controla a tendência central exibida (headline, barra, breakdown).
   function renderPrimeiraEntregaHTML(cards, mode) {
@@ -3981,8 +3983,8 @@
     }
     function tint(hex, p) { var c = hexToRgb(hex); function m(v) { return Math.round(v + (255 - v) * p); } return 'rgb(' + m(c.r) + ',' + m(c.g) + ',' + m(c.b) + ')'; }
     function shade(hex, p) { var c = hexToRgb(hex); function m(v) { return Math.round(v * (1 - p)); } return 'rgb(' + m(c.r) + ',' + m(c.g) + ',' + m(c.b) + ')'; }
-    // Tons dos 3 níveis derivados da cor do painel (família de 1 matiz = segue a entidade).
-    function nivelCor(color) { return { 'ALTO': shade(color, 0.18), 'MÉDIO': color, 'BAIXO': tint(color, 0.42), 'Sem nível': tint(color, 0.68) }; }
+    // Tons dos níveis derivados da cor do painel (família de 1 matiz = segue a entidade).
+    function nivelCor(color) { return { 'MUITO ALTO': shade(color, 0.34), 'ALTO': shade(color, 0.18), 'MÉDIO': color, 'BAIXO': tint(color, 0.42), 'Sem nível': tint(color, 0.68) }; }
 
     // ── persistência (mesmo mecanismo do healthConfig) ──
     function normalize(arr) {
@@ -4184,7 +4186,7 @@
     // ── conjuntos de dados dos gráficos a partir do compute (buckets p/ clique) ──
     function chartConcluidas(r) {
       var cor = nivelCor(r.panel.color);
-      var groups = ['BAIXO', 'MÉDIO', 'ALTO', 'Sem nível'];
+      var groups = ['BAIXO', 'MÉDIO', 'ALTO', 'MUITO ALTO', 'Sem nível'];
       var items = groups.map(function(g) {
         var cs = r.concluidas.filter(function(c) { return (c.nivelEsforco || 'Sem nível') === g; });
         return { label: g === 'Sem nível' ? 'S/ nível' : g, value: cs.length, color: cor[g],
