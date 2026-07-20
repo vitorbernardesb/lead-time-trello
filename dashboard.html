@@ -381,41 +381,45 @@
     .hist-note { font-size: 11px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
 
     /* ── seletor de período (dd/mm/aaaa + calendário) que substitui os selects
-       "Comparar <mês> com <mês>" na faixa de Tendência ── */
-    .histdate-picker { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; position: relative; }
-    .histdate-field { display: flex; flex-direction: column; gap: 3px; }
+       "Comparar <mês> com <mês>" na faixa de Tendência. Início e Fim são campos
+       INDEPENDENTES: cada um tem seu próprio popover, ancorado nele mesmo (não um só
+       popover compartilhado) — clicar em qualquer um dos dois abre o calendário DELE. ── */
+    .histdate-picker { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+    .histdate-field { display: flex; flex-direction: column; gap: 3px; position: relative; }
     .histdate-field label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-    .histdate-field input {
-      padding: 6px 9px; border: 1px solid var(--border-2); border-radius: 8px;
-      font-size: 12px; font-family: inherit; font-weight: 600; background: var(--card); color: var(--ink); width: 96px;
+    .histdate-input-wrap { position: relative; display: flex; align-items: center; }
+    .histdate-input-wrap input {
+      padding: 6px 30px 6px 9px; border: 1px solid var(--border-2); border-radius: 8px;
+      font-size: 12px; font-family: inherit; font-weight: 600; background: var(--card); color: var(--ink); width: 100px;
+      cursor: pointer;
     }
-    .histdate-field input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(255,207,6,0.35); }
+    .histdate-input-wrap input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(255,207,6,0.35); }
+    /* Ícone de calendário embutido no campo — decorativo (o clique vai pro input por
+       baixo dele); é o próprio campo que abre o popover, não um botão à parte. */
+    .histdate-input-icon {
+      position: absolute; right: 9px; top: 50%; transform: translateY(-50%);
+      display: flex; pointer-events: none; color: var(--ink-2); opacity: 0.7;
+    }
     .histdate-sep { color: var(--muted); padding-bottom: 7px; font-size: 12px; }
-    .histdate-cal-btn {
-      display: flex; align-items: center; justify-content: center; width: 30px; height: 30px;
-      background: var(--card); border: 1px solid var(--border-2); border-radius: 8px; cursor: pointer; padding: 0;
-    }
-    .histdate-cal-btn:hover { border-color: var(--brand); background: rgba(255,207,6,0.08); }
-    .histdate-cal-btn img { width: 15px; height: 15px; opacity: 0.75; }
-    .histdate-cal-btn svg { width: 15px; height: 15px; color: var(--ink-2); }
-    .histdate-cal-btn:hover svg { color: var(--ink); }
     .histdate-error { color: var(--danger-text) !important; }
     .histdate-popover {
-      position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; width: 280px;
+      position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; width: 264px;
       background: var(--card); border: 1px solid var(--border-2); border-radius: var(--radius); box-shadow: var(--shadow-pop); padding: 12px;
     }
+    /* Fim fica na borda direita do seletor — abrir à esquerda evita o popover vazar da tela. */
+    #histdate-field-end .histdate-popover { left: auto; right: 0; }
     .histdate-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; max-height: 74px; overflow-y: auto; }
     .histdate-chip {
       background: var(--surface); border: 1px solid var(--border-2); color: var(--ink);
       border-radius: 999px; padding: 3px 10px; font-size: 11px; font-family: inherit; font-weight: 600; cursor: pointer;
     }
     .histdate-chip:hover { border-color: var(--brand); background: rgba(255,207,6,0.10); }
-    .histdate-cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 6px; }
-    .histdate-cal-title { font-size: 12px; font-weight: 700; color: var(--ink); }
-    .histdate-cal-hassnap { font-size: 10px; font-weight: 700; color: var(--ok-text); text-transform: none; letter-spacing: 0; }
+    .histdate-cal-header { display: flex; align-items: center; justify-content: center; margin-bottom: 8px; gap: 4px; }
+    .histdate-cal-title { font-size: 12px; font-weight: 700; color: var(--ink); flex: 1; text-align: center; }
+    .histdate-cal-hassnap { font-size: 10px; font-weight: 700; color: var(--ok-text); text-transform: none; letter-spacing: 0; text-align: center; margin-bottom: 6px; }
     .histdate-cal-nav {
       background: transparent; border: 1px solid var(--border-2); border-radius: 6px; width: 22px; height: 22px;
-      cursor: pointer; color: var(--ink); font-size: 13px; line-height: 1; flex-shrink: 0;
+      cursor: pointer; color: var(--ink); font-size: 12px; line-height: 1; flex-shrink: 0;
     }
     .histdate-cal-nav:hover { border-color: var(--brand); background: rgba(255,207,6,0.10); }
     .histdate-cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; margin-bottom: 4px; }
@@ -428,7 +432,10 @@
     .histdate-cal-day.today { font-weight: 700; text-decoration: underline; text-decoration-color: var(--brand); }
     .histdate-cal-day.in-range { background: rgba(255,207,6,0.15); }
     .histdate-cal-day.selected { background: var(--brand); color: var(--ink); font-weight: 700; }
-    .histdate-cal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+    /* Data escolhida no OUTRO campo (Início mostrando o Fim, e vice-versa) — contorno
+       fino em vez de preenchido, pra dar a ver o período inteiro sem competir com
+       a seleção ATUAL deste calendário. */
+    .histdate-cal-day.selected-other { border: 1.5px solid var(--brand); font-weight: 700; }
     .hist-collect {
       display: flex; flex-direction: column; gap: 6px; text-align: center;
       padding: 28px 22px; border: 1px dashed var(--border-2); border-radius: 12px;
@@ -3199,9 +3206,10 @@
   // referência (2º dropdown) — reaproveita 100% do motor de tendência já
   // existente (histTileState, sparkline, drill-down), sem lógica de cálculo nova.
   var HISTDATE_WEEKDAYS = ['D','S','T','Q','Q','S','S'];
-  var histCalViewDate = new Date();
-  var histCalPendingStart = null;  // seleção em andamento no popover, antes de "Aplicar"
-  var histCalPendingEnd = null;
+  // Cada campo (Início/Fim) tem seu PRÓPRIO calendário, popover e mês em exibição —
+  // são independentes: abrir um não mexe no outro, e cada um seleciona e fecha na hora.
+  var histCalView = { start: new Date(), end: new Date() };
+  var histOpenField = null;   // 'start' | 'end' | null — qual popover está aberto agora
 
   function formatBRDate(date) {
     if (!date) return '';
@@ -3222,13 +3230,30 @@
     return date;
   }
 
-  function attachDateMask(input) {
+  // Máscara dd/mm/aaaa que PRESERVA a posição do cursor (o bug reportado: o campo
+  // "travava"/jogava o cursor pro fim a cada tecla, porque a versão antiga reescrevia
+  // o valor inteiro sem realocar a posição). Insere as barras automaticamente e, ao
+  // completar os 8 dígitos, sincroniza o período e o calendário deste campo ao vivo.
+  function attachDateMask(input, field) {
     input.addEventListener('input', function() {
+      var cursorPos = input.selectionStart;
+      var prevLen = input.value.length;
       var digits = input.value.replace(/\D/g, '').slice(0, 8);
       var out = digits;
       if (digits.length > 4) out = digits.slice(0,2)+'/'+digits.slice(2,4)+'/'+digits.slice(4);
       else if (digits.length > 2) out = digits.slice(0,2)+'/'+digits.slice(2);
       input.value = out;
+      var newPos = Math.max(0, Math.min(out.length, cursorPos + (out.length - prevLen)));
+      input.setSelectionRange(newPos, newPos);
+
+      if (digits.length < 8) { showHistDateError(''); return; }
+      var d = parseBRDate(out);
+      if (!d) { showHistDateError('Data ' + (field === 'start' ? 'de início' : 'de fim') + ' inválida.'); return; }
+      if (field === 'start') histPeriodStart = d; else histPeriodEnd = d;
+      histCalView[field] = new Date(d.getFullYear(), d.getMonth(), 1);
+      if (histOpenField === field) renderHistFieldPopover(field); // reflete a seleção no calendário ao vivo
+      showHistDateError('');
+      debouncedCommitHistPeriod();
     });
   }
 
@@ -3240,7 +3265,6 @@
   }
 
   function histSnapshotDate(s) { return new Date(s.year, s.month - 1, 1); }
-  function histMonthLabelOf(date) { return histMonthNames[date.getMonth()+1] + '/' + date.getFullYear(); }
 
   // Janela do drill-down (Semanal/Mensal) = o período escolhido no seletor
   // Início/Fim acima (histRefIdx → histBaseIdx), não mais um "últimas N
@@ -3282,18 +3306,17 @@
     el.style.display = msg ? '' : 'none';
   }
 
-  function applyHistDateRange(startDate, endDate, fromCalendar) {
-    if (startDate > endDate) { showHistDateError('A data de início deve ser anterior à data de fim.'); return; }
+  function currentHistFieldDate(field) { return field === 'start' ? histPeriodStart : histPeriodEnd; }
 
-    // Período CRU → alimenta o gráfico detalhado (dia/semana) com o intervalo exato.
-    histPeriodStart = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-    histPeriodEnd = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+  // Recalcula os tiles (delta mês a mês) a partir de histPeriodStart/histPeriodEnd.
+  // Cada campo se ancora no snapshot mensal mais próximo (≤ a data escolhida) — não
+  // exige mais que a data caia exatamente num mês com snapshot registrado.
+  function commitHistPeriod() {
+    if (!histPeriodStart || !histPeriodEnd) return; // aguarda os dois campos antes de recalcular
+    if (histPeriodStart > histPeriodEnd) { showHistDateError('A data de início deve ser anterior à data de fim.'); return; }
 
-    // Tiles (delta mês a mês): usa os snapshots mensais mais próximos (≤ cada data), em
-    // vez de exigir que a data caia exatamente num mês com snapshot. Assim o seletor
-    // aceita qualquer intervalo e o card se ancora no snapshot disponível mais próximo.
-    var endIdx = histSnapshotIdxOnOrBefore(endDate);
-    var startIdx = histSnapshotIdxOnOrBefore(startDate);
+    var endIdx = histSnapshotIdxOnOrBefore(histPeriodEnd);
+    var startIdx = histSnapshotIdxOnOrBefore(histPeriodStart);
 
     if (endIdx === -1 && startIdx === -1) {
       // Não há snapshot mensal até nenhuma das datas — sem base p/ o delta dos tiles.
@@ -3307,38 +3330,37 @@
       histRefIdx = (startIdx === endIdx) ? -1 : startIdx; // mesmo mês → sem delta
       showHistDateError('');
     }
-    refreshHistTrend(!!fromCalendar);
+    refreshHistTrend();
   }
-
-  var handleHistDateTextChange = debounce(function() {
-    var startEl = document.getElementById('hist-date-start');
-    var endEl = document.getElementById('hist-date-end');
-    if (!startEl || !endEl) return;
-    var startVal = startEl.value.trim(), endVal = endEl.value.trim();
-    if (!startVal || !endVal) return; // aguarda os dois campos antes de validar
-    var start = parseBRDate(startVal), end = parseBRDate(endVal);
-    if (!start) { showHistDateError('Data de início inválida. Use dd/mm/aaaa.'); return; }
-    if (!end) { showHistDateError('Data de fim inválida. Use dd/mm/aaaa.'); return; }
-    applyHistDateRange(start, end);
-  }, 400);
+  var debouncedCommitHistPeriod = debounce(commitHistPeriod, 350);
 
   function histDaysInMonth(year, month0) { return new Date(year, month0 + 1, 0).getDate(); }
   function histIsSameDay(a, b) { return !!a && !!b && a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
   function histIsDateInRange(d, start, end) { return !!start && !!end && d > start && d < end; }
 
-  function renderHistCalendarGrid(viewDate, start, end) {
+  // Grade do calendário de UM campo. Destaca: a data já escolhida NESTE campo
+  // ('selected'), a data do OUTRO campo ('selected-other', contorno fino — dá a ver o
+  // período inteiro enquanto se ajusta uma ponta) e os dias entre as duas ('in-range').
+  function renderHistCalendarGrid(field, viewDate) {
     var year = viewDate.getFullYear(), month0 = viewDate.getMonth();
     var firstDow = new Date(year, month0, 1).getDay();
     var total = histDaysInMonth(year, month0);
     var temSnapshotNoMes = histIndexForMonth(year, month0 + 1) !== -1;
+    var mine = currentHistFieldDate(field);
+    var other = currentHistFieldDate(field === 'start' ? 'end' : 'start');
+    var rangeStart = histPeriodStart, rangeEnd = histPeriodEnd;
+    var hasRange = !!(rangeStart && rangeEnd && rangeStart <= rangeEnd);
+
     var h = '<div class="histdate-cal-header">';
-    h += '<button type="button" class="histdate-cal-nav" id="histdate-cal-prev">‹</button>';
+    h += '<button type="button" class="histdate-cal-nav histdate-cal-prev-y" title="Ano anterior">«</button>';
+    h += '<button type="button" class="histdate-cal-nav histdate-cal-prev-m" title="Mês anterior">‹</button>';
     h += '<span class="histdate-cal-title">' + histMonthNames[month0+1] + ' de ' + year + '</span>';
+    h += '<button type="button" class="histdate-cal-nav histdate-cal-next-m" title="Próximo mês">›</button>';
+    h += '<button type="button" class="histdate-cal-nav histdate-cal-next-y" title="Próximo ano">»</button>';
+    h += '</div>';
     // Marca (informativa, não restritiva) os meses que têm snapshot mensal — é onde o
     // delta dos cards se ancora. Qualquer dia continua selecionável para o gráfico.
-    if (temSnapshotNoMes) h += '<span class="histdate-cal-hassnap">● snapshot</span>';
-    h += '<button type="button" class="histdate-cal-nav" id="histdate-cal-next">›</button>';
-    h += '</div>';
+    if (temSnapshotNoMes) h += '<div class="histdate-cal-hassnap">● tem snapshot mensal</div>';
     h += '<div class="histdate-cal-weekdays">';
     HISTDATE_WEEKDAYS.forEach(function(w) { h += '<span>' + w + '</span>'; });
     h += '</div><div class="histdate-cal-days">';
@@ -3348,8 +3370,9 @@
       // TODOS os dias são selecionáveis: o período é livre e o gráfico detalhado usa as
       // datas exatas; os cards apenas se ancoram no snapshot mensal mais próximo.
       var cls = 'histdate-cal-day has-data';
-      if (histIsSameDay(d, start) || histIsSameDay(d, end)) cls += ' selected';
-      else if (histIsDateInRange(d, start, end)) cls += ' in-range';
+      if (histIsSameDay(d, mine)) cls += ' selected';
+      else if (histIsSameDay(d, other)) cls += ' selected-other';
+      else if (hasRange && histIsDateInRange(d, rangeStart, rangeEnd)) cls += ' in-range';
       if (histIsSameDay(d, new Date())) cls += ' today';
       h += '<span class="' + cls + '" data-date="' + d.getTime() + '">' + day + '</span>';
     }
@@ -3370,116 +3393,114 @@
   }
 
   function histDateOutsideClick(e) {
-    var pop = document.getElementById('hist-date-popover');
-    var btn = document.getElementById('hist-date-cal-btn');
-    if (pop && btn && !pop.contains(e.target) && !btn.contains(e.target)) closeHistDatePopover();
+    if (!histOpenField) return;
+    var wrap = document.getElementById('histdate-field-' + histOpenField);
+    if (wrap && !wrap.contains(e.target)) closeAllHistPopovers();
   }
 
-  function pickHistCalDate(clicked) {
-    if (!histCalPendingStart || histCalPendingEnd) { histCalPendingStart = clicked; histCalPendingEnd = null; }
-    else if (clicked < histCalPendingStart) { histCalPendingEnd = histCalPendingStart; histCalPendingStart = clicked; }
-    else { histCalPendingEnd = clicked; }
-  }
-
-  function renderHistDatePopover() {
-    var pop = document.getElementById('hist-date-popover');
-    if (!pop) return;
-    var h = renderHistMonthChips();
-    h += renderHistCalendarGrid(histCalViewDate, histCalPendingStart, histCalPendingEnd);
-    h += '<div class="histdate-cal-footer">';
-    h += '<button type="button" class="btn btn-secondary" id="histdate-cal-cancel">Cancelar</button>';
-    h += '<button type="button" class="btn" id="histdate-cal-apply">Aplicar</button>';
-    h += '</div>';
-    pop.innerHTML = h;
-
-    pop.querySelector('#histdate-cal-prev').addEventListener('click', function() {
-      histCalViewDate = new Date(histCalViewDate.getFullYear(), histCalViewDate.getMonth()-1, 1);
-      renderHistDatePopover();
+  function closeAllHistPopovers() {
+    ['start', 'end'].forEach(function(f) {
+      var pop = document.getElementById('hist-date-popover-' + f);
+      if (pop) pop.style.display = 'none';
     });
-    pop.querySelector('#histdate-cal-next').addEventListener('click', function() {
-      histCalViewDate = new Date(histCalViewDate.getFullYear(), histCalViewDate.getMonth()+1, 1);
-      renderHistDatePopover();
-    });
-    pop.querySelectorAll('.histdate-cal-day:not(.empty)').forEach(function(el) {
-      el.addEventListener('click', function() {
-        pickHistCalDate(new Date(parseInt(this.getAttribute('data-date'), 10)));
-        renderHistDatePopover();
-      });
-    });
-    pop.querySelectorAll('.histdate-chip').forEach(function(el) {
-      el.addEventListener('click', function() {
-        var clicked = new Date(parseInt(this.getAttribute('data-chip-date'), 10));
-        pickHistCalDate(clicked);
-        histCalViewDate = clicked;
-        renderHistDatePopover();
-      });
-    });
-    pop.querySelector('#histdate-cal-cancel').addEventListener('click', closeHistDatePopover);
-    pop.querySelector('#histdate-cal-apply').addEventListener('click', function() {
-      // Um único dia clicado conta como início E fim (período de 1 dia é válido p/ o gráfico).
-      var ps = histCalPendingStart, pe = histCalPendingEnd || histCalPendingStart;
-      if (ps) applyHistDateRange(ps, pe, true);
-      closeHistDatePopover();
-    });
-  }
-
-  function openHistDatePopover() {
-    var base = histSnapshots[histBaseIdx], ref = histSnapshots[histRefIdx];
-    histCalPendingStart = ref ? histSnapshotDate(ref) : null;
-    histCalPendingEnd = base ? histSnapshotDate(base) : null;
-    histCalViewDate = histCalPendingEnd || new Date();
-    var pop = document.getElementById('hist-date-popover');
-    if (!pop) return;
-    pop.style.display = '';
-    renderHistDatePopover();
-    setTimeout(function() { document.addEventListener('click', histDateOutsideClick); }, 0);
-  }
-
-  function closeHistDatePopover() {
-    var pop = document.getElementById('hist-date-popover');
-    if (pop) pop.style.display = 'none';
+    histOpenField = null;
     document.removeEventListener('click', histDateOutsideClick);
   }
 
-  function renderHistDatePickerHtml() {
-    var base = histSnapshots[histBaseIdx], ref = (histRefIdx >= 0 ? histSnapshots[histRefIdx] : null);
-    // Padrão coerente com o período que o gráfico realmente usa: Início = 1º dia do mês
-    // de referência; Fim = último dia do mês base (recortado a hoje se for o mês corrente).
-    var startVal = ref ? formatBRDate(histSnapshotDate(ref)) : '';
-    var endVal = '';
-    if (base) {
-      var bStart = histSnapshotDate(base);
-      var bEnd = new Date(bStart.getFullYear(), bStart.getMonth() + 1, 0);
-      var today = new Date(); today.setHours(0, 0, 0, 0);
-      if (bEnd > today) bEnd = today;
-      endVal = formatBRDate(bEnd);
+  // Seleciona `date` para o campo `field`: grava, escreve no input, fecha o popover
+  // DESSE campo (seleção de um único dia = pronto, sem passo extra de "Aplicar") e
+  // recalcula os tiles. O outro campo permanece como estava.
+  function pickHistFieldDate(field, date) {
+    if (field === 'start') histPeriodStart = date; else histPeriodEnd = date;
+    var input = document.getElementById('hist-date-' + field);
+    if (input) input.value = formatBRDate(date);
+    showHistDateError('');
+    closeAllHistPopovers();
+    commitHistPeriod();
+  }
+
+  function renderHistFieldPopover(field) {
+    var pop = document.getElementById('hist-date-popover-' + field);
+    if (!pop) return;
+    var view = histCalView[field];
+    var h = renderHistMonthChips();
+    h += renderHistCalendarGrid(field, view);
+    pop.innerHTML = h;
+
+    function nav(delta, unit) {
+      histCalView[field] = unit === 'y'
+        ? new Date(view.getFullYear() + delta, view.getMonth(), 1)
+        : new Date(view.getFullYear(), view.getMonth() + delta, 1);
+      renderHistFieldPopover(field);
     }
+    pop.querySelector('.histdate-cal-prev-y').addEventListener('click', function(e) { e.stopPropagation(); nav(-1, 'y'); });
+    pop.querySelector('.histdate-cal-prev-m').addEventListener('click', function(e) { e.stopPropagation(); nav(-1, 'm'); });
+    pop.querySelector('.histdate-cal-next-m').addEventListener('click', function(e) { e.stopPropagation(); nav(1, 'm'); });
+    pop.querySelector('.histdate-cal-next-y').addEventListener('click', function(e) { e.stopPropagation(); nav(1, 'y'); });
+    pop.querySelectorAll('.histdate-cal-day:not(.empty)').forEach(function(el) {
+      el.addEventListener('click', function(e) {
+        e.stopPropagation();
+        pickHistFieldDate(field, new Date(parseInt(this.getAttribute('data-date'), 10)));
+      });
+    });
+    pop.querySelectorAll('.histdate-chip').forEach(function(el) {
+      el.addEventListener('click', function(e) {
+        e.stopPropagation();
+        histCalView[field] = new Date(parseInt(this.getAttribute('data-chip-date'), 10));
+        renderHistFieldPopover(field);
+      });
+    });
+  }
+
+  // Abre o calendário ANCORADO no campo clicado — Início e Fim são independentes;
+  // abrir um fecha o outro (evita dois popovers sobrepostos).
+  function openHistPopover(field) {
+    if (histOpenField === field) return;
+    closeAllHistPopovers();
+    histOpenField = field;
+    var cur = currentHistFieldDate(field);
+    histCalView[field] = cur ? new Date(cur.getFullYear(), cur.getMonth(), 1) : new Date();
+    var pop = document.getElementById('hist-date-popover-' + field);
+    if (!pop) return;
+    pop.style.display = '';
+    renderHistFieldPopover(field);
+    setTimeout(function() { document.addEventListener('click', histDateOutsideClick); }, 0);
+  }
+
+  function renderHistDatePickerHtml() {
+    var startVal = formatBRDate(histPeriodStart);
+    var endVal = formatBRDate(histPeriodEnd);
     // Ícone de calendário INLINE (self-contained) — o SVG externo por CDN podia não
     // carregar no iframe do Power-Up, deixando o botão aparentemente "quebrado".
-    var calIcon = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    var calIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>';
+    function field(id, label, val) {
+      var h = '<div class="histdate-field" id="histdate-field-' + id + '">';
+      h += '<label>' + label + '</label>';
+      h += '<div class="histdate-input-wrap"><input type="text" id="hist-date-' + id + '" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" autocomplete="off" value="' + val + '"><span class="histdate-input-icon">' + calIcon + '</span></div>';
+      h += '<div class="histdate-popover" id="hist-date-popover-' + id + '" style="display:none;"></div>';
+      h += '</div>';
+      return h;
+    }
     var h = '<div class="histdate-picker">';
-    h += '<div class="histdate-field"><label>Início</label><input type="text" id="hist-date-start" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" value="' + startVal + '"></div>';
+    h += field('start', 'Início', startVal);
     h += '<span class="histdate-sep">–</span>';
-    h += '<div class="histdate-field"><label>Fim</label><input type="text" id="hist-date-end" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" value="' + endVal + '"></div>';
-    h += '<button type="button" class="histdate-cal-btn" id="hist-date-cal-btn" title="Selecionar período no calendário">' + calIcon + '</button>';
-    h += '<div class="histdate-popover" id="hist-date-popover" style="display:none;"></div>';
+    h += field('end', 'Fim', endVal);
     h += '</div>';
     h += '<p class="hist-note histdate-error" id="hist-date-error" style="display:none;"></p>';
     return h;
   }
 
   function wireHistDatePicker() {
-    var startInput = document.getElementById('hist-date-start');
-    var endInput = document.getElementById('hist-date-end');
-    if (!startInput || !endInput) return;
-    attachDateMask(startInput);
-    attachDateMask(endInput);
-    startInput.addEventListener('input', handleHistDateTextChange);
-    endInput.addEventListener('input', handleHistDateTextChange);
-    document.getElementById('hist-date-cal-btn').addEventListener('click', function(e) {
-      e.stopPropagation();
-      openHistDatePopover();
+    ['start', 'end'].forEach(function(field) {
+      var input = document.getElementById('hist-date-' + field);
+      if (!input) return;
+      attachDateMask(input, field);
+      input.addEventListener('focus', function() { openHistPopover(field); });
+      input.addEventListener('click', function(e) { e.stopPropagation(); openHistPopover(field); });
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { closeAllHistPopovers(); input.blur(); }
+      });
     });
   }
 
@@ -3520,6 +3541,21 @@
   function renderHistTrend() {
     var snapshots = histSnapshots;
     if (!snapshots.length) return '';
+    // Semeia o período cru com o padrão derivado dos snapshots (mês de referência → fim
+    // do mês base) — só quando ainda não há escolha do usuário. Dali em diante, o campo
+    // Início/Fim reflete exatamente o que a pessoa digitou/selecionou.
+    if (!histPeriodStart || !histPeriodEnd) {
+      var base0 = snapshots[histBaseIdx] || snapshots[0];
+      var ref0 = (histRefIdx >= 0 ? snapshots[histRefIdx] : null);
+      if (base0) {
+        var bStart0 = histSnapshotDate(base0);
+        var bEnd0 = new Date(bStart0.getFullYear(), bStart0.getMonth() + 1, 0);
+        var today0 = new Date(); today0.setHours(0, 0, 0, 0);
+        if (bEnd0 > today0) bEnd0 = today0;
+        histPeriodEnd = bEnd0;
+        histPeriodStart = ref0 ? histSnapshotDate(ref0) : bStart0;
+      }
+    }
     var h = '';
     h += '<div class="hist-head">';
     h += '<h3>Tendência</h3>';
@@ -3585,19 +3621,11 @@
     wireHistTrend();
   }
 
-  // Atualiza APENAS os tiles quando o período muda. `syncInputs` regrava os campos de
-  // texto (usado quando a mudança veio do calendário; ao digitar não mexemos neles).
-  function refreshHistTrend(syncInputs) {
+  // Atualiza APENAS os tiles quando o período muda — os campos de texto já refletem a
+  // escolha (quem os alterou foi a própria digitação ou o clique no calendário).
+  function refreshHistTrend() {
     var tilesHost = document.getElementById('hist-tiles');
     if (tilesHost) { tilesHost.innerHTML = renderHistTiles(); rewireHistTiles(); }
-    if (syncInputs) syncHistDateInputs();
-  }
-
-  function syncHistDateInputs() {
-    var s = document.getElementById('hist-date-start');
-    var e = document.getElementById('hist-date-end');
-    if (s && histPeriodStart) s.value = formatBRDate(histPeriodStart);
-    if (e && histPeriodEnd) e.value = formatBRDate(histPeriodEnd);
   }
 
   function wireHistTrend() {
