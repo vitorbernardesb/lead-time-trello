@@ -4409,6 +4409,57 @@
       return id;
     }
 
+    // ── enriquecimento de tooltip (derivado; não toca cálculo de KPI nem o chart em si) ──
+    // Separa um conjunto de cards em janela atual (últimos N dias) vs. janela anterior
+    // (N dias antes disso), usando o campo de data indicado. Cards sem a data ficam de fora.
+    function splitByPeriod(cards, dateField, days) {
+      days = days || 30;
+      var ONE_DAY = 86400000, now = Date.now();
+      var curStart = now - days * ONE_DAY, prevStart = now - days * 2 * ONE_DAY;
+      var cur = [], prev = [];
+      cards.forEach(function(c) {
+        var raw = c[dateField]; if (!raw) return;
+        var t = new Date(raw).getTime();
+        if (t >= curStart) cur.push(c);
+        else if (t >= prevStart) prev.push(c);
+      });
+      return { cur: cur, prev: prev };
+    }
+    function pctArrow(d) { return d > 0 ? '▲' : (d < 0 ? '▼' : '●'); }
+    // Variação % de CONTAGEM do mesmo agrupamento vs período anterior (30d) — omite quando
+    // não há base de comparação (sem cards na janela anterior).
+    function tipPeriodVar(cards, dateField) {
+      var w = splitByPeriod(cards, dateField, 30);
+      if (!w.prev.length) return '';
+      var d = round1((w.cur.length - w.prev.length) / w.prev.length * 100);
+      return ' · ' + pctArrow(d) + ' ' + (d > 0 ? '+' : '') + nf(d) + '% vs período anterior';
+    }
+    // Variação % de MÉDIA (ex.: tempo até 1ª entrega) vs período anterior (30d).
+    function tipPeriodVarAvg(cards, dateField, getter) {
+      var w = splitByPeriod(cards, dateField, 30);
+      if (!w.prev.length || !w.cur.length) return '';
+      var prevAvg = mean(w.prev.map(getter));
+      if (!prevAvg) return '';
+      var d = round1((mean(w.cur.map(getter)) - prevAvg) / prevAvg * 100);
+      return ' · ' + pctArrow(d) + ' ' + (d > 0 ? '+' : '') + nf(d) + '% vs período anterior';
+    }
+    // Variação % de um ponto de série (ex.: semana) vs. o ponto imediatamente anterior.
+    function tipSeriesVar(curCount, prevCount) {
+      if (!prevCount) return '';
+      var d = round1((curCount - prevCount) / prevCount * 100);
+      return ' · ' + pctArrow(d) + ' ' + (d > 0 ? '+' : '') + nf(d) + '% vs anterior';
+    }
+    // Card com maior lead time real (dias úteis) dentro do grupo — quando aplicável.
+    function tipTopLeadTime(cards) {
+      var top = null;
+      cards.forEach(function(c) {
+        if (c.leadTimeReal == null) return;
+        if (!top || c.leadTimeReal > top.leadTimeReal) top = c;
+      });
+      if (!top) return '';
+      return ' · maior lead time: <b>' + escHtml(top.name || '(sem título)') + '</b> (' + fmtDias(top.leadTimeReal) + ')';
+    }
+
     // ══════════ GRÁFICOS SVG (leves, interativos, na cor do painel) ══════════
     function seg(bId, tip, body) {
       return '<g class="cp-seg" data-b="' + bId + '" data-tip="' + escHtml(tip) + '">' + body +
@@ -4545,21 +4596,26 @@
       var groups = ['BAIXO', 'MÉDIO', 'ALTO', 'MUITO ALTO', 'Sem nível'];
       var items = groups.map(function(g) {
         var cs = r.concluidas.filter(function(c) { return (c.nivelEsforco || 'Sem nível') === g; });
+        var tip = '<b>' + cs.length + '</b> concluída(s) · ' + g;
+        tip += tipPeriodVar(cs, 'concludedAt');
+        tip += tipTopLeadTime(cs);
         return { label: g === 'Sem nível' ? 'S/ nível' : g, value: cs.length, color: cor[g],
           bucketId: bucket('Concluídas · ' + g + ' — ' + r.panel.name, cs),
-          tip: '<b>' + cs.length + '</b> concluída(s) · ' + g };
+          tip: tip };
       }).filter(function(it) { return it.value > 0; });
       if (!items.length) return emptyChart('Nenhuma atividade concluída.');
       return vBars(items, r.panel.color);
     }
     function chartRetrabalho(r) {
       var cor = r.panel.color;
+      var semRW = r.cards.filter(function(c) { return !c.hasRetrabalho; });
       var segs = [
         { label: 'Com retrabalho', value: r.comRetra.length, color: cor,
-          bucketId: bucket('Com retrabalho — ' + r.panel.name, r.comRetra), tip: '<b>' + r.comRetra.length + '</b> card(s) com retrabalho' },
+          bucketId: bucket('Com retrabalho — ' + r.panel.name, r.comRetra),
+          tip: '<b>' + r.comRetra.length + '</b> card(s) com retrabalho' + tipPeriodVar(r.comRetra, 'createdAt') + tipTopLeadTime(r.comRetra) },
         { label: 'Sem retrabalho', value: r.count - r.comRetra.length, color: tint(cor, 0.6),
-          bucketId: bucket('Sem retrabalho — ' + r.panel.name, r.cards.filter(function(c) { return !c.hasRetrabalho; })),
-          tip: '<b>' + (r.count - r.comRetra.length) + '</b> card(s) sem retrabalho' }
+          bucketId: bucket('Sem retrabalho — ' + r.panel.name, semRW),
+          tip: '<b>' + (r.count - r.comRetra.length) + '</b> card(s) sem retrabalho' + tipPeriodVar(semRW, 'createdAt') + tipTopLeadTime(semRW) }
       ];
       return doughnut(segs);
     }
@@ -4568,9 +4624,12 @@
       var items = NIVEIS_ESFORCO.map(function(nv) {
         var g = r.pe.niveis[nv];
         var cs = r.entregues.filter(function(c) { return c.nivelEsforco === nv; });
+        var tip = nv + ': <b>' + fmtHoras(g.avgHoras) + '</b> úteis · ' + fmtDias(g.avgDias) + ' · ' + g.n + ' card(s)';
+        tip += tipPeriodVarAvg(cs, 'createdAt', function(c) { return c.primeiraEntrega.horas; });
+        tip += tipTopLeadTime(cs);
         return { label: nv, value: g.avgHoras, color: cor[nv],
           bucketId: bucket('1ª entrega · ' + nv + ' — ' + r.panel.name, cs),
-          tip: nv + ': <b>' + fmtHoras(g.avgHoras) + '</b> úteis · ' + fmtDias(g.avgDias) + ' · ' + g.n + ' card(s)' };
+          tip: tip };
       });
       if (!items.some(function(i) { return i.value > 0; })) return emptyChart('Nenhuma 1ª entrega registrada.');
       return hBars(items, r.panel.color, function(v) { return fmtHoras(v); });
@@ -4580,9 +4639,12 @@
       var groups = NIVEIS_ESFORCO.concat(['Sem nível']);
       var segs = groups.map(function(g) {
         var cs = r.cardsAll.filter(function(c) { return (c.nivelEsforco || 'Sem nível') === g; });
+        var tip = g + ': <b>' + cs.length + '</b> card(s)';
+        tip += tipPeriodVar(cs, 'createdAt');
+        tip += tipTopLeadTime(cs);
         return { label: g, value: cs.length, color: cor[g],
           bucketId: bucket('Dificuldade · ' + g + ' — ' + r.panel.name, cs),
-          tip: g + ': <b>' + cs.length + '</b> card(s)' };
+          tip: tip };
       });
       var chart = stacked(segs);
       return chart + legend(segs);
@@ -4599,12 +4661,17 @@
       var pts = [];
       if (keys.length) {
         var first = keys[0], last = keys[keys.length - 1], WEEK = 604800000;
+        var prevCount = null;
         for (var k = first; k <= last; k += WEEK) {
           var cs = byWeek[k] || [];
           var dt = new Date(k);
+          var tip = 'Semana de <b>' + fmtDateBR(dt) + '</b>: ' + cs.length + ' concluída(s)';
+          tip += tipSeriesVar(cs.length, prevCount);
+          tip += tipTopLeadTime(cs);
           pts.push({ label: fmtDateBR(dt).slice(0, 5), value: cs.length,
             bucketId: bucket('Concluídas na semana de ' + fmtDateBR(dt) + ' — ' + r.panel.name, cs),
-            tip: 'Semana de <b>' + fmtDateBR(dt) + '</b>: ' + cs.length + ' concluída(s)' });
+            tip: tip });
+          prevCount = cs.length;
         }
       }
       return lineChart(pts, r.panel.color);
