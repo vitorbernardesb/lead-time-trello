@@ -4251,7 +4251,7 @@
     // basta registrar aqui uma estratégia com { options(cards), matches(card, values) }.
     var STRATEGIES = {
       labels: {
-        id: 'labels', label: 'Etiquetas', unit: 'etiqueta',
+        id: 'labels', label: 'Etiquetas', unit: 'etiqueta', unitPlural: 'etiquetas',
         options: function(cards) {
           var counts = {};
           cards.forEach(function(c) {
@@ -4268,6 +4268,43 @@
         matches: function(card, values) {
           var ls = card.labels || [];
           for (var i = 0; i < ls.length; i++) if (values.indexOf(ls[i]) !== -1) return true;
+          return false;
+        }
+      },
+      nivelEsforco: {
+        id: 'nivelEsforco', label: 'Nível de Esforço', unit: 'nível', unitPlural: 'níveis',
+        options: function(cards) {
+          var counts = {};
+          cards.forEach(function(c) {
+            var n = c.nivelEsforco || 'Sem nível';
+            counts[n] = (counts[n] || 0) + 1;
+          });
+          var order = NIVEIS_ESFORCO.concat(['Sem nível']);
+          return order.filter(function(n) { return counts[n]; }).map(function(n) { return { value: n, count: counts[n] }; });
+        },
+        matches: function(card, values) {
+          var n = card.nivelEsforco || 'Sem nível';
+          return values.indexOf(n) !== -1;
+        }
+      },
+      responsavel: {
+        id: 'responsavel', label: 'Responsável', unit: 'responsável', unitPlural: 'responsáveis',
+        options: function(cards) {
+          var counts = {};
+          cards.forEach(function(c) {
+            (c.members || []).forEach(function(n) {
+              if (!n) return;
+              counts[n] = (counts[n] || 0) + 1;
+            });
+          });
+          return Object.keys(counts).sort(function(a, b) {
+            return counts[b] - counts[a] || a.localeCompare(b);
+          }).map(function(n) { return { value: n, count: counts[n] }; });
+        },
+        // Card conta UMA vez mesmo com vários responsáveis do painel (some → boolean).
+        matches: function(card, values) {
+          var ms = card.members || [];
+          for (var i = 0; i < ms.length; i++) if (values.indexOf(ms[i]) !== -1) return true;
           return false;
         }
       }
@@ -4588,7 +4625,7 @@
     function buildPanelBody(p) {
       if (!cachedData) return '<div class="cp-cards-empty">Carregue a aba <b>Tempo real</b> para ver as métricas deste painel.</div>';
       var r = computePanel(p);
-      if (!p.values.length) return '<div class="cp-cards-empty">Nenhuma etiqueta selecionada. Clique em <b>Configurar</b> para escolher as etiquetas do painel.</div>';
+      if (!p.values.length) return '<div class="cp-cards-empty">Nenhum valor selecionado para <b>' + escHtml(strategyOf(p).label) + '</b>. Clique em <b>Configurar</b> para escolher os valores do painel.</div>';
       var h = panelKpis(r);
       h += '<div class="cp-charts">';
       h += '<div class="cp-chart-card"><div class="cp-chart-title">Atividades concluídas</div><div class="cp-chart-sub">por nível de esforço</div>' + chartConcluidas(r) + '</div>';
@@ -4638,7 +4675,6 @@
     function draw() {
       computeCache = {}; buckets = {}; bucketSeq = 0; // memo/registro fresco por render
       var host = document.getElementById('custom-content');
-      var strat = STRATEGIES.labels;
       var h = '';
       h += '<div class="cp-intro"><div>';
       h += '<h2>Análises Personalizadas</h2>';
@@ -4659,12 +4695,13 @@
       } else {
         panels.forEach(function(p) {
           var r = cachedData ? computePanel(p) : null;
+          var strat = strategyOf(p);
           var open = !!p.__open;
           h += '<div class="cp-panel' + (open ? ' cp-open' : '') + '" data-id="' + p.id + '" style="--cp-color:' + p.color + '">';
           h += '<div class="cp-panel-head" data-act="toggle">';
           h += '<span class="cp-panel-swatch"></span>';
           h += '<div class="cp-panel-titlewrap"><div class="cp-panel-name">' + escHtml(p.name) + '</div>';
-          h += '<div class="cp-panel-meta"><span>' + p.values.length + ' ' + strat.unit + (p.values.length === 1 ? '' : 's') + '</span>' +
+          h += '<div class="cp-panel-meta"><span>' + p.values.length + ' ' + (p.values.length === 1 ? strat.unit : (strat.unitPlural || strat.unit + 's')) + '</span>' +
             '<span>Atualizado ' + fmtDateTime(p.updatedAt) + '</span></div></div>';
           h += '<div class="cp-panel-count">' + (r ? r.count : '—') + ' <small>card' + (r && r.count === 1 ? '' : 's') + '</small></div>';
           h += '<div class="cp-panel-headactions">';
@@ -4797,24 +4834,29 @@
         : byId(id);
       if (!panel) return;
       configState = { panel: panel, isNew: isNew };
-      var opts = cachedData ? STRATEGIES.labels.options(cachedData.cards) : [];
+      var opts = cachedData ? strategyOf(panel).options(cachedData.cards) : [];
       var over = getOverlay();
       var sel = panel.values.slice();
 
       function render() {
+        var strat = strategyOf(panel);
         var body = '';
         body += '<div class="cp-field"><label>Nome do painel</label>' +
           '<input class="cp-input" id="cp-cfg-name" maxlength="40" value="' + escHtml(panel.name) + '" placeholder="Ex.: Equipe Designers"></div>';
         body += '<div class="cp-field"><label>Cor de identidade</label><div class="cp-color-grid" id="cp-cfg-colors">';
         PANEL_COLORS.forEach(function(c) { body += '<span class="cp-color-dot' + (c === panel.color ? ' sel' : '') + '" data-c="' + c + '" style="background:' + c + '"></span>'; });
         body += '</div></div>';
-        body += '<div class="cp-field"><label>Etiquetas do painel</label>';
+        body += '<div class="cp-field"><label>Critério de agrupamento</label><select class="cp-input" id="cp-cfg-criterion">' +
+          Object.keys(STRATEGIES).map(function(k) {
+            return '<option value="' + k + '"' + (k === panel.criterion ? ' selected' : '') + '>' + escHtml(STRATEGIES[k].label) + '</option>';
+          }).join('') + '</select></div>';
+        body += '<div class="cp-field"><label>' + escHtml(strat.label) + ' do painel</label>';
         if (!cachedData) {
-          body += '<div class="cp-cards-empty">Carregue a aba <b>Tempo real</b> para listar as etiquetas do board.</div>';
+          body += '<div class="cp-cards-empty">Carregue a aba <b>Tempo real</b> para listar os valores do board.</div>';
         } else if (!opts.length) {
-          body += '<div class="cp-cards-empty">Nenhuma etiqueta encontrada nos cards.</div>';
+          body += '<div class="cp-cards-empty">Nenhum valor de ' + escHtml(strat.label.toLowerCase()) + ' encontrado nos cards.</div>';
         } else {
-          body += '<input class="cp-input cp-label-search" id="cp-cfg-search" placeholder="Buscar etiqueta…">';
+          body += '<input class="cp-input cp-label-search" id="cp-cfg-search" placeholder="Buscar ' + escHtml(strat.unit) + '…">';
           body += '<div class="cp-label-list" id="cp-cfg-labels"></div>';
           body += '<div class="cp-selcount" id="cp-cfg-selcount"></div>';
         }
@@ -4846,9 +4888,9 @@
             '<span class="cp-lo-dot" style="background:' + panel.color + '"></span>' +
             '<span class="cp-lo-name">' + escHtml(o.value) + '</span><span class="cp-lo-count">' + o.count + '</span></label>';
         });
-        listEl.innerHTML = html || '<div class="cp-cards-empty">Nenhuma etiqueta corresponde à busca.</div>';
+        listEl.innerHTML = html || '<div class="cp-cards-empty">Nenhum valor corresponde à busca.</div>';
         var sc = document.getElementById('cp-cfg-selcount');
-        if (sc) sc.textContent = sel.length + ' etiqueta(s) selecionada(s) · card com várias conta uma vez.';
+        if (sc) sc.textContent = sel.length + ' valor(es) selecionado(s) · card com vários valores conta uma vez.';
       }
 
       function commit() {
@@ -4881,6 +4923,15 @@
           document.querySelectorAll('#cp-cfg-labels .cp-lo-dot').forEach(function(d) { d.style.background = panel.color; });
           commit();
         });
+        var criterionEl = document.getElementById('cp-cfg-criterion');
+        if (criterionEl) criterionEl.addEventListener('change', function() {
+          panel.criterion = criterionEl.value;
+          sel = [];
+          panel.__filterSel = [];
+          opts = cachedData ? strategyOf(panel).options(cachedData.cards) : [];
+          commit();
+          render();
+        });
         var searchEl = document.getElementById('cp-cfg-search');
         if (searchEl) searchEl.addEventListener('input', renderLabels);
         var labelsEl = document.getElementById('cp-cfg-labels');
@@ -4891,7 +4942,7 @@
           if (cb.checked && idx === -1) sel.push(v);
           else if (!cb.checked && idx !== -1) sel.splice(idx, 1);
           var sc = document.getElementById('cp-cfg-selcount');
-          if (sc) sc.textContent = sel.length + ' etiqueta(s) selecionada(s) · card com várias conta uma vez.';
+          if (sc) sc.textContent = sel.length + ' valor(es) selecionado(s) · card com vários valores conta uma vez.';
           commitDeb();
         });
         over.querySelectorAll('[data-cfg]').forEach(function(b) {
