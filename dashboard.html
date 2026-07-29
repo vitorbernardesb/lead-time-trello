@@ -4244,6 +4244,7 @@
     var computeCache = {};   // memo por render: panel.id → resultado
     var buckets = {};        // bucketId → { title, cards } (clique em gráfico/kpi)
     var bucketSeq = 0;
+    var xfilterSeq = 0;      // gera chave estável p/ cache quando um cross-filter é aplicado
     var tooltipEl = null;
 
     // ── camada de agrupamento (genérica; hoje só "labels", extensível) ──
@@ -4357,7 +4358,8 @@
     // ── COMPUTE de um painel — reutiliza integralmente o pipeline existente ──
     function computePanel(p) {
       var vals = effectiveValues(p);
-      var cacheKey = p.id + '::' + vals.slice().sort().join('');
+      var xf = p.__xfilter;
+      var cacheKey = p.id + '::' + vals.slice().sort().join('') + '::' + (xf ? xf.key : '');
       if (computeCache[cacheKey]) return computeCache[cacheKey];
       var strat = strategyOf(p);
       var open = (cachedData && cachedData.cards) ? cachedData.cards : [];
@@ -4365,6 +4367,13 @@
       var cfg = (cachedData && cachedData.config) ? cachedData.config : DEFAULTS;
       var sub = vals.length ? open.filter(function(c) { return strat.matches(c, vals); }) : [];
       var subArch = vals.length ? arch.filter(function(c) { return strat.matches(c, vals); }) : [];
+      // Cross-filter transiente (clique num segmento de gráfico): recorta o painel inteiro ao
+      // subconjunto de cards daquele segmento — mesmo padrão do filtro por etiqueta acima,
+      // só que por id de card em vez de valor de critério.
+      if (xf && xf.ids) {
+        sub = sub.filter(function(c) { return xf.ids[c.id]; });
+        subArch = subArch.filter(function(c) { return xf.ids[c.id]; });
+      }
       var subAll = sub.concat(subArch); // arquivados só entram na 1ª entrega (igual ao realtime)
 
       var kpis = calcKPIs(sub, cfg);              // ◀── PIPELINE EXISTENTE, intocado
@@ -4626,7 +4635,14 @@
       if (!cachedData) return '<div class="cp-cards-empty">Carregue a aba <b>Tempo real</b> para ver as métricas deste painel.</div>';
       var r = computePanel(p);
       if (!p.values.length) return '<div class="cp-cards-empty">Nenhum valor selecionado para <b>' + escHtml(strategyOf(p).label) + '</b>. Clique em <b>Configurar</b> para escolher os valores do painel.</div>';
-      var h = panelKpis(r);
+      var h = '';
+      if (p.__xfilter) {
+        h += '<div class="cp-filter-bar cp-xfilter-bar">';
+        h += '<div class="cp-filter-text"><span class="cp-filter-label">Filtrado por:</span> <b>' + escHtml(p.__xfilter.title) + '</b></div>';
+        h += '<button class="cp-filter-clear" data-act="clearxfilter">Limpar</button>';
+        h += '</div>';
+      }
+      h += panelKpis(r);
       h += '<div class="cp-charts">';
       h += '<div class="cp-chart-card"><div class="cp-chart-title">Atividades concluídas</div><div class="cp-chart-sub">por nível de esforço</div>' + chartConcluidas(r) + '</div>';
       h += '<div class="cp-chart-card"><div class="cp-chart-title">Retrabalhos</div><div class="cp-chart-sub">proporção de cards</div>' + chartRetrabalho(r) + '</div>';
@@ -4773,12 +4789,24 @@
           if (act === 'del') { e.stopPropagation(); deletePanel(id); return; }
           if (act === 'filterchip') { e.stopPropagation(); toggleFilterChip(id, actEl.getAttribute('data-value')); return; }
           if (act === 'clearfilter') { e.stopPropagation(); clearFilter(id); return; }
+          if (act === 'clearxfilter') { e.stopPropagation(); clearXFilter(id); return; }
         }
         if (e.target.closest('#cp-refresh')) { loadRealtime(true); return; }
         if (e.target.closest('#cp-new') || e.target.closest('#cp-new-2')) { openConfig(null); return; }
         if (e.target.closest('#cp-export')) { openExport(); return; }
         var bEl = e.target.closest('[data-b]');
-        if (bEl) { var b = buckets[bEl.getAttribute('data-b')]; if (b) openCards(b.title, b.cards, colorForNode(bEl)); }
+        if (bEl) {
+          var b = buckets[bEl.getAttribute('data-b')];
+          if (b) {
+            // clique num segmento de gráfico (cp-seg) também recorta os outros gráficos
+            // do mesmo painel — o modal de detalhes (comportamento atual) é mantido.
+            if (bEl.classList.contains('cp-seg')) {
+              var segPanelEl = bEl.closest('.cp-panel');
+              if (segPanelEl) applyXFilter(segPanelEl.getAttribute('data-id'), b);
+            }
+            openCards(b.title, b.cards, colorForNode(bEl));
+          }
+        }
       });
       // tooltip (delegado)
       host.addEventListener('mousemove', function(e) {
@@ -4808,6 +4836,22 @@
     function clearFilter(id) {
       var p = byId(id); if (!p) return;
       p.__filterSel = [];
+      draw();
+    }
+
+    // cross-filter por segmento: clique num cp-seg recorta os OUTROS gráficos do mesmo
+    // painel ao subconjunto de cards daquele segmento (bucket já registrado). Transiente,
+    // não persistido — mesmo espírito do filtro por etiqueta acima, escopo por id de card.
+    function applyXFilter(id, bucketInfo) {
+      var p = byId(id); if (!p) return;
+      var ids = {};
+      (bucketInfo.cards || []).forEach(function(c) { ids[c.id] = true; });
+      p.__xfilter = { title: bucketInfo.title, ids: ids, key: 'xf' + (++xfilterSeq) };
+      draw();
+    }
+    function clearXFilter(id) {
+      var p = byId(id); if (!p) return;
+      delete p.__xfilter;
       draw();
     }
 
@@ -4928,6 +4972,7 @@
           panel.criterion = criterionEl.value;
           sel = [];
           panel.__filterSel = [];
+          delete panel.__xfilter;
           opts = cachedData ? strategyOf(panel).options(cachedData.cards) : [];
           commit();
           render();
