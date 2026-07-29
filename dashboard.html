@@ -408,6 +408,7 @@
     }
     /* Fim fica na borda direita do seletor — abrir à esquerda evita o popover vazar da tela. */
     #histdate-field-end .histdate-popover { left: auto; right: 0; }
+    #cp-datefield-end .histdate-popover { left: auto; right: 0; }
     .histdate-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; max-height: 74px; overflow-y: auto; }
     .histdate-chip {
       background: var(--surface); border: 1px solid var(--border-2); color: var(--ink);
@@ -601,6 +602,7 @@
       cursor: default; user-select: none;
     }
     .cp-actions-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+    .cp-period-bar { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
     @media (max-width: 720px) {
       .cp-intro-actions { flex-direction: column; align-items: stretch; }
       .cp-slots-hint { text-align: center; margin-bottom: 8px; }
@@ -4359,12 +4361,19 @@
     function computePanel(p) {
       var vals = effectiveValues(p);
       var xf = p.__xfilter;
-      var cacheKey = p.id + '::' + vals.slice().sort().join('') + '::' + (xf ? xf.key : '');
+      var cacheKey = p.id + '::' + vals.slice().sort().join('') + '::' + (xf ? xf.key : '') +
+        '::' + (cpPeriodStart ? cpPeriodStart.getTime() : '') + '::' + (cpPeriodEnd ? cpPeriodEnd.getTime() : '');
       if (computeCache[cacheKey]) return computeCache[cacheKey];
       var strat = strategyOf(p);
       var open = (cachedData && cachedData.cards) ? cachedData.cards : [];
       var arch = (cachedData && cachedData.archived) ? cachedData.archived : [];
       var cfg = (cachedData && cachedData.config) ? cachedData.config : DEFAULTS;
+      // Filtro de período (aba inteira, transiente): recorta o universo de cards por
+      // createdAt ANTES do agrupamento por critério — mesma composição do xfilter acima.
+      if (cpPeriodStart && cpPeriodEnd) {
+        open = open.filter(function(c) { return cpInPeriod(c.createdAt); });
+        arch = arch.filter(function(c) { return cpInPeriod(c.createdAt); });
+      }
       var sub = vals.length ? open.filter(function(c) { return strat.matches(c, vals); }) : [];
       var subArch = vals.length ? arch.filter(function(c) { return strat.matches(c, vals); }) : [];
       // Cross-filter transiente (clique num segmento de gráfico): recorta o painel inteiro ao
@@ -4754,6 +4763,56 @@
       return h;
     }
 
+    // Conteúdo dependente dos painéis (lista + comparativo) — isolado do cabeçalho/
+    // seletor de período para poder ser atualizado sozinho (ver refreshPanelsOnly).
+    function buildPanelsHtml() {
+      var h = '';
+      if (!panels.length) {
+        h += '<div class="cp-empty"><h3>Nenhum painel ainda</h3><p>Crie seu primeiro painel personalizado agrupando cards por etiquetas.</p>' +
+          '<button class="btn" id="cp-new-2">+ Criar painel</button></div>';
+        return h;
+      }
+      panels.forEach(function(p) {
+        var r = cachedData ? computePanel(p) : null;
+        var strat = strategyOf(p);
+        var open = !!p.__open;
+        h += '<div class="cp-panel' + (open ? ' cp-open' : '') + '" data-id="' + p.id + '" style="--cp-color:' + p.color + '">';
+        h += '<div class="cp-panel-head" data-act="toggle">';
+        h += '<span class="cp-panel-swatch"></span>';
+        h += '<div class="cp-panel-titlewrap"><div class="cp-panel-name">' + escHtml(p.name) + '</div>';
+        h += '<div class="cp-panel-meta"><span>' + p.values.length + ' ' + (p.values.length === 1 ? strat.unit : (strat.unitPlural || strat.unit + 's')) + '</span>' +
+          '<span>Atualizado ' + fmtDateTime(p.updatedAt) + '</span></div></div>';
+        h += '<div class="cp-panel-count">' + (r ? r.count : '—') + ' <small>card' + (r && r.count === 1 ? '' : 's') + '</small></div>';
+        h += '<div class="cp-panel-headactions">';
+        h += '<button class="cp-icon-btn" data-act="config" title="Configurar painel">⚙</button>';
+        h += '<button class="cp-icon-btn" data-act="dup" title="Duplicar" ' + (panels.length >= UI_LIMIT ? 'disabled' : '') + '>⧉</button>';
+        h += '<button class="cp-icon-btn cp-danger" data-act="del" title="Excluir">🗑</button>';
+        h += '<span class="cp-chevron">▾</span>';
+        h += '</div></div>';
+        if (p.values.length) {
+          var filterSel = p.__filterSel || [];
+          if (filterSel.length) {
+            h += '<div class="cp-filter-bar">';
+            h += '<div class="cp-filter-text"><span class="cp-filter-label">Filtrando por:</span>' +
+              filterSel.map(function(v) { return '<b>' + escHtml(v) + '</b>'; }).join(' • ') +
+              ' <span class="cp-filter-count">(' + filterSel.length + ')</span></div>';
+            h += '<button class="cp-filter-clear" data-act="clearfilter">Limpar filtros</button>';
+            h += '</div>';
+          }
+          h += '<div class="cp-labels-row">';
+          p.values.forEach(function(v) {
+            var sel = filterSel.indexOf(v) !== -1;
+            h += '<span class="cp-label-chip' + (sel ? ' cp-label-sel' : '') + '" data-act="filterchip" data-value="' + escHtml(v) + '"><span class="cp-lc-dot"></span>' + escHtml(v) + '</span>';
+          });
+          h += '</div>';
+        }
+        h += '<div class="cp-panel-body" data-body="' + p.id + '">' + (open ? buildPanelBody(p) : '') + '</div>';
+        h += '</div>';
+      });
+      h += buildCompare();
+      return h;
+    }
+
     // ══════════════ RENDER principal ══════════════
     function draw() {
       computeCache = {}; buckets = {}; bucketSeq = 0; // memo/registro fresco por render
@@ -4770,53 +4829,17 @@
       h += '<button class="btn" id="cp-new" ' + (panels.length >= UI_LIMIT ? 'disabled title="Limite de ' + UI_LIMIT + ' painéis"' : '') + '>+ Novo painel</button>';
       h += '</div></div></div>';
 
+      // Seletor de período (aba inteira) — renderizado no cabeçalho, fora do host de
+      // painéis, para que o campo de texto não seja destruído a cada recorte (mesmo
+      // motivo do Histórico: preserva o foco/cursor durante a digitação).
+      h += '<div class="cp-period-bar"><span class="cp-filter-label" style="margin-right:8px">Período:</span>' + renderCpDatePickerHtml() + '</div>';
+
       if (!cachedData) h += '<div class="alert-banner success" style="border-radius:10px;margin-bottom:18px;cursor:default;">Abra a aba <b>Tempo real</b> uma vez para carregar os cards — as métricas dos painéis usam exatamente esses dados em cache.</div>';
 
-      if (!panels.length) {
-        h += '<div class="cp-empty"><h3>Nenhum painel ainda</h3><p>Crie seu primeiro painel personalizado agrupando cards por etiquetas.</p>' +
-          '<button class="btn" id="cp-new-2">+ Criar painel</button></div>';
-      } else {
-        panels.forEach(function(p) {
-          var r = cachedData ? computePanel(p) : null;
-          var strat = strategyOf(p);
-          var open = !!p.__open;
-          h += '<div class="cp-panel' + (open ? ' cp-open' : '') + '" data-id="' + p.id + '" style="--cp-color:' + p.color + '">';
-          h += '<div class="cp-panel-head" data-act="toggle">';
-          h += '<span class="cp-panel-swatch"></span>';
-          h += '<div class="cp-panel-titlewrap"><div class="cp-panel-name">' + escHtml(p.name) + '</div>';
-          h += '<div class="cp-panel-meta"><span>' + p.values.length + ' ' + (p.values.length === 1 ? strat.unit : (strat.unitPlural || strat.unit + 's')) + '</span>' +
-            '<span>Atualizado ' + fmtDateTime(p.updatedAt) + '</span></div></div>';
-          h += '<div class="cp-panel-count">' + (r ? r.count : '—') + ' <small>card' + (r && r.count === 1 ? '' : 's') + '</small></div>';
-          h += '<div class="cp-panel-headactions">';
-          h += '<button class="cp-icon-btn" data-act="config" title="Configurar painel">⚙</button>';
-          h += '<button class="cp-icon-btn" data-act="dup" title="Duplicar" ' + (panels.length >= UI_LIMIT ? 'disabled' : '') + '>⧉</button>';
-          h += '<button class="cp-icon-btn cp-danger" data-act="del" title="Excluir">🗑</button>';
-          h += '<span class="cp-chevron">▾</span>';
-          h += '</div></div>';
-          if (p.values.length) {
-            var filterSel = p.__filterSel || [];
-            if (filterSel.length) {
-              h += '<div class="cp-filter-bar">';
-              h += '<div class="cp-filter-text"><span class="cp-filter-label">Filtrando por:</span>' +
-                filterSel.map(function(v) { return '<b>' + escHtml(v) + '</b>'; }).join(' • ') +
-                ' <span class="cp-filter-count">(' + filterSel.length + ')</span></div>';
-              h += '<button class="cp-filter-clear" data-act="clearfilter">Limpar filtros</button>';
-              h += '</div>';
-            }
-            h += '<div class="cp-labels-row">';
-            p.values.forEach(function(v) {
-              var sel = filterSel.indexOf(v) !== -1;
-              h += '<span class="cp-label-chip' + (sel ? ' cp-label-sel' : '') + '" data-act="filterchip" data-value="' + escHtml(v) + '"><span class="cp-lc-dot"></span>' + escHtml(v) + '</span>';
-            });
-            h += '</div>';
-          }
-          h += '<div class="cp-panel-body" data-body="' + p.id + '">' + (open ? buildPanelBody(p) : '') + '</div>';
-          h += '</div>';
-        });
-        h += buildCompare();
-      }
+      h += '<div id="cp-panels-host">' + buildPanelsHtml() + '</div>';
 
       host.innerHTML = h;
+      wireCpDatePicker();
     }
 
     // ══════════════ interação (delegação única) ══════════════
@@ -4920,6 +4943,213 @@
       var p = byId(id); if (!p) return;
       delete p.__xfilter;
       draw();
+    }
+
+    // ══════════════ filtro de período (aba inteira, transiente) ══════════════
+    // Mesmo padrão visual/comportamental do seletor "Início–Fim" (dd/mm/aaaa +
+    // calendário popover) já usado na aba Histórico — instância própria e
+    // independente (estado, ids e handlers só desta aba), sem tocar no código do
+    // Histórico. Filtra os cards por createdAt ANTES do pipeline: calcKPIs e
+    // calcPrimeiraEntrega seguem intocados, só o conjunto de entrada muda.
+    var CP_MONTH_NAMES = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    var cpPeriodStart = null;
+    var cpPeriodEnd = null;
+    var cpCalView = { start: new Date(), end: new Date() };
+    var cpOpenField = null;
+
+    function cpInPeriod(raw) {
+      if (!cpPeriodStart || !cpPeriodEnd) return true;
+      if (!raw) return false;
+      var t = new Date(raw).getTime();
+      return t >= cpPeriodStart.getTime() && t <= (cpPeriodEnd.getTime() + 86399999);
+    }
+    function currentCpFieldDate(field) { return field === 'start' ? cpPeriodStart : cpPeriodEnd; }
+    function showCpDateError(msg) {
+      var el = document.getElementById('cp-date-error');
+      if (!el) return;
+      el.textContent = msg || '';
+      el.style.display = msg ? '' : 'none';
+    }
+    // Recorta só o host de painéis (KPIs/gráficos) — não o cabeçalho onde vivem os
+    // campos de data, para não derrubar o foco/cursor no meio da digitação.
+    function refreshPanelsOnly() {
+      computeCache = {}; buckets = {}; bucketSeq = 0;
+      var panelsHost = document.getElementById('cp-panels-host');
+      if (!panelsHost) { draw(); return; }
+      panelsHost.innerHTML = buildPanelsHtml();
+    }
+    function commitCpPeriod() {
+      if (cpPeriodStart && cpPeriodEnd && cpPeriodStart > cpPeriodEnd) {
+        showCpDateError('A data de início deve ser anterior à data de fim.');
+        return;
+      }
+      showCpDateError('');
+      refreshPanelsOnly();
+    }
+    var debouncedCommitCpPeriod = debounce(commitCpPeriod, 350);
+
+    // Máscara dd/mm/aaaa que preserva a posição do cursor (mesmo mecanismo do
+    // Histórico, reimplementado aqui só para não acoplar estado entre as abas).
+    function cpAttachDateMask(input, field) {
+      input.addEventListener('input', function() {
+        var cursorPos = input.selectionStart;
+        var prevLen = input.value.length;
+        var digits = input.value.replace(/\D/g, '').slice(0, 8);
+        var out = digits;
+        if (digits.length > 4) out = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
+        else if (digits.length > 2) out = digits.slice(0, 2) + '/' + digits.slice(2);
+        input.value = out;
+        var newPos = Math.max(0, Math.min(out.length, cursorPos + (out.length - prevLen)));
+        input.setSelectionRange(newPos, newPos);
+
+        if (digits.length < 8) { showCpDateError(''); return; }
+        var d = parseBRDate(out);
+        if (!d) { showCpDateError('Data ' + (field === 'start' ? 'de início' : 'de fim') + ' inválida.'); return; }
+        if (field === 'start') cpPeriodStart = d; else cpPeriodEnd = d;
+        cpCalView[field] = new Date(d.getFullYear(), d.getMonth(), 1);
+        if (cpOpenField === field) renderCpFieldPopover(field);
+        showCpDateError('');
+        debouncedCommitCpPeriod();
+      });
+    }
+
+    function cpDaysInMonth(year, month0) { return new Date(year, month0 + 1, 0).getDate(); }
+    function cpIsSameDay(a, b) { return !!a && !!b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+    function cpIsDateInRange(d, start, end) { return !!start && !!end && d > start && d < end; }
+
+    // Grade do calendário de UM campo — mesma marcação visual do Histórico
+    // (selected / selected-other / in-range / today), sem o indicador de
+    // snapshot mensal (não existe esse conceito nos Painéis Personalizados).
+    function renderCpCalendarGrid(field, viewDate) {
+      var year = viewDate.getFullYear(), month0 = viewDate.getMonth();
+      var firstDow = new Date(year, month0, 1).getDay();
+      var total = cpDaysInMonth(year, month0);
+      var mine = currentCpFieldDate(field);
+      var other = currentCpFieldDate(field === 'start' ? 'end' : 'start');
+      var hasRange = !!(cpPeriodStart && cpPeriodEnd && cpPeriodStart <= cpPeriodEnd);
+
+      var h = '<div class="histdate-cal-header">';
+      h += '<button type="button" class="histdate-cal-nav cp-cal-prev-y" title="Ano anterior">«</button>';
+      h += '<button type="button" class="histdate-cal-nav cp-cal-prev-m" title="Mês anterior">‹</button>';
+      h += '<span class="histdate-cal-title">' + CP_MONTH_NAMES[month0 + 1] + ' de ' + year + '</span>';
+      h += '<button type="button" class="histdate-cal-nav cp-cal-next-m" title="Próximo mês">›</button>';
+      h += '<button type="button" class="histdate-cal-nav cp-cal-next-y" title="Próximo ano">»</button>';
+      h += '</div>';
+      h += '<div class="histdate-cal-weekdays">';
+      ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].forEach(function(w) { h += '<span>' + w + '</span>'; });
+      h += '</div><div class="histdate-cal-days">';
+      for (var blank = 0; blank < firstDow; blank++) h += '<span class="histdate-cal-day empty"></span>';
+      for (var day = 1; day <= total; day++) {
+        var d = new Date(year, month0, day);
+        var cls = 'histdate-cal-day has-data';
+        if (cpIsSameDay(d, mine)) cls += ' selected';
+        else if (cpIsSameDay(d, other)) cls += ' selected-other';
+        else if (hasRange && cpIsDateInRange(d, cpPeriodStart, cpPeriodEnd)) cls += ' in-range';
+        if (cpIsSameDay(d, new Date())) cls += ' today';
+        h += '<span class="' + cls + '" data-date="' + d.getTime() + '">' + day + '</span>';
+      }
+      h += '</div>';
+      return h;
+    }
+
+    function cpDateOutsideClick(e) {
+      if (!cpOpenField) return;
+      var wrap = document.getElementById('cp-datefield-' + cpOpenField);
+      if (wrap && !wrap.contains(e.target)) closeAllCpPopovers();
+    }
+    function closeAllCpPopovers() {
+      ['start', 'end'].forEach(function(f) {
+        var pop = document.getElementById('cp-date-popover-' + f);
+        if (pop) pop.style.display = 'none';
+      });
+      cpOpenField = null;
+      document.removeEventListener('click', cpDateOutsideClick);
+    }
+    // Seleciona `date` p/ o campo `field`: grava, escreve no input, fecha o
+    // popover DESSE campo e recomputa os painéis. O outro campo não muda.
+    function pickCpFieldDate(field, date) {
+      if (field === 'start') cpPeriodStart = date; else cpPeriodEnd = date;
+      var input = document.getElementById('cp-date-' + field);
+      if (input) input.value = formatBRDate(date);
+      showCpDateError('');
+      closeAllCpPopovers();
+      commitCpPeriod();
+    }
+    function renderCpFieldPopover(field) {
+      var pop = document.getElementById('cp-date-popover-' + field);
+      if (!pop) return;
+      var view = cpCalView[field];
+      pop.innerHTML = renderCpCalendarGrid(field, view);
+
+      function nav(delta, unit) {
+        cpCalView[field] = unit === 'y'
+          ? new Date(view.getFullYear() + delta, view.getMonth(), 1)
+          : new Date(view.getFullYear(), view.getMonth() + delta, 1);
+        renderCpFieldPopover(field);
+      }
+      pop.querySelector('.cp-cal-prev-y').addEventListener('click', function(e) { e.stopPropagation(); nav(-1, 'y'); });
+      pop.querySelector('.cp-cal-prev-m').addEventListener('click', function(e) { e.stopPropagation(); nav(-1, 'm'); });
+      pop.querySelector('.cp-cal-next-m').addEventListener('click', function(e) { e.stopPropagation(); nav(1, 'm'); });
+      pop.querySelector('.cp-cal-next-y').addEventListener('click', function(e) { e.stopPropagation(); nav(1, 'y'); });
+      pop.querySelectorAll('.histdate-cal-day:not(.empty)').forEach(function(el) {
+        el.addEventListener('click', function(e) {
+          e.stopPropagation();
+          pickCpFieldDate(field, new Date(parseInt(this.getAttribute('data-date'), 10)));
+        });
+      });
+    }
+    // Abre o calendário ancorado no campo clicado — Início e Fim são
+    // independentes; abrir um fecha o outro.
+    function openCpPopover(field) {
+      if (cpOpenField === field) return;
+      closeAllCpPopovers();
+      cpOpenField = field;
+      var cur = currentCpFieldDate(field);
+      cpCalView[field] = cur ? new Date(cur.getFullYear(), cur.getMonth(), 1) : new Date();
+      var pop = document.getElementById('cp-date-popover-' + field);
+      if (!pop) return;
+      pop.style.display = '';
+      renderCpFieldPopover(field);
+      setTimeout(function() { document.addEventListener('click', cpDateOutsideClick); }, 0);
+    }
+    function renderCpDatePickerHtml() {
+      var startVal = formatBRDate(cpPeriodStart);
+      var endVal = formatBRDate(cpPeriodEnd);
+      var calIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>';
+      function field(id, label, val) {
+        var h = '<div class="histdate-field" id="cp-datefield-' + id + '">';
+        h += '<label>' + label + '</label>';
+        h += '<div class="histdate-input-wrap"><input type="text" id="cp-date-' + id + '" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" autocomplete="off" value="' + val + '"><span class="histdate-input-icon">' + calIcon + '</span></div>';
+        h += '<div class="histdate-popover" id="cp-date-popover-' + id + '" style="display:none;"></div>';
+        h += '</div>';
+        return h;
+      }
+      var h = '<div class="histdate-picker" id="cp-date-picker">';
+      h += field('start', 'Início', startVal);
+      h += '<span class="histdate-sep">–</span>';
+      h += field('end', 'Fim', endVal);
+      if (cpPeriodStart || cpPeriodEnd) h += '<button type="button" class="cp-filter-clear" id="cp-date-clear">Limpar período</button>';
+      h += '</div>';
+      h += '<p class="hist-note histdate-error" id="cp-date-error" style="display:none;"></p>';
+      return h;
+    }
+    function wireCpDatePicker() {
+      ['start', 'end'].forEach(function(field) {
+        var input = document.getElementById('cp-date-' + field);
+        if (!input) return;
+        cpAttachDateMask(input, field);
+        input.addEventListener('focus', function() { openCpPopover(field); });
+        input.addEventListener('click', function(e) { e.stopPropagation(); openCpPopover(field); });
+      });
+      var clearBtn = document.getElementById('cp-date-clear');
+      if (clearBtn) clearBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        cpPeriodStart = null; cpPeriodEnd = null;
+        showCpDateError('');
+        closeAllCpPopovers();
+        draw();
+      });
     }
 
     function togglePanel(id) {
