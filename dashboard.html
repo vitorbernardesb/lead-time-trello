@@ -111,7 +111,11 @@
     .btn:disabled { background: #ECECEF; color: var(--faint); cursor: not-allowed; }
     .btn-secondary { background: var(--card); color: var(--ink); border: 1px solid var(--border-2); }
     .btn-secondary:hover { background: #FAFAFB; border-color: #B9B9C2; }
-    /* ── Health Score: painel hero clicável (anel + "o que está pesando") ── */
+    /* ── Health Score: painel hero (anel + "o que está pesando") ──
+       .score-circle-wrap é só a CAIXA (compartilhada com o skeleton de loading, que
+       reaproveita a classe apenas para ocupar o mesmo espaço/formato). O cursor e os
+       efeitos de clique ficam em #score-hero — presente SÓ no hero já carregado (com
+       dados reais e handler de clique) — para o skeleton não parecer clicável. */
     .score-circle-wrap {
       background: var(--card);
       border: 1px solid var(--border);
@@ -119,11 +123,13 @@
       box-shadow: var(--shadow-1);
       margin-bottom: 24px;
       display: flex; align-items: stretch; justify-content: center;
+    }
+    #score-hero {
       cursor: pointer;
       transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
     }
-    .score-circle-wrap:hover { box-shadow: var(--shadow-2); border-color: var(--brand); transform: translateY(-2px); }
-    .score-circle-wrap:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+    #score-hero:hover { box-shadow: var(--shadow-2); border-color: var(--brand); transform: translateY(-2px); }
+    #score-hero:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
     .score-hero-ring { flex: 0 0 auto; text-align: center; padding: 26px 30px 22px; }
     .score-ring-svg { display: block; margin: 0 auto 8px; }
     /* preenchimento do anel com easing suave; cor transiciona junto (só visual) */
@@ -150,8 +156,8 @@
       display: inline-flex; align-items: center; gap: 5px; width: fit-content;
     }
     .score-hero-cta svg { transition: transform 0.15s ease; flex: none; }
-    .score-circle-wrap:hover .score-hero-cta svg,
-    .score-circle-wrap:focus-visible .score-hero-cta svg { transform: translateX(3px); }
+    #score-hero:hover .score-hero-cta svg,
+    #score-hero:focus-visible .score-hero-cta svg { transform: translateX(3px); }
     @media (max-width: 640px) {
       .score-circle-wrap { flex-direction: column; }
       .score-hero-ring { padding: 22px 20px 10px; }
