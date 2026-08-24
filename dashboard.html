@@ -111,16 +111,20 @@
     .btn:disabled { background: #ECECEF; color: var(--faint); cursor: not-allowed; }
     .btn-secondary { background: var(--card); color: var(--ink); border: 1px solid var(--border-2); }
     .btn-secondary:hover { background: #FAFAFB; border-color: #B9B9C2; }
-    /* ── Health Score: painel hero centralizado ── */
+    /* ── Health Score: painel hero clicável (anel + "o que está pesando") ── */
     .score-circle-wrap {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
       box-shadow: var(--shadow-1);
-      padding: 28px 20px 24px;
       margin-bottom: 24px;
-      text-align: center;
+      display: flex; align-items: stretch; justify-content: center;
+      cursor: pointer;
+      transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
     }
+    .score-circle-wrap:hover { box-shadow: var(--shadow-2); border-color: var(--brand); transform: translateY(-2px); }
+    .score-circle-wrap:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+    .score-hero-ring { flex: 0 0 auto; text-align: center; padding: 26px 30px 22px; }
     .score-ring-svg { display: block; margin: 0 auto 8px; }
     /* preenchimento do anel com easing suave; cor transiciona junto (só visual) */
     .score-ring-progress { transition: stroke-dashoffset 0.9s cubic-bezier(0.22,1,0.36,1), stroke 0.6s ease; }
@@ -131,6 +135,30 @@
       color: var(--ink-2);
     }
     .score-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    /* divisor entre o anel e o insight — o card inteiro é UM único alvo clicável */
+    .score-hero-divider { width: 1px; background: var(--border); margin: 22px 0; flex: 0 0 auto; }
+    .score-hero-insight {
+      flex: 1 1 auto; min-width: 0; padding: 22px 26px;
+      display: flex; flex-direction: column; justify-content: center; gap: 5px;
+    }
+    .score-hero-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+    .score-hero-kpi { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: var(--ink); line-height: 1.3; }
+    .score-hero-kpi .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+    .score-hero-detail { font-size: 12.5px; color: var(--ink-2); line-height: 1.45; }
+    .score-hero-cta {
+      margin-top: 6px; font-size: 12px; font-weight: 700; color: var(--ink);
+      display: inline-flex; align-items: center; gap: 5px; width: fit-content;
+    }
+    .score-hero-cta svg { transition: transform 0.15s ease; flex: none; }
+    .score-circle-wrap:hover .score-hero-cta svg,
+    .score-circle-wrap:focus-visible .score-hero-cta svg { transform: translateX(3px); }
+    @media (max-width: 640px) {
+      .score-circle-wrap { flex-direction: column; }
+      .score-hero-ring { padding: 22px 20px 10px; }
+      .score-hero-divider { width: auto; height: 1px; margin: 0 22px; }
+      .score-hero-insight { padding: 16px 22px 22px; align-items: center; text-align: center; }
+      .score-hero-cta { margin-left: auto; margin-right: auto; }
+    }
     /* grid determinístico: 6 KPIs em 1 linha; 3+3 em telas médias; 2×3 em estreitas
        (auto-fit deixava a 6ª métrica órfã numa segunda linha) */
     .kpi-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 24px; }
@@ -588,7 +616,8 @@
       .kpi-grid { gap: 10px; }
       .kpi-card { min-height: 104px; padding: 14px; }
       .kpi-card .kpi-value { font-size: 22px; }
-      .score-circle-wrap { padding: 20px 14px 16px; }
+      .score-hero-ring { padding: 18px 16px 8px; }
+      .score-hero-insight { padding: 14px 16px 18px; }
     }
 
     /* ══════════════════════════════════════════════════════════════
@@ -750,6 +779,40 @@
     .cp-modal-close:hover { color: var(--brand); }
     .cp-modal-body { padding: 20px; overflow-y: auto; }
     .cp-modal-foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 10px; align-items: center; flex-shrink: 0; flex-wrap: wrap; }
+    /* ── Health Score: modal "o que está pesando" (dentro de CP.openModal) ── */
+    .hb-lead { font-size: 13px; color: var(--ink-2); line-height: 1.5; margin-bottom: 14px; }
+    .hb-scroll { overflow-x: auto; margin-bottom: 14px; }
+    .hb-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 460px; }
+    .hb-table th {
+      text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--border-2); white-space: nowrap;
+    }
+    .hb-table td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .hb-table tbody tr:last-child td { border-bottom: none; }
+    .hb-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .hb-muted { color: var(--muted); }
+    .hb-name { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+    .hb-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    .hb-val { color: var(--ink-2); white-space: nowrap; }
+    .hb-pill {
+      display: inline-block; min-width: 30px; text-align: center; font-weight: 700; font-size: 12px;
+      padding: 2px 8px; border-radius: 999px;
+    }
+    .hb-loss { color: var(--danger-text); font-weight: 700; }
+    .hb-row.hb-clickable { cursor: pointer; }
+    .hb-row.hb-clickable:hover td, .hb-row.hb-clickable:focus-visible td { background: rgba(255,207,6,0.06); }
+    .hb-row.hb-clickable:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+    .hb-count {
+      font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em;
+      margin-left: auto; opacity: 0; transition: opacity 0.15s;
+    }
+    .hb-row.hb-clickable:hover .hb-count, .hb-row.hb-clickable:focus-visible .hb-count { opacity: 1; color: var(--ink); }
+    .hb-callout {
+      background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-text);
+      border-radius: var(--radius); padding: 12px 14px; font-size: 13px; line-height: 1.5;
+    }
+    .hb-callout strong { color: inherit; }
+    .hb-callout-ok { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-text); }
     .cp-field { margin-bottom: 16px; }
     .cp-field > label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 7px; }
     .cp-input {
@@ -1519,18 +1582,115 @@
     // usar ESTE valor em vez de recalcular kpiHealth(valor,meta,tipo) — é como o score
     // já saiu de calcKPIs, com a exceção de noDueData aplicada (ver comentário lá).
     // `toggle` (só em "Retrabalhos"): sinaliza para o render exibir o controle Nº/%.
+    // `pesoKey` = campo de config com o peso deste KPI no Health Score — usado só pelo
+    // detalhamento "o que está pesando" (healthBreakdown), sem duplicar a lista de KPIs.
     return [
-      { name: 'Cards vencidos', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'Limite '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'B', bucket: 'cardsVencidos', bucketTitle: 'Cards vencidos', scoreOverride: kpis.score_prazo },
+      { name: 'Cards vencidos', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'Limite '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'B', bucket: 'cardsVencidos', bucketTitle: 'Cards vencidos', scoreOverride: kpis.score_prazo, pesoKey: 'peso1' },
       { name: 'Retrabalhos',
         display: kpi2DisplayMode === 'taxa'
           ? fmtPct(kpis.totalCards ? (kpis.cardsComRetrabalho.length / kpis.totalCards * 100) : 0)
           : kpis.kpi2,
-        metaLabel: 'Limite '+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B', bucket: 'cardsComRetrabalho', bucketTitle: 'Cards com retrabalho', toggle: true },
-      { name: 'Tempo médio de entrega', display: kpis.kpi6+' d.u.', metaLabel: 'Meta '+config.meta_leadtime_real+' d.u.', valor: kpis.kpi6, meta: config.meta_leadtime_real, tipo: 'B', bucket: 'cardsLeadTime', bucketTitle: 'Concluídos nos últimos 30 dias' },
-      { name: 'Tempo médio na etapa', display: kpis.kpi3+' d.u.', metaLabel: 'Limite '+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B', bucket: 'cardsAging', bucketTitle: 'Cards em produção ativa' },
-      { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'Meta '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A', bucket: 'cardsVazao', bucketTitle: 'Concluídos no mês' },
-      { name: 'Conformidade', display: kpis.kpi5+'%', metaLabel: 'Meta '+config.meta_conformidade+'%', valor: kpis.kpi5, meta: config.meta_conformidade, tipo: 'A', bucket: 'cardsNaoConformes', bucketTitle: 'Cards não conformes' }
+        metaLabel: 'Limite '+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B', bucket: 'cardsComRetrabalho', bucketTitle: 'Cards com retrabalho', toggle: true, pesoKey: 'peso2' },
+      { name: 'Tempo médio de entrega', display: kpis.kpi6+' d.u.', metaLabel: 'Meta '+config.meta_leadtime_real+' d.u.', valor: kpis.kpi6, meta: config.meta_leadtime_real, tipo: 'B', bucket: 'cardsLeadTime', bucketTitle: 'Concluídos nos últimos 30 dias', pesoKey: 'peso6' },
+      { name: 'Tempo médio na etapa', display: kpis.kpi3+' d.u.', metaLabel: 'Limite '+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B', bucket: 'cardsAging', bucketTitle: 'Cards em produção ativa', pesoKey: 'peso3' },
+      { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'Meta '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A', bucket: 'cardsVazao', bucketTitle: 'Concluídos no mês', pesoKey: 'peso4' },
+      { name: 'Conformidade', display: kpis.kpi5+'%', metaLabel: 'Meta '+config.meta_conformidade+'%', valor: kpis.kpi5, meta: config.meta_conformidade, tipo: 'A', bucket: 'cardsNaoConformes', bucketTitle: 'Cards não conformes', pesoKey: 'peso5' }
     ];
+  }
+
+  // Score de um card de buildKpiCards: usa o scoreOverride quando presente (kpi1),
+  // senão recalcula por kpiHealth. Fonte ÚNICA — evita a mesma expressão duplicada
+  // em 3 lugares (imagem exportada, render ao vivo, detalhamento do Health Score).
+  function kpiCardScore(k) {
+    return (k.scoreOverride !== undefined) ? k.scoreOverride : kpiHealth(k.valor, k.meta, k.tipo);
+  }
+
+  // ─── HEALTH SCORE: "O QUE ESTÁ PESANDO" ─────────
+  // Deriva, para cada KPI, quantos PONTOS do Health Score ele está custando agora:
+  //   perdidos = (100 - score) * peso / somaPesos
+  // Isto é exatamente a mesma conta de calcKPIs' healthScore, só decomposta por termo —
+  // a soma de todos os `perdidos` bate com (100 - healthScore). Não recalcula nenhum
+  // score novo: reaproveita buildKpiCards (mesma fonte que os 6 cards visíveis).
+  function healthBreakdown(kpis, config) {
+    var somaPesos = config.peso1 + config.peso2 + config.peso3 + config.peso4 + config.peso5 + config.peso6;
+    var itens = buildKpiCards(kpis, config).map(function(k) {
+      var score = kpiCardScore(k);
+      var peso = config[k.pesoKey] || 0;
+      return {
+        name: k.name, display: k.display, metaLabel: k.metaLabel, score: score,
+        fatia: somaPesos > 0 ? round1(peso / somaPesos * 100) : 0,
+        perdidos: somaPesos > 0 ? round1((100 - score) * peso / somaPesos) : 0,
+        bucket: k.bucket, bucketTitle: k.bucketTitle,
+        subCount: (kpis[k.bucket] || []).length
+      };
+    });
+    itens.sort(function(a, b) { return b.perdidos - a.perdidos; });
+    return itens;
+  }
+
+  function healthBreakdownBody(kpis, config) {
+    var itens = healthBreakdown(kpis, config);
+    var totalPerdido = round1(itens.reduce(function(s, it) { return s + it.perdidos; }, 0));
+    var h = '<p class="hb-lead">Cada indicador entra no Health Score proporcionalmente ao peso ' +
+      'configurado em "Configurar metas". Ordenado do que mais está <strong>custando pontos</strong> ' +
+      'agora para o que menos custa — clique numa linha para ver os cards por trás dela.</p>';
+    h += '<div class="hb-scroll"><table class="hb-table"><thead><tr>' +
+      '<th>Indicador</th><th>Valor · meta</th><th>Score</th><th>Peso</th><th>Pontos perdidos</th>' +
+      '</tr></thead><tbody>';
+    itens.forEach(function(it) {
+      var cor = statusColor(it.score);
+      var clickable = it.subCount > 0;
+      h += '<tr class="hb-row'+(clickable?' hb-clickable':'')+'"'+(clickable?' data-hb-bucket="'+escHtml(it.bucket)+'" tabindex="0" role="button" title="Ver os '+it.subCount+' card'+(it.subCount>1?'s':'')+'"':'')+'>';
+      h += '<td class="hb-name"><span class="hb-dot" style="background:'+cor+'"></span>'+escHtml(it.name)+
+        (clickable ? '<span class="hb-count">'+it.subCount+' card'+(it.subCount>1?'s':'')+' →</span>' : '')+'</td>';
+      h += '<td class="hb-val">'+escHtml(String(it.display))+' <span class="hb-muted">/ '+escHtml(it.metaLabel)+'</span></td>';
+      h += '<td class="hb-num"><span class="hb-pill" style="background:'+statusColorSoft(it.score)+';color:'+cor+'">'+Math.round(it.score)+'</span></td>';
+      h += '<td class="hb-num hb-muted">'+String(it.fatia).replace('.',',')+'%</td>';
+      h += '<td class="hb-num'+(it.perdidos>0.05?' hb-loss':' hb-muted')+'">'+(it.perdidos>0.05?'−'+String(it.perdidos).replace('.',','):'—')+'</td>';
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+    var pior = itens[0];
+    if (pior && pior.perdidos > 0.5) {
+      h += '<div class="hb-callout"><strong>Foco recomendado:</strong> "'+escHtml(pior.name)+'" é quem mais ' +
+        'está custando pontos agora ('+String(pior.perdidos).replace('.',',')+' de '+String(totalPerdido).replace('.',',')+' perdidos no total).</div>';
+    } else {
+      h += '<div class="hb-callout hb-callout-ok">Nenhum indicador está custando pontos relevantes — o Health Score está no seu potencial máximo com os dados atuais.</div>';
+    }
+    return { html: h, itens: itens };
+  }
+
+  // Abre o detalhamento reaproveitando o MESMO modal (CP.openModal) e o MESMO
+  // componente de lista de cards (CP.openCards) já usados pela aba Análises
+  // Personalizadas e pelo drill-down do Histórico (ver openHistChart) — modal
+  // empilhado sobre modal é o padrão já estabelecido nesses dois lugares.
+  function openHealthBreakdown(kpis, config) {
+    if (typeof CP === 'undefined' || !CP || typeof CP.openModal !== 'function') return;
+    var built = healthBreakdownBody(kpis, config);
+    var over = CP.openModal({
+      title: 'O que está pesando no Health Score',
+      sub: 'Health Score atual: ' + kpis.healthScore + ' · ' + scoreStatus(kpis.healthScore),
+      color: statusColor(kpis.healthScore),
+      body: built.html
+    });
+    function openRow(row) {
+      if (typeof CP.openCards !== 'function') return;
+      var bucketKey = row.getAttribute('data-hb-bucket');
+      var it = built.itens.filter(function(x) { return x.bucket === bucketKey; })[0];
+      var sub = kpis[bucketKey] || [];
+      if (it && sub.length) CP.openCards(it.bucketTitle, sub, statusColor(it.score));
+    }
+    over.addEventListener('click', function(e) {
+      var row = e.target.closest('[data-hb-bucket]');
+      if (row) openRow(row);
+    });
+    over.addEventListener('keydown', function(e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var row = e.target.closest('[data-hb-bucket]');
+      if (!row) return;
+      e.preventDefault();
+      openRow(row);
+    });
   }
 
   // ─── EXPORTAÇÃO: SNAPSHOT VISUAL DO DASHBOARD ────
@@ -1588,7 +1748,7 @@
     h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px;">';
     buildKpiCards(kpis, config).forEach(function(k) {
       var pct = kpiBarPct(k.valor, k.meta);
-      var score = (k.scoreOverride !== undefined) ? k.scoreOverride : kpiHealth(k.valor, k.meta, k.tipo);
+      var score = kpiCardScore(k);
       var cor = statusColor(score);
       h += '<div style="background:#FFFFFF;border:1px solid #E8E8EC;border-radius:12px;padding:16px 18px;">' +
         '<div style="font-size:11px;font-weight:600;letter-spacing:0.06em;color:#75757F;text-transform:uppercase;margin-bottom:8px;min-height:28px;">'+k.name+'</div>' +
@@ -2588,7 +2748,14 @@
     var ringTrilha = statusColorSoft(kpis.healthScore); // trilha = passo claro da mesma rampa
     var html = '';
 
-    html += '<div class="score-circle-wrap">';
+    // "O que está pesando": mesma conta usada no modal de detalhamento, aqui só para
+    // decidir a frase de destaque no hero (ver healthBreakdown mais abaixo no arquivo).
+    var heroBreakdown = healthBreakdown(kpis, config);
+    var heroPior = heroBreakdown[0];
+    var heroTemPerda = !!(heroPior && heroPior.perdidos > 0.5);
+
+    html += '<div class="score-circle-wrap" id="score-hero" role="button" tabindex="0" aria-label="Ver o que está pesando no Health Score">';
+    html += '<div class="score-hero-ring">';
     html += '<svg class="score-ring-svg" width="120" height="120" viewBox="0 0 120 120">';
     html += '<circle cx="60" cy="60" r="52" stroke="'+ringTrilha+'" stroke-width="6" fill="none"/>';
     html += '<circle id="score-ring-progress" class="score-ring-progress" cx="60" cy="60" r="52" stroke="'+ringCor+'" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="'+circumference+'" stroke-dashoffset="'+circumference+'" transform="rotate(-90 60 60)"/>';
@@ -2599,6 +2766,21 @@
     html += '</svg>';
     html += '<div class="score-status"><span class="score-status-dot" style="background:'+ringCor+'"></span>'+scoreStatus(kpis.healthScore)+'</div>';
     html += '</div>';
+    html += '<div class="score-hero-divider"></div>';
+    html += '<div class="score-hero-insight">';
+    if (heroTemPerda) {
+      html += '<div class="score-hero-label">Maior oportunidade</div>';
+      html += '<div class="score-hero-kpi"><span class="dot" style="background:'+statusColor(heroPior.score)+'"></span>'+escHtml(heroPior.name)+'</div>';
+      html += '<div class="score-hero-detail">Custando '+String(heroPior.perdidos).replace('.',',')+' ponto'+(heroPior.perdidos>=1.05?'s':'')+' do Health Score · '+escHtml(String(heroPior.display))+' ('+escHtml(heroPior.metaLabel)+')</div>';
+    } else {
+      html += '<div class="score-hero-label">Situação</div>';
+      html += '<div class="score-hero-kpi"><span class="dot" style="background:'+statusColor(100)+'"></span>Nenhum indicador pesando o score</div>';
+      html += '<div class="score-hero-detail">Os 6 indicadores estão dentro ou acima das metas configuradas.</div>';
+    }
+    html += '<div class="score-hero-cta">Ver o que está pesando' +
+      '<svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true"><path d="M2 5.5H9M9 5.5L5.5 2M9 5.5L5.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>';
+    html += '</div>';
+    html += '</div>';
 
     // Definição única dos KPIs (compartilhada com a imagem exportada).
     var kpiCards = buildKpiCards(kpis, config);
@@ -2608,9 +2790,7 @@
       // largura = proporção real valor/meta; cor = criticidade (score de saúde).
       // Ambos calculados UMA vez e reutilizados na animação (sem recomputar por barra).
       k.pct = kpiBarPct(k.valor, k.meta);
-      // "Cards vencidos" usa o score JÁ calculado por calcKPIs (com a exceção de
-      // noDueData aplicada); os demais recalculam normalmente por kpiHealth.
-      k.score = (k.scoreOverride !== undefined) ? k.scoreOverride : kpiHealth(k.valor, k.meta, k.tipo);
+      k.score = kpiCardScore(k);
       var cor = statusColor(k.score);
       // clicável quando há cards subjacentes → abre o mesmo modal da aba Análises
       var subCount = (kpis[k.bucket] || []).length;
@@ -2732,6 +2912,17 @@
         });
       });
     });
+
+    // Health Score hero → abre "O que está pesando" (mesmo padrão de click-through
+    // teclado/mouse dos kpi-clickable acima; guardado por CP como o resto do app).
+    var heroEl = document.getElementById('score-hero');
+    if (heroEl && typeof CP !== 'undefined' && CP && typeof CP.openModal === 'function') {
+      function openHero() { openHealthBreakdown(kpis, config); }
+      heroEl.addEventListener('click', openHero);
+      heroEl.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openHero(); }
+      });
+    }
 
     // cliques em .card-link são tratados pela delegação global (registrada 1x)
     document.getElementById('btn-refresh').addEventListener('click', function() { loadRealtime(true); });
