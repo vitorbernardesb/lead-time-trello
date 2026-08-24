@@ -154,6 +154,10 @@
     .kpi-card .kpi-name { font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em; line-height: 1.3; min-height: 28px; }
     /* valor: protagonista do card; dígitos proporcionais (tabular só em colunas de tabela) */
     .kpi-card .kpi-value { font-size: 26px; font-weight: 700; color: var(--ink); line-height: 1.05; letter-spacing: -0.02em; }
+    /* toggle Nº/% do card "Retrabalhos" — reaproveita .pe-metric/.pe-metric-opt
+       (mesmo padrão visual do seletor Média/Mediana), só compactado p/ caber no card */
+    .kpi-mode-toggle { margin: 7px 0 1px; }
+    .kpi-mode-toggle .pe-metric-opt { padding: 3px 10px; font-size: 10px; }
     .kpi-card .kpi-meta { font-size: 11px; color: var(--muted); margin-top: 5px; }
     /* margin-top:auto empurra a barra para a base → todas alinhadas, qualquer que seja o texto */
     .kpi-bar-bg { height: 6px; background: rgba(10,10,15,0.06); border-radius: 999px; margin-top: auto; overflow: hidden; }
@@ -1511,9 +1515,17 @@
   function buildKpiCards(kpis, config) {
     // `bucket` = campo de kpis com o subconjunto de cards; `bucketTitle` = título do modal.
     // (só usados pelo click-through no dashboard vivo; ignorados na imagem exportada.)
+    // `scoreOverride` (só em "Cards vencidos"): quando presente, os consumidores devem
+    // usar ESTE valor em vez de recalcular kpiHealth(valor,meta,tipo) — é como o score
+    // já saiu de calcKPIs, com a exceção de noDueData aplicada (ver comentário lá).
+    // `toggle` (só em "Retrabalhos"): sinaliza para o render exibir o controle Nº/%.
     return [
-      { name: 'Cards vencidos', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'Limite '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'B', bucket: 'cardsVencidos', bucketTitle: 'Cards vencidos' },
-      { name: 'Retrabalhos', display: kpis.kpi2, metaLabel: 'Limite '+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B', bucket: 'cardsComRetrabalho', bucketTitle: 'Cards com retrabalho' },
+      { name: 'Cards vencidos', display: kpis.noDueData ? 'Sem dados' : kpis.kpi1+'%', metaLabel: 'Limite '+config.meta_prazo+'%', valor: kpis.kpi1, meta: config.meta_prazo, tipo: 'B', bucket: 'cardsVencidos', bucketTitle: 'Cards vencidos', scoreOverride: kpis.score_prazo },
+      { name: 'Retrabalhos',
+        display: kpi2DisplayMode === 'taxa'
+          ? fmtPct(kpis.totalCards ? (kpis.cardsComRetrabalho.length / kpis.totalCards * 100) : 0)
+          : kpis.kpi2,
+        metaLabel: 'Limite '+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B', bucket: 'cardsComRetrabalho', bucketTitle: 'Cards com retrabalho', toggle: true },
       { name: 'Tempo médio de entrega', display: kpis.kpi6+' d.u.', metaLabel: 'Meta '+config.meta_leadtime_real+' d.u.', valor: kpis.kpi6, meta: config.meta_leadtime_real, tipo: 'B', bucket: 'cardsLeadTime', bucketTitle: 'Concluídos nos últimos 30 dias' },
       { name: 'Tempo médio na etapa', display: kpis.kpi3+' d.u.', metaLabel: 'Limite '+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B', bucket: 'cardsAging', bucketTitle: 'Cards em produção ativa' },
       { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'Meta '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A', bucket: 'cardsVazao', bucketTitle: 'Concluídos no mês' },
@@ -1576,7 +1588,7 @@
     h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px;">';
     buildKpiCards(kpis, config).forEach(function(k) {
       var pct = kpiBarPct(k.valor, k.meta);
-      var score = kpiHealth(k.valor, k.meta, k.tipo);
+      var score = (k.scoreOverride !== undefined) ? k.scoreOverride : kpiHealth(k.valor, k.meta, k.tipo);
       var cor = statusColor(score);
       h += '<div style="background:#FFFFFF;border:1px solid #E8E8EC;border-radius:12px;padding:16px 18px;">' +
         '<div style="font-size:11px;font-weight:600;letter-spacing:0.06em;color:#75757F;text-transform:uppercase;margin-bottom:8px;min-height:28px;">'+k.name+'</div>' +
@@ -2103,6 +2115,11 @@
   // ─── CALCULATE KPIs ─────────────────────────────
   function calcKPIs(cards, config) {
     var withDue = cards.filter(function(c){ return c.hasDue && !c.isConcluido; });
+    // Nenhum card ativo tem due date preenchida: kpi1 fica sem denominador. Diferente
+    // de "sem WIP agora" (kpi3) ou "nada concluído na janela" (kpi6) — que são estados
+    // neutros do board —, isto é falha de processo (campo obrigatório não preenchido).
+    // Por isso NÃO herda o "sem dados = saudável" dos demais KPIs tipo B (ver score_prazo).
+    var noDueData = withDue.length === 0;
     var vencidos = withDue.filter(function(c){ return c.isLate; });
     // KPI1 — CARDS VENCIDOS: % de cards ATIVOS (não concluídos) com due date que já
     // venceu. Denominador = só cards ativos com due (cards sem due/concluídos não entram).
@@ -2148,7 +2165,10 @@
     // Scores padronizados pela MESMA função (kpiHealth) — sem fórmulas divergentes.
     // Tipo 'B' (quanto menor melhor): vencidos, rework, aging, lead time real.
     // Tipo 'A' (quanto maior melhor): throughput, conformidade.
-    var score_prazo         = kpiHealth(kpi1, config.meta_prazo, 'B');
+    // score_prazo é EXCEÇÃO: com noDueData (nenhum card ativo com due date), força 0
+    // em vez de herdar o "sem dados = 100" de kpiHealth — ver comentário em noDueData
+    // acima. Os demais tipo B (aging, lead time real) continuam herdando normalmente.
+    var score_prazo         = noDueData ? 0 : kpiHealth(kpi1, config.meta_prazo, 'B');
     var score_rework        = kpiHealth(kpi2, config.meta_rework, 'B');
     var score_aging         = kpiHealth(kpi3, config.meta_leadtime, 'B');
     var score_leadtime_real = kpiHealth(kpi6, config.meta_leadtime_real, 'B');
@@ -2157,15 +2177,20 @@
 
     // Health Score = média ponderada dos 6 scores. Aging e lead time real entram com
     // pesos separados (peso3 e peso6), evitando duplicidade de impacto temporal.
-    var healthScore = Math.max(0, Math.min(100, Math.round(
+    // Normaliza pela SOMA REAL dos pesos (não por 100 fixo): a tela "Configurar metas"
+    // já garante soma=100 antes de salvar, então isto não muda nada no uso normal — é
+    // uma rede de segurança para healthConfig malformado (editado fora da UI, ou uma
+    // futura migração com bug) não distorcer o score silenciosamente.
+    var somaPesos = config.peso1 + config.peso2 + config.peso3 + config.peso4 + config.peso5 + config.peso6;
+    var healthScore = somaPesos > 0 ? Math.max(0, Math.min(100, Math.round(
       (score_prazo * config.peso1 + score_rework * config.peso2 +
        score_aging * config.peso3 + score_through * config.peso4 +
-       score_conformidade * config.peso5 + score_leadtime_real * config.peso6) / 100
-    )));
+       score_conformidade * config.peso5 + score_leadtime_real * config.peso6) / somaPesos
+    ))) : 0;
 
     return {
       kpi1: kpi1, kpi2: kpi2, kpi3: kpi3, kpi4: kpi4, kpi5: kpi5, kpi6: kpi6,
-      noDueData: withDue.length === 0,
+      noDueData: noDueData,
       score_prazo: score_prazo, score_rework: score_rework,
       score_aging: score_aging, score_leadtime_real: score_leadtime_real,
       score_through: score_through,
@@ -2286,16 +2311,20 @@
   }
 
   // ─── RENDER REALTIME ────────────────────────────
+  // Faixas alinhadas aos 3 ANCORES da rampa contínua de cor em statusColor (0=crítico,
+  // 50=atenção, 100=saudável — ver mais abaixo): 33/67 dividem [0,100] em 3 terços
+  // iguais, um por âncora. Antes eram 4 faixas em 40/60/80, dessincronizadas da cor
+  // (ex.: score 79 já quase verde na rampa contínua, mas texto ainda em "Atenção
+  // necessária" até 80). Auditoria do Health Score corrigiu para os textos SEMPRE
+  // contarem a mesma história que a cor do anel/barra.
   function scoreTint(score) {
-    if (score >= 80) return 'rgba(255,207,6,0.12)';
-    if (score >= 60) return 'rgba(255,207,6,0.06)';
-    if (score >= 40) return 'rgba(171,171,176,0.10)';
+    if (score >= 67) return 'rgba(255,207,6,0.12)';
+    if (score >= 34) return 'rgba(255,207,6,0.06)';
     return 'rgba(10,10,15,0.06)';
   }
   function scoreStatus(score) {
-    if (score >= 80) return 'Produção excelente';
-    if (score >= 60) return 'Produção em dia';
-    if (score >= 40) return 'Atenção necessária';
+    if (score >= 67) return 'Produção excelente';
+    if (score >= 34) return 'Atenção necessária';
     return 'Situação crítica';
   }
   // ─── SCORE, BARRA & COR CENTRALIZADOS ───────────
@@ -2319,15 +2348,27 @@
   }
 
   // SCORE de saúde padronizado (0..100). Fonte única da COR e do Health Score.
-  //   tipo 'A' (quanto MAIOR melhor): score = valor/meta            (meta = alvo)
-  //   tipo 'B' (quanto MENOR melhor): score = 1 - valor/(2*meta)    (meta = ponto de 50%)
-  // Em 'B', a meta é o limite "aceitável": valor 0 → 100, valor = meta → 50,
-  // valor >= 2*meta → 0. Padroniza a curva de criticidade entre todos os KPIs.
+  //   tipo 'A' (quanto MAIOR melhor): score = valor/meta                  (meta = alvo)
+  //   tipo 'B' (quanto MENOR melhor): valor <= meta → 100 (meta = limite aceitável);
+  //     degrada linearmente até 0 em valor = 2*meta.
+  // Revisado (auditoria do Health Score): antes a curva B dava só 50 ao BATER a meta
+  // exatamente (score = 1 - valor/(2*meta)); agora bater a meta é saúde plena (100),
+  // consistente com a leitura de "meta = limite aceitável" já usada no restante do app
+  // (ex.: SLA por etapa). Continuidade preservada: em valor=meta as duas curvas coincidem
+  // em 100, e o ponto valor=2*meta→0 é o mesmo de antes.
+  // meta<=0 é tratado como TOLERÂNCIA ZERO (não mais "score sempre 0"): só valor<=0
+  // permanece saudável; qualquer valor>0 já é crítico, pois não há faixa de degradê
+  // possível quando o "limite aceitável" é zero.
   function kpiHealth(valor, meta, tipo) {
     valor = parseFloat(valor); meta = parseFloat(meta);
-    if (isNaN(valor) || isNaN(meta) || meta <= 0) return 0;
-    var score = tipo === 'A' ? (valor / meta) * 100 : (1 - valor / (2 * meta)) * 100;
-    return Math.max(0, Math.min(100, score)); // clamp garante comportamento são em extremos
+    if (isNaN(valor) || isNaN(meta)) return 0;
+    if (tipo === 'A') {
+      if (meta <= 0) return 0; // meta inválida para "quanto maior melhor"
+      return Math.max(0, Math.min(100, (valor / meta) * 100));
+    }
+    if (meta <= 0) return valor <= 0 ? 100 : 0; // tolerância zero
+    if (valor <= meta) return 100;
+    return Math.max(0, Math.min(100, 100 * (1 - (valor - meta) / meta)));
   }
 
   // Interpola linearmente entre duas cores RGB (arrays [r,g,b]).
@@ -2367,6 +2408,11 @@
   // Modo de tendência central da seção "Tempo até 1ª entrega": 'mean' (média) | 'median' (mediana).
   // Transiente (não persiste) — apenas alterna a visualização sobre os dados JÁ carregados.
   var peMetricMode = 'mean';
+
+  // Modo de exibição do card "Retrabalhos": 'abs' (soma absoluta) | 'taxa' (% de cards
+  // com retrabalho > 0). Transiente, SÓ MUDA A EXIBIÇÃO — o Health Score sempre usa o
+  // valor absoluto (kpi2), independente deste modo. Ver buildKpiCards.
+  var kpi2DisplayMode = 'abs';
 
   // Monta os cards expandíveis (BAIXO/MÉDIO/ALTO/MUITO ALTO). Usa classe .pe-toggle própria
   // (não .collapse-toggle) para não colidir com o handler genérico que reescreve textContent.
@@ -2562,7 +2608,9 @@
       // largura = proporção real valor/meta; cor = criticidade (score de saúde).
       // Ambos calculados UMA vez e reutilizados na animação (sem recomputar por barra).
       k.pct = kpiBarPct(k.valor, k.meta);
-      k.score = kpiHealth(k.valor, k.meta, k.tipo);
+      // "Cards vencidos" usa o score JÁ calculado por calcKPIs (com a exceção de
+      // noDueData aplicada); os demais recalculam normalmente por kpiHealth.
+      k.score = (k.scoreOverride !== undefined) ? k.scoreOverride : kpiHealth(k.valor, k.meta, k.tipo);
       var cor = statusColor(k.score);
       // clicável quando há cards subjacentes → abre o mesmo modal da aba Análises
       var subCount = (kpis[k.bucket] || []).length;
@@ -2570,6 +2618,14 @@
       html += '<div class="kpi-card'+(clickable?' kpi-clickable':'')+'"'+(clickable?' data-kpi="'+i+'" role="button" tabindex="0" title="Ver os '+subCount+' card'+(subCount>1?'s':'')+'"':'')+'>';
       html += '<div class="kpi-name">'+k.name+'</div>';
       html += '<div class="kpi-value">'+k.display+'</div>';
+      // Toggle Nº/% (só "Retrabalhos"): dispara stopPropagation no wiring abaixo para
+      // não acionar o click-through do card (que abre o modal de cards com retrabalho).
+      if (k.toggle) {
+        html += '<div class="pe-metric kpi-mode-toggle" data-kpi-toggle="'+i+'">' +
+          '<button type="button" class="pe-metric-opt'+(kpi2DisplayMode==='abs'?' on':'')+'" data-mode="abs">Nº</button>' +
+          '<button type="button" class="pe-metric-opt'+(kpi2DisplayMode==='taxa'?' on':'')+'" data-mode="taxa">%</button>' +
+          '</div>';
+      }
       html += '<div class="kpi-meta">'+k.metaLabel+'</div>';
       html += '<div class="kpi-bar-bg" style="background:'+statusColorSoft(k.score)+'"><div class="kpi-bar-fill" id="bar-kpi-'+i+'" style="width:0%;background:'+cor+';"></div></div>';
       if (clickable) html += '<span class="kpi-cardcount">'+subCount+' card'+(subCount>1?'s':'')+' →</span>';
@@ -2650,6 +2706,32 @@
         });
       });
     }
+
+    // Toggle Nº/% do card "Retrabalhos" — só troca a EXIBIÇÃO (kk.display); o Health
+    // Score sempre usa kpis.kpi2 (absoluto), calculado por calcKPIs. Atualiza só o
+    // texto do valor e o estado do toggle, sem re-render completo (mesmo padrão de
+    // custo-zero do restante do dashboard). stopPropagation evita abrir o modal de
+    // click-through do card (o toggle vive dentro de um .kpi-clickable).
+    document.querySelectorAll('.kpi-mode-toggle').forEach(function(tg) {
+      tg.querySelectorAll('button').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var mode = btn.getAttribute('data-mode');
+          if (mode === kpi2DisplayMode) return;
+          kpi2DisplayMode = mode;
+          var kk = kpiCards[+tg.getAttribute('data-kpi-toggle')];
+          kk.display = mode === 'taxa'
+            ? fmtPct(kpis.totalCards ? (kpis.cardsComRetrabalho.length / kpis.totalCards * 100) : 0)
+            : kpis.kpi2;
+          var card = tg.closest('.kpi-card');
+          var valEl = card && card.querySelector('.kpi-value');
+          if (valEl) valEl.textContent = kk.display;
+          tg.querySelectorAll('button').forEach(function(b) {
+            b.classList.toggle('on', b.getAttribute('data-mode') === mode);
+          });
+        });
+      });
+    });
 
     // cliques em .card-link são tratados pela delegação global (registrada 1x)
     document.getElementById('btn-refresh').addEventListener('click', function() { loadRealtime(true); });
