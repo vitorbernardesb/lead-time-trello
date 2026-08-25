@@ -3,10 +3,23 @@
 <head>
   <meta charset="utf-8">
   <title>Aviso de Conformidade</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <style>
+    @font-face {
+      font-family: 'BW Modelica';
+      src: url('./fonts/BwModelica-Regular.otf') format('opentype');
+      font-weight: 400;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'BW Modelica';
+      src: url('./fonts/BwModelica-Bold.otf') format('opentype');
+      font-weight: 700;
+      font-display: swap;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont,
+      font-family: 'BW Modelica', -apple-system, BlinkMacSystemFont,
         'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       font-size: 14px;
       background: transparent;
@@ -15,17 +28,18 @@
     }
     #content { width: 100%; overflow: visible; }
 
+    /* alerta = dado semântico (perigo), mantido fora da paleta de marca de propósito */
     .warning-box {
-      background: #FDF1F0;
-      border: 1px solid #F3CFCA;
-      border-left: 3px solid #C9372C;
+      background: #FDECEC;
+      border: 1px solid #F5CFD1;
+      border-left: 3px solid #B3272F;
       border-radius: 8px;
       padding: 10px 14px;
     }
     .warning-title {
       font-size: 11px;
       font-weight: 700;
-      color: #AE2E24;
+      color: #B3272F;
       margin-bottom: 7px;
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -35,7 +49,7 @@
       align-items: center;
       gap: 8px;
       font-size: 12px;
-      color: #172b4d;
+      color: #0A0A0A;
       margin-bottom: 4px;
     }
     .warning-item:last-child { margin-bottom: 0; }
@@ -43,12 +57,12 @@
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: #C9372C;
+      background: #B3272F;
       flex-shrink: 0;
     }
     .msg {
       font-size: 12px;
-      color: #6b778c;
+      color: #75757F;
       text-align: center;
       padding: 8px;
     }

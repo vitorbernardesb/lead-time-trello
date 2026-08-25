@@ -3,8 +3,10 @@
 <head>
   <meta charset="utf-8">
   <title>Power Up Midiática</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="preload" href="./fonts/BwModelica-Regular.otf" as="font" type="font/otf" crossorigin>
   <link rel="preload" href="./fonts/BwModelica-Bold.otf" as="font" type="font/otf" crossorigin>
+  <link rel="preload" href="./fonts/BwModelica-ExtraBold.otf" as="font" type="font/otf" crossorigin>
   <style>
     @font-face {
       font-family: 'BW Modelica';
@@ -18,13 +20,40 @@
       font-weight: 700;
       font-display: swap;
     }
-    /* ── Design tokens: fonte única de cor/raio/sombra (antes: rgba() repetidos 40+ vezes) ── */
+    /* Extra Bold — família de marca p/ títulos e subtítulos (brandbook §05 tipografia) */
+    @font-face {
+      font-family: 'BW Modelica';
+      src: url('./fonts/BwModelica-ExtraBold.otf') format('opentype');
+      font-weight: 800;
+      font-display: swap;
+    }
+    /* Light + Light Italic — família de marca p/ parágrafos e legendas/traduções */
+    @font-face {
+      font-family: 'BW Modelica';
+      src: url('./fonts/BwModelica-Light.otf') format('opentype');
+      font-weight: 300;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'BW Modelica';
+      src: url('./fonts/BwModelica-LightItalic.otf') format('opentype');
+      font-weight: 300;
+      font-style: italic;
+      font-display: swap;
+    }
+    /* ── Design tokens: fonte única de cor/raio/sombra (antes: rgba() repetidos 40+ vezes) ──
+       Paleta alinhada ao brandbook Midiática 2024 (§04 cores): pretos 0A0A0A→1A1A1A,
+       amarelos FFCF06→FFF0AB, cinzas A4A4A4→D4D4D4. Semânticas (ok/warn/danger) não fazem
+       parte da paleta de marca — mantidas como estão, é dado, não identidade visual. */
     :root {
-      --ink: #0A0A0A;          /* texto primário */
+      --ink: #0A0A0A;          /* texto primário — preto institucional da marca */
       --ink-2: #55555E;        /* texto secundário (>= 6:1 sobre branco) */
       --muted: #75757F;        /* rótulos e metadados (>= 4.5:1) */
       --faint: #A9A9B2;        /* decorativo/desabilitado apenas — nunca texto de leitura */
-      --brand: #FFCF06;
+      --brand: #FFCF06;        /* amarelo Midiática — cor de marca primária */
+      --brand-2: #FFD93D;      /* tint 1 da paleta de marca — hover/estados intermediários */
+      --brand-3: #FFE375;      /* tint 2 da paleta de marca — realces suaves */
+      --brand-4: #FFF0AB;      /* tint 3 da paleta de marca — fundos de destaque muito sutis */
       --surface: #F6F6F7;
       --card: #FFFFFF;
       --border: #E8E8EC;       /* hairline padrão */
@@ -58,7 +87,10 @@
       top: 0;
       z-index: 10;
     }
-    .header h1 { font-size: 16px; font-weight: 400; letter-spacing: 0.01em; margin-bottom: 14px; }
+    /* wordmark: Extra Bold + tracking levemente negativo, como no logotipo da marca */
+    .brand-lockup { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+    .brand-mark { flex: none; color: var(--brand); }
+    .header h1 { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
     /* flex-wrap: sem ele, com 5 abas o rótulo longo "Análises Personalizadas" estourava a
        largura do iframe estreito do Power-Up e as abas à direita eram recortadas (sumiam).
        Quebra para uma 2ª linha só quando não cabe; em telas largas fica idêntico a antes. */
@@ -102,12 +134,15 @@
     .spinner-wrap p { margin-top: 12px; color: var(--muted); }
     .error-box { text-align: center; padding: 60px 20px; color: var(--ink); }
     .error-box button { margin-top: 12px; }
+    /* CTA de marca: pílula amarela + tinta institucional — padrão "SAIBA MAIS" do brandbook,
+       adaptado a rótulos operacionais mais longos (sem versalete, que quebraria em labels
+       com ícones/nomes de produto como "MS Project"). */
     .btn {
-      background: var(--brand); color: var(--ink); border: none; border-radius: 8px;
+      background: var(--brand); color: var(--ink); border: none; border-radius: 999px;
       padding: 9px 18px; font-size: 13px; font-family: inherit; font-weight: 700; cursor: pointer;
       transition: background 0.15s;
     }
-    .btn:hover { background: #EFC303; }
+    .btn:hover { background: var(--brand-2); }
     .btn:disabled { background: #ECECEF; color: var(--faint); cursor: not-allowed; }
     .btn-secondary { background: var(--card); color: var(--ink); border: 1px solid var(--border-2); }
     .btn-secondary:hover { background: #FAFAFB; border-color: #B9B9C2; }
@@ -148,7 +183,7 @@
       display: flex; flex-direction: column; justify-content: center; gap: 5px;
     }
     .score-hero-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-    .score-hero-kpi { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: var(--ink); line-height: 1.3; }
+    .score-hero-kpi { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 800; color: var(--ink); line-height: 1.3; }
     .score-hero-kpi .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
     .score-hero-detail { font-size: 12.5px; color: var(--ink-2); line-height: 1.45; }
     .score-hero-cta {
@@ -187,7 +222,7 @@
     /* nome: rótulo discreto; min-height alinha os valores entre cards de 1 ou 2 linhas */
     .kpi-card .kpi-name { font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em; line-height: 1.3; min-height: 28px; }
     /* valor: protagonista do card; dígitos proporcionais (tabular só em colunas de tabela) */
-    .kpi-card .kpi-value { font-size: 26px; font-weight: 700; color: var(--ink); line-height: 1.05; letter-spacing: -0.02em; }
+    .kpi-card .kpi-value { font-size: 26px; font-weight: 800; color: var(--ink); line-height: 1.05; letter-spacing: -0.02em; }
     /* toggle Nº/% do card "Retrabalhos" — reaproveita .pe-metric/.pe-metric-opt
        (mesmo padrão visual do seletor Média/Mediana), só compactado p/ caber no card */
     .kpi-mode-toggle { margin: 7px 0 1px; }
@@ -198,7 +233,7 @@
     /* transição suave de largura E cor, sem flicker (parent com overflow:hidden) */
     .kpi-bar-fill { height: 100%; border-radius: 999px; transition: width 0.6s cubic-bezier(0.22,1,0.36,1), background 0.5s ease; }
     .footer-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .footer-bar .info { font-size: 12px; color: var(--muted); margin-left: auto; }
+    .footer-bar .info { font-size: 12px; color: var(--muted); margin-left: auto; font-weight: 300; font-style: italic; }
     .collapsible { margin-bottom: 24px; }
     .collapse-toggle {
       width: 100%; text-align: left; padding: 12px 16px;
@@ -244,9 +279,10 @@
     .pe-section { margin-bottom: 24px; }
     .pe-title-row { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
     .pe-title-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .pe-title-row h3 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+    .pe-title-row h3 { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
     .pe-hint { font-size: 12px; font-weight: 500; color: var(--muted); }
-    .pe-epoch { font-size: 11px; color: var(--muted); }
+    /* nota de rodapé/legenda — família Light Italic da marca (brandbook §05) */
+    .pe-epoch { font-size: 11px; color: var(--muted); font-weight: 300; font-style: italic; }
     /* seletor segmentado Média / Mediana (padrão SaaS: trilho + pílula ativa em elevação) */
     .pe-metric { display: inline-flex; background: rgba(10,10,15,0.05); border: 1px solid var(--border); border-radius: 999px; padding: 3px; gap: 2px; flex-shrink: 0; }
     .pe-metric-opt { border: none; background: transparent; font-family: inherit; font-size: 12px; font-weight: 700; color: var(--muted); padding: 5px 14px; border-radius: 999px; cursor: pointer; transition: background 0.15s, color 0.15s, box-shadow 0.15s; }
@@ -279,7 +315,7 @@
     .pe-arrow { color: var(--faint); font-size: 11px; }
     /* valor protagonista (dígitos proporcionais) + unidade subordinada; dias em linha discreta */
     .pe-main { display: flex; align-items: baseline; gap: 5px; }
-    .pe-value { font-size: 26px; font-weight: 700; color: var(--ink); line-height: 1.0; letter-spacing: -0.02em; }
+    .pe-value { font-size: 26px; font-weight: 800; color: var(--ink); line-height: 1.0; letter-spacing: -0.02em; }
     .pe-unit { font-size: 13px; font-weight: 600; color: var(--ink-2); }
     .pe-days { font-size: 12px; color: var(--muted); margin-top: 3px; }
     .pe-main.pe-empty { font-size: 15px; color: var(--muted); font-weight: 500; }
@@ -320,7 +356,7 @@
       border: 1px dashed var(--border-2); border-radius: 10px; padding: 9px; font-family: inherit; font-size: 12px; font-weight: 600;
       color: var(--ink-2); cursor: pointer; transition: background 0.14s, border-color 0.14s, color 0.14s; }
     .pe-cards-link:hover { background: rgba(255,207,6,0.10); border-color: var(--brand); color: var(--ink); }
-    .pe-foot { font-size: 11px; color: var(--muted); margin-top: 10px; }
+    .pe-foot { font-size: 11px; color: var(--muted); margin-top: 10px; font-weight: 300; font-style: italic; }
     @media (max-width: 900px) { .pe-grid { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 480px) { .pe-grid { grid-template-columns: 1fr; } }
     @media (max-width: 480px) { .pe-title-row { align-items: flex-start; } .pe-metric { width: 100%; } .pe-metric-opt { flex: 1; text-align: center; } }
@@ -334,7 +370,7 @@
       flex: 1; min-width: 180px; background: var(--card); border-radius: 12px;
       padding: 16px; border: 1px solid var(--border); box-shadow: var(--shadow-1); text-align: center;
     }
-    .summary-card .sc-value { font-size: 27px; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; }
+    .summary-card .sc-value { font-size: 27px; font-weight: 800; color: var(--ink); letter-spacing: -0.02em; }
     .summary-card .sc-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
     /* quadro-resumo clicável: mesma linguagem de interação dos KPI/painéis */
     .summary-card.sc-clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
@@ -365,9 +401,9 @@
     }
     .pag-btn:disabled { opacity: 0.4; cursor: default; }
     .pag-btn:hover:not(:disabled) { background: #FAFAFB; border-color: #B9B9C2; }
-    .pag-info { font-size: 12px; color: var(--muted); }
+    .pag-info { font-size: 12px; color: var(--muted); font-weight: 300; font-style: italic; }
     .alerts-section { margin-top: 0; }
-    .alerts-section h3 { font-size: 15px; margin-bottom: 12px; color: var(--ink); font-weight: 700; letter-spacing: -0.01em; }
+    .alerts-section h3 { font-size: 15px; margin-bottom: 12px; color: var(--ink); font-weight: 800; letter-spacing: -0.01em; }
     .alert-row { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-1); padding: 11px 14px; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .alert-row .ar-name { font-weight: 600; flex: 1; min-width: 200px; color: var(--ink); }
     .alert-row .ar-stage { color: var(--muted); font-size: 13px; }
@@ -389,7 +425,7 @@
     }
     .hist-tile:hover { box-shadow: var(--shadow-2); transform: translateY(-2px); border-color: var(--border-2); }
     .hist-tile-name { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); line-height: 1.3; min-height: 26px; }
-    .hist-tile-value { font-size: 24px; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; line-height: 1.1; margin-top: 4px; }
+    .hist-tile-value { font-size: 24px; font-weight: 800; color: var(--ink); letter-spacing: -0.02em; line-height: 1.1; margin-top: 4px; }
     .hist-tile-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
     .hist-delta { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; font-variant-numeric: tabular-nums; }
     .hist-delta.good { color: var(--ok-text); background: var(--ok-bg); border: 1px solid var(--ok-line); }
@@ -399,7 +435,7 @@
     .hist-spark { display: block; width: 100%; height: 26px; margin-top: auto; padding-top: 10px; }
     /* cabeçalho da tendência + seletor de datas da comparação */
     .hist-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-    .hist-head h3 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+    .hist-head h3 { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
     .hist-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .hist-controls label, .hist-controls-sep { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
     .hist-select {
@@ -416,7 +452,7 @@
     .hist-drill { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); margin-top: 6px; opacity: 0; transition: opacity 0.15s, color 0.15s; }
     .hist-tile.hist-clickable:hover .hist-drill, .hist-tile.hist-clickable:focus-visible .hist-drill { opacity: 1; color: var(--ink); }
     /* nota de rodapé do gráfico + estado "coletando dados" */
-    .hist-note { font-size: 11px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+    .hist-note { font-size: 11px; color: var(--muted); margin-top: 10px; line-height: 1.5; font-weight: 300; font-style: italic; }
 
     /* ── seletor de período (dd/mm/aaaa + calendário) que substitui os selects
        "Comparar <mês> com <mês>" na faixa de Tendência. Início e Fim são campos
@@ -956,7 +992,15 @@
 </head>
 <body>
 <div class="header">
-  <h1><strong>Power Up Midiática</strong></h1>
+  <div class="brand-lockup">
+    <svg class="brand-mark" viewBox="0 0 100 100" width="18" height="18" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M50 14c-15.5 0-28 12.1-28 27 0 9.8 5.4 16.9 11.4 22.3 3.6 3.2 5.6 6 5.6 9.7v4h22v-4c0-3.7 2-6.5 5.6-9.7C72.6 57.9 78 50.8 78 41c0-14.9-12.5-27-28-27z"/>
+      <path d="M39 77h22"/>
+      <path d="M42 89h16"/>
+      <path d="M44 58l6-9 6 9"/>
+    </svg>
+    <h1><strong>Power Up Midiática</strong></h1>
+  </div>
   <div class="tabs">
     <button class="tab active" data-tab="realtime">Tempo real</button>
     <button class="tab" data-tab="funnel">Detalhamento</button>
@@ -1736,7 +1780,7 @@
     var agora = fmtDateTime(new Date());
     var h = '';
     h += '<div style="display:flex;align-items:center;justify-content:space-between;background:#0A0A0A;border-radius:14px;padding:22px 26px;margin-bottom:20px;">';
-    h += '<div><div style="font-size:22px;font-weight:700;color:#FFCF06;">Power Up Midiática</div>' +
+    h += '<div><div style="font-size:22px;font-weight:800;letter-spacing:-0.01em;color:#FFCF06;">Power Up Midiática</div>' +
          '<div style="font-size:13px;color:#A2A2AA;margin-top:2px;">Dashboard de produção</div></div>';
     h += '<div style="font-size:13px;color:#A2A2AA;">'+agora+'</div></div>';
     // Health hero: número em tinta; a cor de estado fica na barra e no ponto de status
@@ -1747,7 +1791,7 @@
          '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+hsCor+';margin-right:7px;"></span>' +
          scoreStatus(kpis.healthScore)+'</div></div>';
     h += '<div style="display:flex;align-items:center;gap:18px;">' +
-         '<div style="font-size:54px;font-weight:700;line-height:1;color:#0A0A0A;letter-spacing:-0.02em;min-width:92px;">'+kpis.healthScore+'</div>' +
+         '<div style="font-size:54px;font-weight:800;line-height:1;color:#0A0A0A;letter-spacing:-0.02em;min-width:92px;">'+kpis.healthScore+'</div>' +
          '<div style="flex:1;height:12px;background:'+hsTrilha+';border-radius:999px;overflow:hidden;">' +
          '<div style="height:100%;width:'+kpis.healthScore+'%;background:'+hsCor+';border-radius:999px;"></div></div></div></div>';
     // Grid de KPIs 3x2
@@ -5434,7 +5478,7 @@
       var h = '';
       // cabeçalho / logo
       h += '<div style="display:flex;align-items:center;justify-content:space-between;background:#0A0A0A;border-radius:14px;padding:22px 26px;margin-bottom:20px;">';
-      h += '<div><div style="font-size:22px;font-weight:700;color:#FFCF06;">Power Up Midiática</div>' +
+      h += '<div><div style="font-size:22px;font-weight:800;letter-spacing:-0.01em;color:#FFCF06;">Power Up Midiática</div>' +
         '<div style="font-size:13px;color:#A2A2AA;margin-top:2px;">' + escHtml(titulo) + '</div></div>';
       h += '<div style="text-align:right;font-size:12px;color:#A2A2AA;">Gerado em ' + agora + '<br>Período: dados a partir de ' + fmtDateBR(PRIMEIRA_ENTREGA_EPOCH) + '</div></div>';
 
