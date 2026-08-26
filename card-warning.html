@@ -73,9 +73,9 @@
 <div id="content">
   <p class="msg">Verificando conformidade…</p>
 </div>
-<script>
+<script type="module">
+import { APP_KEY } from './js/trello-api.js';
 (function() {
-  var APP_KEY = '35b840777660fac1ae7823df3d2398f6';
   var t = TrelloPowerUp.iframe({ appKey: APP_KEY, appName: 'Lead Time Midiática' });
   var content = document.getElementById('content');
 
@@ -116,3 +116,4 @@
 </script>
 </body>
 </html>
+
