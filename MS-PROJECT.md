@@ -46,7 +46,8 @@ que a aba *Tempo real* já carregou, e reutiliza o motor de tempo existente
 | Entrada em `Concluído 🏆` | ActualFinish |
 | Data de entrega (`due`) | **Deadline** (nunca Finish) |
 | Etapa no fluxo | % Complete |
-| Nível de Esforço (+ atraso) | Priority |
+| Etiqueta de prioridade de negócio | **Priority** |
+| Nível de Esforço (+ atraso) | `Number1` **Esforço/Urgência** (informativo) |
 | Ordem canônica das listas | Predecessors (FS) |
 | Jornada 09–18 + feriados BR | Calendar |
 | ID, URL, cliente, etapa, nível, status, tempos | Campos customizados `Text1`–`Text10` |
@@ -194,8 +195,32 @@ Cliente Alfa
 Em andamento / Atrasos 40 · Alterações 55 · Revisão Interna 70 · Revisão Externa /
 Revisões em Atraso 90 · Concluído 100.
 
-**Priority:** MUITO ALTO 900 · ALTO 700 · MÉDIO 500 · BAIXO 300 · sem nível 500;
-**+100 se o card estiver vencido** (teto 1000).
+**Priority vs. Esforço/Urgência.** São dois campos distintos, e a diferença importa:
+
+| Campo | O que mede | Efeito no Project |
+|---|---|---|
+| **`Priority`** | Prioridade de **negócio** | **Governa o `Nivelar Tudo`** — o Project atrasa primeiro as tarefas de menor Priority |
+| **`Number1` "Esforço/Urgência"** | Quão trabalhoso/urgente é o card | Nenhum — puramente informativo |
+
+`Esforço/Urgência` = MUITO ALTO 900 · ALTO 700 · MÉDIO 500 · BAIXO 300 · sem nível 500;
+**+100 se o card estiver vencido** (teto 1000). Era o valor gravado em `Priority` até
+esta mudança.
+
+`Priority` vem da cascata:
+
+1. Card com etiqueta listada em **Etiquetas de prioridade de negócio** → **900**
+2. Senão → o próprio `Esforço/Urgência` (fallback)
+
+Como a lista de etiquetas nasce **vazia**, quem não configurar nada tem `Priority`
+exatamente igual ao de antes. Configurar passa a fazer o nivelamento automático
+respeitar a importância do cliente em vez do tamanho do card.
+
+> **Etiquetas de prioridade não competem por Cliente.** Elas são retiradas da
+> classificação **antes** da escolha do cliente, igual às etiquetas de pessoa. Sem
+> isso, uma etiqueta `VIP` seria adotada como nome do cliente e o cliente real cairia
+> em "outras etiquetas", deslocando a hierarquia inteira. O reconhecimento usa o mesmo
+> motor das pessoas: tolerante a acento/caixa/emoji, mas exigindo palavra inteira —
+> `VIP 🔥` casa, `VIParque` não.
 
 > **Nota sobre feriados:** só o **agendamento** conhece feriados. A **medição** (os KPIs
 > e as horas úteis) segue sem feriados, exatamente como antes — nenhuma fórmula existente
@@ -239,6 +264,8 @@ com o nome de cada card afetado.
    - **Preservar datas reais dos concluídos** — ligado por padrão (ver §2)
    - **Excluir atividades com aviso**
    - **Pessoas reconhecidas nas etiquetas** — uma por linha
+   - **Etiquetas de prioridade de negócio** — uma por linha (ex.: `VIP`). Vazio por
+     padrão; ver §5 para o efeito em `Priority` e na escolha do Cliente
 5. Clique em **⬇ Cronograma (.xml para o MS Project)**.
 6. No MS Project: **Arquivo → Abrir → Cronograma** e escolha o `.xml`. Na caixa de
    importação, marque **“Como um novo projeto”**.
@@ -306,11 +333,17 @@ esses campos degrada para `Deadline` nulo, sem erro.
 
 ### Configuração no código
 
-No topo do módulo `MSP`, em constantes nomeadas: `PESSOAS_PADRAO`, `ETAPAS_ATIVAS`,
-`ETAPAS_EXTERNA`, `PCT_ETAPA`, `PRIO_NIVEL`, `MIN_AMOSTRA` (amostra mínima = 3), `EXT`
-(campos customizados). A jornada é **lida** de `WORK_START_HOUR`/`WORK_END_HOUR`, as
-mesmas constantes que `businessHoursRaw` usa — a duração exportada é, por construção, a
-mesma que o dashboard mede.
+No topo do módulo `MSP` (`js/msproject.js`), em constantes nomeadas: `PESSOAS_PADRAO`,
+`ETAPAS_ATIVAS`, `ETAPAS_EXTERNA`, `PCT_ETAPA`, `PRIO_NIVEL`, `PRIO_NEGOCIO`,
+`MIN_AMOSTRA` (amostra mínima = 3), `EXT` e `EXT_NUM` (campos customizados). A jornada é
+**lida** de `WORK_START_HOUR`/`WORK_END_HOUR`, as mesmas constantes que
+`businessHoursRaw` usa — a duração exportada é, por construção, a mesma que o dashboard
+mede.
+
+> **`FieldID` do `Number1`:** os campos `Number*` **não** seguem a progressão `+3` dos
+> `Text*`. `Number1` é `188743767`. Confirmado como bem-formado e na ordem correta da
+> `sequence` MSPDI; a aceitação do campo pelo Project ainda precisa de uma importação
+> real para confirmação definitiva.
 
 ### Limitações conhecidas
 
@@ -333,11 +366,22 @@ definições distintas. **Nada foi alterado**; fica registrado para decisão sua
 
 ### Testes
 
-237 assertivas automatizadas cobrindo: reconhecimento de pessoas (incluindo
-falso-positivos), duração nos 6 níveis da cascata, agendamento com feriados e jornada,
-datas em todos os estados do card, hierarquia e ordem canônica, ausência de ciclos,
-validação, o XLSX gerado de ponta a ponta com a biblioteca real, e o XML validado por
-parser XML de verdade — inclusive a **ordem dos elementos** conforme a `sequence` do
-schema MSPDI (ordem errada faz o Project recusar o arquivo). Inclui regressão de
-`buildTimeline`, `computeLeadTime`, `computePrimeiraEntrega`, `calcKPIs` e
-`calcPrimeiraEntrega`.
+> **Não há suíte de testes versionada neste repositório.** Uma versão anterior deste
+> documento afirmava "237 assertivas automatizadas" — a alegação era falsa: nenhum
+> arquivo de teste está sob controle de versão. Registrado aqui para não induzir a erro.
+
+A verificação hoje é **manual e reproduzível**. Roteiro por mudança:
+
+**Priority de negócio vs. Esforço/Urgência**
+
+1. Deixe **Etiquetas de prioridade de negócio** vazio → exporte. Em toda tarefa,
+   `Priority` deve ser igual a `Number1` (comportamento anterior preservado).
+2. Crie um card com as etiquetas `VIP` **e** `Cliente Delta` (nessa ordem) e uma
+   pessoa. Configure `VIP` na lista → exporte.
+3. No XML, a tarefa desse card deve trazer `<Priority>900</Priority>`, o
+   `ExtendedAttribute` de `FieldID 188743767` com o valor do nível de esforço, e
+   `Text4` = `Cliente Delta`.
+4. No Gantt, a atividade tem de aparecer sob **Cliente Delta** — nunca sob "VIP".
+
+Os ganchos `MSP._construir()`, `MSP._gerarXML(p)`, `MSP._cfg({...})`, `MSP._agendar()`
+e `MSP._planilha.*` permitem rodar tudo isso no console sem clicar na UI.

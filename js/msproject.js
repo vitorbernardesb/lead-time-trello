@@ -57,9 +57,18 @@ export function createMSP(deps) {
       'Revisão Externa 🧐': 90, 'Revisões em Atraso ⏰': 90, 'Concluído 🏆': 100
     };
 
-    // Priority do MS Project (0–1000) derivada do Nível de Esforço; +100 se vencido.
+    // Escala 0–1000 derivada do Nível de Esforço; +100 se vencido.
+    // ATENÇÃO: isto mede ESFORÇO/URGÊNCIA, não importância de negócio. Desde a
+    // separação (item 3), vai para o Number1 "Esforço/Urgência", NÃO para Priority
+    // — porque Priority governa o algoritmo de nivelamento do MS Project, e
+    // nivelar por "quão trabalhoso" atrasaria o cliente errado. Ver PRIO_NEGOCIO.
     var PRIO_NIVEL = { 'MUITO ALTO': 900, 'ALTO': 700, 'MÉDIO': 500, 'BAIXO': 300 };
     var PRIO_PADRAO = 500;
+    // Priority de NEGÓCIO: cards com etiqueta de prioridade configurada (mspConfig
+    // .etiquetasPrioridadeNegocio) recebem este valor. Sem nenhuma configurada, o
+    // fallback é o próprio Esforço/Urgência — ou seja, comportamento idêntico ao
+    // anterior enquanto ninguém configurar nada.
+    var PRIO_NEGOCIO = 900;
 
     // Jornada: LIDA das constantes já usadas por businessHoursRaw (09–18 = 9h/dia).
     // Assim a duração exportada é a MESMA medida que o dashboard mostra, sem conversão.
@@ -82,13 +91,19 @@ export function createMSP(deps) {
       { fid: '188743755', nome: 'Text9',  alias: 'Tempo em fila (h)' },
       { fid: '188743758', nome: 'Text10', alias: 'Tempo por etapa (h)' }
     ];
+    // Campo numérico separado (item 3). Os FieldIDs de Number* NÃO seguem a
+    // progressão +3 dos Text* — Number1 começa em 188743767 e sobe de 1 em 1.
+    var EXT_NUM = { fid: '188743767', nome: 'Number1', alias: 'Esforço/Urgência (informativo)' };
 
     var CFG_PADRAO = {
       fonte: 'esforco',            // 'esforco' | 'bruto' | 'nivel'
       incluirConcluidos: true,
       preservarDatasReais: true,
       excluirComAviso: false,
-      pessoas: PESSOAS_PADRAO.slice()
+      pessoas: PESSOAS_PADRAO.slice(),
+      // Etiquetas que marcam prioridade de NEGÓCIO (ex.: 'VIP', 'Contrato Prioritário').
+      // Vazio por padrão → Priority mantém exatamente o comportamento anterior.
+      etiquetasPrioridadeNegocio: []
     };
 
     var cfg = null;               // config efetiva (carregada do board)
@@ -142,6 +157,20 @@ export function createMSP(deps) {
         if (p.anchor && lt.length === 1 && lt[0] === p.anchor) return p.nome;
       }
       return null;
+    }
+
+    // Etiqueta → é marca de prioridade de negócio? Reusa EXATAMENTE o mesmo
+    // reconhecimento das pessoas (palavra inteira, tolerante a acento/caixa/emoji),
+    // então 'VIP 🔥' casa com 'VIP' e 'Serviço VIParque' não casa.
+    function construirMarcas(nomes) {
+      return (nomes || []).map(function(n) { return { nome: String(n).trim(), tk: tokens(n) }; })
+        .filter(function(m) { return m.nome && m.tk.length; });
+    }
+    function ehEtiquetaPrioridade(label, marcas) {
+      var lt = tokens(label);
+      if (!lt.length) return false;
+      for (var i = 0; i < marcas.length; i++) if (contemSequencia(lt, marcas[i].tk)) return true;
+      return false;
     }
 
     function h2d(h) { return round1(h / HORAS_DIA); }                       // horas úteis → dias úteis
@@ -343,6 +372,7 @@ export function createMSP(deps) {
       var arquivados = (cachedData && cachedData.archived) ? cachedData.archived : [];
       var base = obterBase(abertos.concat(arquivados));   // arquivados = SÓ base histórica
       var pessoas = construirPessoas(cfg.pessoas);
+      var marcasPrio = construirMarcas(cfg.etiquetasPrioridadeNegocio);
       var out = [];
 
       abertos.forEach(function(c) {
@@ -354,13 +384,18 @@ export function createMSP(deps) {
         var problemas = [];
 
         // ── Recursos e cliente a partir das etiquetas (ETAPA 4) ──
-        var recursos = [], outrasEtiquetas = [], cliente = null;
+        // Ordem de classificação: pessoa → marca de prioridade → cliente → outras.
+        // As marcas de prioridade saem ANTES da escolha do cliente; sem isso, uma
+        // etiqueta 'VIP' seria adotada como nome do cliente e o cliente real cairia
+        // em outrasEtiquetas, deslocando a hierarquia inteira do board.
+        var recursos = [], outrasEtiquetas = [], etiquetasPrio = [], cliente = null;
         (c.labels || []).forEach(function(l) {
           var nomeL = String(l === null || l === undefined ? '' : l).trim();
           if (!nomeL) return;
           var p = pessoaDaEtiqueta(nomeL, pessoas);
-          if (p) { if (recursos.indexOf(p) === -1) recursos.push(p); }
-          else if (cliente === null) cliente = nomeL;           // 1ª não-pessoa = Cliente
+          if (p) { if (recursos.indexOf(p) === -1) recursos.push(p); return; }
+          if (ehEtiquetaPrioridade(nomeL, marcasPrio)) { etiquetasPrio.push(nomeL); return; }
+          if (cliente === null) cliente = nomeL;                // 1ª não-pessoa = Cliente
           else outrasEtiquetas.push(nomeL);
         });
         var viaMembro = false;
@@ -401,11 +436,17 @@ export function createMSP(deps) {
         if (!nome) { problemas.push('semNome'); nome = '(sem título) ' + String(c.id || '').slice(-6); }
 
         var pct = c.isConcluido || conclusao ? 100 : (PCT_ETAPA[etapa] === undefined ? 0 : PCT_ETAPA[etapa]);
-        var prio = Math.min(1000, (PRIO_NIVEL[c.nivelEsforco] || PRIO_PADRAO) + (c.isLate ? 100 : 0));
+
+        // Esforço/Urgência (Number1): informativo. Era o valor de Priority até o item 3.
+        var esforcoUrgencia = Math.min(1000, (PRIO_NIVEL[c.nivelEsforco] || PRIO_PADRAO) + (c.isLate ? 100 : 0));
+        // Priority (governa o nivelamento automático do Project): vem do negócio.
+        // Sem etiqueta de prioridade configurada, cai no Esforço/Urgência — idêntico ao anterior.
+        var prio = etiquetasPrio.length ? PRIO_NEGOCIO : esforcoUrgencia;
 
         out.push({
           card: c, nome: nome, cliente: cliente === null ? 'Sem cliente' : cliente, etapa: etapa,
           recursos: recursos, viaMembro: viaMembro, outrasEtiquetas: outrasEtiquetas,
+          etiquetasPrio: etiquetasPrio, esforcoUrgencia: esforcoUrgencia,
           durH: durH, durBase: estimado ? 'ESTIMADO' : 'REAL', durOrigem: dur.origem,
           estimado: estimado, esforcoAtivoH: tp.ativoH, filaH: tp.filaH, externaH: tp.externaH,
           porEtapa: tp.porEtapa, actualStart: actualStart, actualFinish: actualFinish,
@@ -633,6 +674,9 @@ export function createMSP(deps) {
       l.push('· Etapa atual: ' + (a.etapa || '—'));
       l.push('· Cliente: ' + a.cliente);
       l.push('· Nível de Esforço: ' + (c.nivelEsforco || 'não definido'));
+      l.push('· Esforço/Urgência (Number1, informativo): ' + a.esforcoUrgencia);
+      l.push('· Priority (governa o nivelamento): ' + a.prio +
+        (a.etiquetasPrio.length ? ' — prioridade de negócio: ' + a.etiquetasPrio.join(', ') : ' — sem etiqueta de negócio (= Esforço/Urgência)'));
       l.push('· Status: ' + statusDe(a));
       l.push('· Retrabalhos (campo do Trello): ' + (c.retrabalho || 0));
       l.push('· Recursos: ' + (a.recursos.length ? a.recursos.join(', ') + (a.viaMembro ? ' (via membro do card)' : ' (via etiqueta)') : 'nenhum reconhecido'));
@@ -690,7 +734,7 @@ export function createMSP(deps) {
 
     function xmlExtDefs() {
       var s = '<ExtendedAttributes>';
-      EXT.forEach(function(e) {
+      EXT.concat([EXT_NUM]).forEach(function(e) {
         s += '<ExtendedAttribute><FieldID>' + e.fid + '</FieldID><FieldName>' + e.nome +
           '</FieldName><Alias>' + esc(e.alias) + '</Alias></ExtendedAttribute>';
       });
@@ -744,6 +788,8 @@ export function createMSP(deps) {
           if (vals[i] === '' || vals[i] === null || vals[i] === undefined) return;
           s += '<ExtendedAttribute><FieldID>' + e.fid + '</FieldID><Value>' + esc(vals[i]) + '</Value></ExtendedAttribute>';
         });
+        // Number1: escala de esforço/urgência — informativa, fora do nivelamento.
+        s += '<ExtendedAttribute><FieldID>' + EXT_NUM.fid + '</FieldID><Value>' + a.esforcoUrgencia + '</Value></ExtendedAttribute>';
       }
       return s + '</Task>';
     }
@@ -808,7 +854,8 @@ export function createMSP(deps) {
     // ══════════════ 13. PLANILHA DE AUDITORIA (XLSX, fallback CSV) ══════════════
     var COLS_CRONO = ['ID','Outline Level','Task Name','Summary','Start','Finish','Duration (d.u.)',
       'Duration (h úteis)','Base','Origem da duração','Predecessors','Resource Names','% Complete',
-      'Priority','Client','Stage','Difficulty','Status','Lead Time bruto (d.u.)','1ª entrega (h)',
+      'Priority (negócio)','Esforço/Urgência','Etiquetas de prioridade',
+      'Client','Stage','Difficulty','Status','Lead Time bruto (d.u.)','1ª entrega (h)',
       'Tempo em fila (h)','Espera externa (h)','Tempo por etapa (h)','Deadline','Trello Card ID','Trello Card URL'];
 
     function linhasCronograma(p) {
@@ -822,6 +869,7 @@ export function createMSP(deps) {
           t.pred ? String(t.pred) : '',
           a ? a.recursos.join(';') : '',
           a ? a.pct : '', a ? a.prio : '',
+          a ? a.esforcoUrgencia : '', a ? a.etiquetasPrio.join(';') : '',
           a ? a.cliente : '', a ? a.etapa : '',
           a && c.nivelEsforco ? c.nivelEsforco : '',
           a ? statusDe(a) : '',
@@ -969,6 +1017,11 @@ export function createMSP(deps) {
       o.pessoas = (raw && Array.isArray(raw.pessoas) && raw.pessoas.length)
         ? raw.pessoas.map(function(n) { return String(n).trim(); }).filter(Boolean)
         : PESSOAS_PADRAO.slice();
+      // Lista vazia é um estado VÁLIDO aqui (≠ pessoas): significa "sem prioridade
+      // de negócio configurada", que é o padrão e mantém o comportamento anterior.
+      o.etiquetasPrioridadeNegocio = (raw && Array.isArray(raw.etiquetasPrioridadeNegocio))
+        ? raw.etiquetasPrioridadeNegocio.map(function(n) { return String(n).trim(); }).filter(Boolean)
+        : [];
       return o;
     }
     function carregarCfg() {
@@ -1028,7 +1081,17 @@ export function createMSP(deps) {
       h += '<div class="msp-field msp-field-wide"><label for="msp-pessoas">Pessoas reconhecidas nas etiquetas ' +
         '<span class="msp-muted">(uma por linha — só estas viram recurso)</span></label>' +
         '<textarea id="msp-pessoas" class="msp-input msp-ta" rows="4">' + escHtml(cfg.pessoas.join('\n')) + '</textarea></div>';
-      h += '</div></div>';
+      h += '<div class="msp-field msp-field-wide"><label for="msp-prio">Etiquetas de prioridade de negócio ' +
+        '<span class="msp-muted">(uma por linha — ex.: VIP, Contrato Prioritário. Vazio = sem prioridade de negócio)</span></label>' +
+        '<textarea id="msp-prio" class="msp-input msp-ta" rows="3" placeholder="VIP">' +
+        escHtml(cfg.etiquetasPrioridadeNegocio.join('\n')) + '</textarea></div>';
+      h += '</div>';
+      h += '<p class="msp-p msp-muted"><strong>Mudança:</strong> o campo <em>Priority</em> do MS Project — que ' +
+        'governa o <em>Nivelar Tudo</em> — passou a refletir prioridade de <strong>negócio</strong>. ' +
+        'A escala derivada do Nível de Esforço virou o campo <em>Esforço/Urgência</em> (Number1), informativo. ' +
+        'Sem etiquetas configuradas acima, o Priority continua idêntico ao de antes. ' +
+        'Etiquetas listadas aqui deixam de ser candidatas a nome de Cliente.</p>';
+      h += '</div>';
 
       // ── validação ──
       h += '<div class="msp-card"><div class="msp-h2">Validação</div><div class="msp-tiles">';
@@ -1122,6 +1185,15 @@ export function createMSP(deps) {
         var novas = this.value.split('\n').map(function(s) { return s.trim(); }).filter(Boolean);
         if (novas.join('|') === cfg.pessoas.join('|')) return;
         cfg.pessoas = novas.length ? novas : PESSOAS_PADRAO.slice();
+        recarregar();
+      });
+
+      // Etiquetas de prioridade de negócio: lista VAZIA é válida (= sem prioridade).
+      var tp = document.getElementById('msp-prio');
+      if (tp) tp.addEventListener('blur', function() {
+        var novas = this.value.split('\n').map(function(s) { return s.trim(); }).filter(Boolean);
+        if (novas.join('|') === cfg.etiquetasPrioridadeNegocio.join('|')) return;
+        cfg.etiquetasPrioridadeNegocio = novas;
         recarregar();
       });
 
