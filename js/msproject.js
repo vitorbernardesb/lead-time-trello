@@ -1,3 +1,4 @@
+import { uiIcon } from './ui-icons.js';
 // ═══════════════════════════════════════════════════════════════════════════
 //  MSP — PONTE TRELLO → MICROSOFT PROJECT   (camada 100% ADITIVA)
 //  ─────────────────────────────────────────────────────────────────────────
@@ -1118,7 +1119,7 @@ export function createMSP(deps) {
         h += '<p class="msp-p msp-ok">Nenhum problema encontrado — todas as atividades estão prontas.</p>';
       }
       if (v.ciclos) {
-        h += '<p class="msp-p msp-bad-text">⚠️ ' + v.ciclos + ' predecessora(s) inconsistente(s) detectada(s). ' +
+        h += '<p class="msp-p msp-bad-text">' + uiIcon('alert') + ' ' + v.ciclos + ' predecessora(s) inconsistente(s) detectada(s). ' +
           'Não deveria acontecer com o encadeamento canônico — não exporte sem verificar.</p>';
       }
       h += '</div>';
@@ -1154,8 +1155,8 @@ export function createMSP(deps) {
       // ── ações ──
       h += '<div class="msp-card"><div class="msp-h2">Gerar arquivos</div>';
       h += '<div class="msp-actions">';
-      h += '<button class="btn" id="msp-xml"' + (p.exportaveis.length ? '' : ' disabled') + '>⬇ Cronograma (.xml para o MS Project)</button>';
-      h += '<button class="btn btn-secondary" id="msp-xlsx"' + (p.exportaveis.length ? '' : ' disabled') + '>⬇ Planilha de auditoria (.xlsx)</button>';
+      h += '<button class="btn" id="msp-xml"' + (p.exportaveis.length ? '' : ' disabled') + '>' + uiIcon('download') + ' Cronograma (.xml para o MS Project)</button>';
+      h += '<button class="btn btn-secondary" id="msp-xlsx"' + (p.exportaveis.length ? '' : ' disabled') + '>' + uiIcon('download') + ' Planilha de auditoria (.xlsx)</button>';
       h += '<span class="msp-status" id="msp-status"></span>';
       h += '</div>';
       h += '<p class="msp-p msp-muted">O <strong>.xml</strong> abre direto no MS Project com hierarquia, durações, predecessoras, recursos, ' +

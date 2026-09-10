@@ -1,0 +1,16 @@
+/* Compact Trello iframes share the dashboard's foundations without its page layout. */
+body { font-family: var(--font-ui); color: var(--ink); }
+thead th { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 600; padding: 8px; }
+tbody td { color: var(--ink); padding: 8px; border-bottom-color: var(--border); }
+tr.current td { background: rgba(255,207,6,.08); }
+tr.total td { background: var(--surface-secondary); font-weight: 600; }
+.toggle-bar { background: var(--surface-secondary); border-radius: var(--radius); padding: var(--space-1); }
+.toggle-btn { min-height: 32px; color: var(--muted); border-radius: var(--radius-sm); }
+.toggle-btn.active { background: var(--card); box-shadow: var(--shadow-1); }
+.warning-box { background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--danger); border-radius: var(--radius); padding: var(--space-3) var(--space-4); }
+.warning-title { color: var(--danger); font-size: 12px; text-transform: none; letter-spacing: 0; }
+.warning-item { color: var(--ink); line-height: 1.6; }
+.warning-dot { background: var(--danger); }
+.msg { color: var(--muted); }
+button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

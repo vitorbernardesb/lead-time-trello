@@ -1,3 +1,4 @@
+import { uiIcon } from './ui-icons.js';
 // ══════════════════════════════════════════════════════════════════════
 //  ANÁLISES PERSONALIZADAS  (módulo aditivo e autocontido)
 //  ───────────────────────────────────────────────────────────────────
@@ -471,8 +472,8 @@ export function createCP(deps) {
       h += '</div><div class="cp-intro-actions">';
       h += '<span class="cp-slots-hint">' + panels.length + '/' + UI_LIMIT + ' painéis</span>';
       h += '<div class="cp-actions-buttons">';
-      h += '<button class="btn btn-secondary" id="cp-refresh">⟲ Atualizar dados</button>';
-      h += '<button class="btn btn-secondary" id="cp-export" ' + (panels.length ? '' : 'disabled') + '>⬇ Exportar</button>';
+      h += '<button class="btn btn-secondary" id="cp-refresh">' + uiIcon('refresh') + ' Atualizar dados</button>';
+      h += '<button class="btn btn-secondary" id="cp-export" ' + (panels.length ? '' : 'disabled') + '>' + uiIcon('download') + ' Exportar</button>';
       h += '<button class="btn" id="cp-new" ' + (panels.length >= UI_LIMIT ? 'disabled title="Limite de ' + UI_LIMIT + ' painéis"' : '') + '>+ Novo painel</button>';
       h += '</div></div></div>';
 
@@ -487,16 +488,16 @@ export function createCP(deps) {
           var strat = strategyOf(p);
           var open = !!p.__open;
           h += '<div class="cp-panel' + (open ? ' cp-open' : '') + '" data-id="' + p.id + '" style="--cp-color:' + p.color + '">';
-          h += '<div class="cp-panel-head" data-act="toggle">';
+          h += '<div class="cp-panel-head" data-act="toggle" role="button" tabindex="0">';
           h += '<span class="cp-panel-swatch"></span>';
           h += '<div class="cp-panel-titlewrap"><div class="cp-panel-name">' + escHtml(p.name) + '</div>';
           h += '<div class="cp-panel-meta"><span>' + p.values.length + ' ' + (p.values.length === 1 ? strat.unit : (strat.unitPlural || strat.unit + 's')) + '</span>' +
             '<span>Atualizado ' + fmtDateTime(p.updatedAt) + '</span></div></div>';
           h += '<div class="cp-panel-count">' + (r ? r.count : '—') + ' <small>card' + (r && r.count === 1 ? '' : 's') + '</small></div>';
           h += '<div class="cp-panel-headactions">';
-          h += '<button class="cp-icon-btn" data-act="config" title="Configurar painel">⚙</button>';
-          h += '<button class="cp-icon-btn" data-act="dup" title="Duplicar" ' + (panels.length >= UI_LIMIT ? 'disabled' : '') + '>⧉</button>';
-          h += '<button class="cp-icon-btn cp-danger" data-act="del" title="Excluir">🗑</button>';
+          h += '<button class="cp-icon-btn" data-act="config" title="Configurar painel">' + uiIcon('settings') + '</button>';
+          h += '<button class="cp-icon-btn" data-act="dup" title="Duplicar" ' + (panels.length >= UI_LIMIT ? 'disabled' : '') + '>' + uiIcon('copy') + '</button>';
+          h += '<button class="cp-icon-btn cp-danger" data-act="del" title="Excluir">' + uiIcon('trash') + '</button>';
           h += '<span class="cp-chevron">▾</span>';
           h += '</div></div>';
           if (p.values.length) {
@@ -652,8 +653,8 @@ export function createCP(deps) {
         body += '</div>';
 
         var foot = '';
-        if (!isNew) foot += '<button class="btn btn-secondary" data-cfg="dup">⧉ Duplicar</button>' +
-          '<button class="btn btn-secondary" data-cfg="del" style="color:var(--danger-text)">🗑 Excluir</button>';
+        if (!isNew) foot += '<button class="btn btn-secondary" data-cfg="dup">' + uiIcon('copy') + ' Duplicar</button>' +
+          '<button class="btn btn-secondary" data-cfg="del" style="color:var(--danger-text)">' + uiIcon('trash') + ' Excluir</button>';
         foot += '<span class="cp-autosave" id="cp-autosave">✓ Salvo automaticamente</span>';
 
         setModal(over, {
@@ -822,7 +823,7 @@ export function createCP(deps) {
         '<span class="cp-crow-center">Retrabalhos</span><span>Lista Atual</span></div>' +
         '<div class="cp-vlist-inner" id="cp-cards-inner"></div></div>';
       var foot = '<span class="cp-modal-sub" id="cp-cards-count" style="color:var(--muted)"></span>';
-      if (opts.onExport) foot += '<button class="btn btn-secondary" id="cp-cards-export" style="margin-left:auto" ' + (cards.length ? '' : 'disabled') + '>⬇ Exportar planilha</button>';
+      if (opts.onExport) foot += '<button class="btn btn-secondary" id="cp-cards-export" style="margin-left:auto" ' + (cards.length ? '' : 'disabled') + '>' + uiIcon('download') + ' Exportar planilha</button>';
 
       setModal(over, { swatch: color, title: escHtml(title), sub: 'Detalhes dos cards', body: body, foot: foot });
       showOverlay(over);
@@ -848,8 +849,8 @@ export function createCP(deps) {
       panels.forEach(function(p) { if (p.values.length) options += '<option value="' + p.id + '">' + escHtml(p.name) + '</option>'; });
       var body = '<div class="cp-field"><label>Escopo do relatório</label><select class="cp-input" id="cp-exp-scope">' + options + '</select></div>' +
         '<div class="cp-field"><label>Formato</label><div style="display:flex;gap:10px">' +
-        '<button class="btn" id="cp-exp-png" style="flex:1">🖼 PNG</button>' +
-        '<button class="btn" id="cp-exp-pdf" style="flex:1">📄 PDF</button></div></div>' +
+        '<button class="btn" id="cp-exp-png" style="flex:1">' + uiIcon('image') + ' PNG</button>' +
+        '<button class="btn" id="cp-exp-pdf" style="flex:1">' + uiIcon('file') + ' PDF</button></div></div>' +
         '<p style="font-size:11px;color:var(--muted)">Relatório executivo pronto para apresentação: logo, KPIs, gráficos e comparativo.</p>';
       setModal(over, { swatch: '#FFCF06', title: 'Exportar relatório', sub: 'Análises Personalizadas', body: body, foot: '<span class="cp-modal-sub" id="cp-exp-status" style="color:var(--muted)"></span>' });
       showOverlay(over);
@@ -947,7 +948,17 @@ export function createCP(deps) {
     function getOverlay(modalClass) {
       var over = document.createElement('div');
       over.className = 'cp-overlay';
-      over.innerHTML = '<div class="cp-modal ' + (modalClass || '') + '"></div>';
+      over.innerHTML = '<div class="cp-modal ' + (modalClass || '') + '" role="dialog" aria-modal="true" tabindex="-1"></div>';
+      over._returnFocus = document.activeElement;
+      over.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeOverlay(over); return; }
+        if (e.key !== 'Tab') return;
+        var focusable = Array.from(over.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')).filter(function(el) { return el.getClientRects().length; });
+        var first = focusable[0], last = focusable[focusable.length - 1];
+        if (!first) { e.preventDefault(); return; }
+        if (e.shiftKey && (document.activeElement === first || document.activeElement === over.querySelector('.cp-modal'))) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      });
       over.addEventListener('click', function(e) { if (e.target === over) closeOverlay(over); });
       document.body.appendChild(over);
       return over;
@@ -960,11 +971,13 @@ export function createCP(deps) {
         '<button class="cp-modal-close" aria-label="Fechar">&times;</button></div>' +
         '<div class="cp-modal-body">' + o.body + '</div>' +
         (o.foot ? '<div class="cp-modal-foot">' + o.foot + '</div>' : '');
+      m.setAttribute('aria-label', m.querySelector('.cp-modal-title').textContent);
       m.querySelector('.cp-modal-close').addEventListener('click', function() { closeOverlay(over); });
     }
-    function showOverlay(over) { requestAnimationFrame(function() { over.classList.add('on'); }); }
+    function showOverlay(over) { requestAnimationFrame(function() { over.classList.add('on'); over.querySelector('.cp-modal-close').focus({ preventScroll: true }); }); }
     function closeOverlay(over) {
       over.classList.remove('on');
+      if (over._returnFocus && over._returnFocus.isConnected) over._returnFocus.focus({ preventScroll: true });
       setTimeout(function() { if (over.parentNode) over.parentNode.removeChild(over); }, 180);
       hideTip();
     }

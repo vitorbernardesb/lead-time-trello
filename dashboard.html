@@ -2,6 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Power Up Midiática</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="preload" href="./fonts/BwModelica-Regular.otf" as="font" type="font/otf" crossorigin>
@@ -21,19 +22,19 @@
     </svg>
     <h1><strong>Power Up Midiática</strong></h1>
   </div>
-  <div class="tabs">
-    <button class="tab active" data-tab="realtime">Tempo real</button>
+  <nav class="tabs" aria-label="Seções do dashboard">
+    <button class="tab active" data-tab="realtime" aria-current="page">Tempo real</button>
     <button class="tab" data-tab="funnel">Detalhamento</button>
     <button class="tab" data-tab="history">Histórico</button>
-    <button class="tab" data-tab="custom">Análises Personalizadas</button>
+    <button class="tab" data-tab="custom">Análises personalizadas</button>
     <button class="tab" data-tab="msproject">MS Project</button>
     <button class="tab" data-tab="config">Configurar metas</button>
-  </div>
+  </nav>
 </div>
 
-<div id="alert-banner" style="display:none;"></div>
+<button type="button" id="alert-banner" style="display:none;"></button>
 
-<div class="body">
+<main class="body">
   <div id="tab-realtime" class="tab-content active visible">
     <div class="spinner-wrap" id="rt-loading"><div class="spinner"></div><p>Carregando dados…</p></div>
     <div id="rt-error" class="error-box" style="display:none;"><p></p><button class="btn" id="rt-retry">Tentar novamente</button></div>
@@ -61,9 +62,10 @@
     <div id="cfg-content"></div>
   </div>
 
-</div>
+</main>
 
 <script type="module">
+import { uiIcon } from './js/ui-icons.js';
 import { TRELLO_TOKEN, apiUrl } from './js/trello-api.js';
 import { FLOW_LISTS, PRODUCAO_ATIVA, ETAPAS_PRE_ENTREGA, NIVEIS_ESFORCO, PRIMEIRA_ENTREGA_EPOCH, DEFAULT_SLA, DEFAULTS, COR_NIVEL } from './js/config.js';
 import { t, cachedData, setCachedData, renderedTabs, resetRenderedTabs } from './js/state.js';
@@ -355,6 +357,7 @@ import { createMSP } from './js/msproject.js';
       color: statusColor(kpis.healthScore),
       body: built.html
     });
+    over.querySelector('.cp-modal').classList.add('cp-modal-health');
     function openRow(row) {
       if (typeof CP.openCards !== 'function') return;
       var bucketKey = row.getAttribute('data-hb-bucket');
@@ -463,14 +466,21 @@ import { createMSP } from './js/msproject.js';
     return config;
   }
 
+  // Native keyboard activation for the existing delegated presentation controls.
+  document.addEventListener('keydown', function(e) {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.card-link, .cp-panel-head')) {
+      e.preventDefault(); e.target.click();
+    }
+  });
+
   // ─── TABS ───────────────────────────────────────
   var tabs = document.querySelectorAll('.tab');
   var tabContents = document.querySelectorAll('.tab-content');
   function switchTab(name) {
-    tabs.forEach(function(t){ t.classList.remove('active'); });
+    tabs.forEach(function(t){ t.classList.remove('active'); t.removeAttribute('aria-current'); });
     tabContents.forEach(function(tc){ tc.classList.remove('visible'); });
     for (var i=0; i<tabs.length; i++) {
-      if (tabs[i].getAttribute('data-tab') === name) tabs[i].classList.add('active');
+      if (tabs[i].getAttribute('data-tab') === name) { tabs[i].classList.add('active'); tabs[i].setAttribute('aria-current', 'page'); }
     }
     setTimeout(function() {
       tabContents.forEach(function(tc){ tc.classList.remove('active'); });
@@ -1116,17 +1126,26 @@ import { createMSP } from './js/msproject.js';
     return alerts;
   }
 
+  // Presentation-only helpers: all scores, thresholds and units come from existing data.
+  function kpiDisplayHTML(value) {
+    var parts = String(value).match(/^([\d.,]+)\s*(.*)$/);
+    return parts ? escHtml(parts[1]) + (parts[2] ? '<span class="kpi-unit">' + escHtml(parts[2]) + '</span>' : '') : escHtml(String(value));
+  }
+
   // ─── RENDER ALERT BANNER ────────────────────────
   function renderAlertBanner(slaAlerts) {
     var banner = document.getElementById('alert-banner');
     if (slaAlerts.length > 0) {
       banner.className = 'alert-banner danger';
-      banner.innerHTML = '🔴 ' + slaAlerts.length + ' card' + (slaAlerts.length > 1 ? 's estão' : ' está') + ' acima do SLA — ver no Detalhamento';
+      banner.innerHTML = '<span class="alert-symbol" aria-hidden="true">' + uiIcon('alert') + '</span><span class="alert-copy"><strong>' + slaAlerts.length + ' card' + (slaAlerts.length > 1 ? 's estão' : ' está') + ' acima do SLA</strong> · Atenção aos prazos da operação</span><span class="alert-action">Ver detalhamento →</span>';
+      banner.disabled = false;
+      banner.style.cursor = 'pointer';
       banner.style.display = '';
       banner.onclick = function() { switchTab('funnel'); };
     } else {
       banner.className = 'alert-banner success';
-      banner.innerHTML = '✅ Todos os cards estão dentro do SLA';
+      banner.innerHTML = '<span class="alert-symbol" aria-hidden="true">' + uiIcon('check') + '</span><span class="alert-copy">Todos os cards estão dentro do SLA</span>';
+      banner.disabled = true;
       banner.style.display = '';
       banner.onclick = null;
       banner.style.cursor = 'default';
@@ -1406,17 +1425,18 @@ import { createMSP } from './js/msproject.js';
     var heroPior = heroBreakdown[0];
     var heroTemPerda = !!(heroPior && heroPior.perdidos > 0.5);
 
+    html += '<div class="page-heading"><span class="page-eyebrow">Tempo real</span><h2>Visão geral da operação</h2><p>Saúde do fluxo, prioridades e indicadores de desempenho.</p></div>';
     html += '<div class="score-circle-wrap" id="score-hero" role="button" tabindex="0" aria-label="Ver o que está pesando no Health Score">';
-    html += '<div class="score-hero-ring">';
+    html += '<div class="score-hero-ring"><div class="score-caption">Health Score</div>';
     html += '<svg class="score-ring-svg" width="120" height="120" viewBox="0 0 120 120">';
     html += '<circle cx="60" cy="60" r="52" stroke="'+ringTrilha+'" stroke-width="6" fill="none"/>';
     html += '<circle id="score-ring-progress" class="score-ring-progress" cx="60" cy="60" r="52" stroke="'+ringCor+'" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="'+circumference+'" stroke-dashoffset="'+circumference+'" transform="rotate(-90 60 60)"/>';
     html += '<circle cx="60" cy="60" r="46" fill="'+scoreTint(kpis.healthScore)+'"/>';
     // número hero em tinta (o anel colorido carrega o estado; texto não veste cor de dado)
-    html += '<text id="score-ring-number" x="60" y="55" text-anchor="middle" dominant-baseline="middle" font-size="31" font-weight="700" font-family="BW Modelica, Inter, Helvetica Neue, sans-serif" fill="#0A0A0A">'+kpis.healthScore+'</text>';
-    html += '<text x="60" y="73" text-anchor="middle" font-size="9" letter-spacing="0.6" font-family="BW Modelica, Inter, Helvetica Neue, sans-serif" fill="#75757F">HEALTH SCORE</text>';
+    html += '<text id="score-ring-number" x="60" y="55" text-anchor="middle" dominant-baseline="middle" font-size="31" font-weight="700" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" fill="#0A0A0A">'+kpis.healthScore+'</text>';
+    html += '<text x="60" y="73" text-anchor="middle" font-size="9" letter-spacing="0.6" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" fill="#75757F">de 100</text>';
     html += '</svg>';
-    html += '<div class="score-status"><span class="score-status-dot" style="background:'+ringCor+'"></span>'+scoreStatus(kpis.healthScore)+'</div>';
+    html += '<div class="score-status"><span class="score-status-dot" style="background:'+ringCor+'"></span>'+scoreStatus(kpis.healthScore)+'</div><div class="score-context">6 indicadores · metas do board</div>';
     html += '</div>';
     html += '<div class="score-hero-divider"></div>';
     html += '<div class="score-hero-insight">';
@@ -1449,7 +1469,7 @@ import { createMSP } from './js/msproject.js';
       var clickable = subCount > 0;
       html += '<div class="kpi-card'+(clickable?' kpi-clickable':'')+'"'+(clickable?' data-kpi="'+i+'" role="button" tabindex="0" title="Ver os '+subCount+' card'+(subCount>1?'s':'')+'"':'')+'>';
       html += '<div class="kpi-name">'+k.name+'</div>';
-      html += '<div class="kpi-value">'+k.display+'</div>';
+      html += '<div class="kpi-value">'+kpiDisplayHTML(k.display)+'</div>';
       // Toggle Nº/% (só "Retrabalhos"): dispara stopPropagation no wiring abaixo para
       // não acionar o click-through do card (que abre o modal de cards com retrabalho).
       if (k.toggle) {
@@ -1459,6 +1479,7 @@ import { createMSP } from './js/msproject.js';
           '</div>';
       }
       html += '<div class="kpi-meta">'+k.metaLabel+'</div>';
+      html += '<div class="kpi-state"><span class="kpi-state-dot" style="background:'+cor+'"></span>'+(k.display === 'Sem dados' ? 'Sem dados de prazo' : k.score >= 67 ? 'Saudável' : k.score >= 34 ? 'Atenção' : 'Crítico')+'</div>';
       html += '<div class="kpi-bar-bg" style="background:'+statusColorSoft(k.score)+'"><div class="kpi-bar-fill" id="bar-kpi-'+i+'" style="width:0%;background:'+cor+';"></div></div>';
       if (clickable) html += '<span class="kpi-cardcount">'+subCount+' card'+(subCount>1?'s':'')+' →</span>';
       html += '</div>';
@@ -1479,8 +1500,8 @@ import { createMSP } from './js/msproject.js';
       html += '<div class="collapse-body'+(expanded?' open':'')+'" id="nc-body">';
       html += '<table><thead><tr><th>Card</th><th>Campos faltantes</th></tr></thead><tbody>';
       nonConforming.forEach(function(c) {
-        html += '<tr><td><span class="card-link" data-card-id="'+escHtml(c.id)+'">'+escHtml(c.name)+'</span></td><td>';
-        c.missing.forEach(function(m) { html += '<span class="missing-tag">⚠️ '+escHtml(m)+'</span>'; });
+        html += '<tr><td><span class="card-link" role="button" tabindex="0" data-card-id="'+escHtml(c.id)+'">'+escHtml(c.name)+'</span></td><td>';
+        c.missing.forEach(function(m) { html += '<span class="missing-tag">'+escHtml(m)+'</span>'; });
         html += '</td></tr>';
       });
       html += '</tbody></table></div></div>';
@@ -1557,7 +1578,7 @@ import { createMSP } from './js/msproject.js';
             : kpis.kpi2;
           var card = tg.closest('.kpi-card');
           var valEl = card && card.querySelector('.kpi-value');
-          if (valEl) valEl.textContent = kk.display;
+          if (valEl) valEl.innerHTML = kpiDisplayHTML(kk.display);
           tg.querySelectorAll('button').forEach(function(b) {
             b.classList.toggle('on', b.getAttribute('data-mode') === mode);
           });
@@ -1663,7 +1684,7 @@ import { createMSP } from './js/msproject.js';
 
     html += '<div class="table-header-row">';
     html += '<h3>Etapas de produção</h3>';
-    html += '<button class="btn-table-download" id="btn-dl-funnel">⬇ Exportar tabela</button>';
+    html += '<button class="btn-table-download" id="btn-dl-funnel">' + uiIcon('download') + ' Exportar tabela</button>';
     html += '</div>';
     html += '<div class="table-scroll"><table class="funnel-table"><thead><tr>';
     html += '<th>Etapa</th><th>Cards agora</th><th>Acima do SLA</th><th>SLA</th><th>Saídas no mês</th><th>Status</th>';
@@ -1679,13 +1700,13 @@ import { createMSP } from './js/msproject.js';
 
       var status, statusClass;
       if (isConcluido) {
-        status = '✅ Concluído'; statusClass = 'status-ok';
+        status = 'Concluído'; statusClass = 'status-ok';
       } else if (cnt >= 3 && abv >= 1) {
-        status = '🔴 Gargalo'; statusClass = 'status-danger';
+        status = 'Gargalo'; statusClass = 'status-danger';
       } else if (abv >= 1) {
         status = '⚠️ Atenção'; statusClass = 'status-warn';
       } else {
-        status = '✅ Fluindo'; statusClass = 'status-ok';
+        status = 'Fluindo'; statusClass = 'status-ok';
       }
 
       var barW = maxCards > 0 ? Math.round(cnt / maxCards * 100) : 0;
@@ -1705,7 +1726,7 @@ import { createMSP } from './js/msproject.js';
     html += '<div class="alerts-section">';
     html += '<div class="table-header-row">';
     html += '<h3>Alertas ativos ('+slaAlerts.length+')</h3>';
-    html += '<button class="btn-table-download" id="btn-dl-alerts">⬇ Exportar</button>';
+    html += '<button class="btn-table-download" id="btn-dl-alerts">' + uiIcon('download') + ' Exportar</button>';
     html += '</div>';
     html += '<div id="alerts-page-wrap"></div>';
     html += '</div>';
@@ -1722,8 +1743,8 @@ import { createMSP } from './js/msproject.js';
 
     html += '<div class="rework-section">';
     html += '<div class="table-header-row">';
-    html += '<h3>🔄 Cards com mais retrabalho</h3>';
-    html += '<button class="btn-table-download" id="btn-dl-rework">⬇ Exportar</button>';
+    html += '<h3>Cards com mais retrabalho</h3>';
+    html += '<button class="btn-table-download" id="btn-dl-rework">' + uiIcon('download') + ' Exportar</button>';
     html += '</div>';
     html += '<div class="rework-filters">';
     html += '<div class="filter-group"><label>Etapa</label><select id="rw-filter-stage"><option value="">Todas</option>';
@@ -1812,7 +1833,7 @@ import { createMSP } from './js/msproject.js';
       var h = '';
       pageItems.forEach(function(a) {
         h += '<div class="alert-row">';
-        h += '<span class="ar-name"><span class="card-link" data-card-id="'+escHtml(a.id)+'">'+escHtml(a.name)+'</span></span>';
+        h += '<span class="ar-name"><span class="card-link" role="button" tabindex="0" data-card-id="'+escHtml(a.id)+'">'+escHtml(a.name)+'</span></span>';
         h += '<span class="ar-stage">'+escHtml(a.list)+'</span>';
         h += '<span class="ar-days">'+a.days+' d.u.</span>';
         h += '<span class="ar-excess">+'+a.excess+' dias acima do limite</span>';
@@ -1867,7 +1888,7 @@ import { createMSP } from './js/msproject.js';
         var rwClass = rc.retrabalho >= 3 ? 'high' : rc.retrabalho >= 2 ? 'med' : 'low';
         h += '<tr>';
         h += '<td class="rework-rank">'+(globalIdx+1)+'</td>';
-        h += '<td><span class="card-link" data-card-id="'+escHtml(rc.id)+'">'+escHtml(rc.name)+'</span></td>';
+        h += '<td><span class="card-link" role="button" tabindex="0" data-card-id="'+escHtml(rc.id)+'">'+escHtml(rc.name)+'</span></td>';
         h += '<td class="rework-val '+rwClass+'">'+rc.retrabalho+'</td>';
         h += '<td>'+escHtml(rc.currentListName)+'</td>';
         h += '<td>';
@@ -2971,7 +2992,7 @@ import { createMSP } from './js/msproject.js';
 
         html += '<div class="table-header-row">';
         html += '<h3>Snapshots mensais</h3>';
-        html += '<button class="btn-table-download" id="btn-dl-history">⬇ Exportar histórico</button>';
+        html += '<button class="btn-table-download" id="btn-dl-history">' + uiIcon('download') + ' Exportar histórico</button>';
         html += '</div>';
         html += '<div class="table-scroll"><table class="history-table"><thead><tr>';
         html += '<th>Mês</th><th>Health Score</th><th>Vencidos</th><th>Rework</th><th>Entrega</th><th>Na etapa</th><th>Throughput</th><th>Conformidade</th><th>Cards</th>';
@@ -2995,7 +3016,7 @@ import { createMSP } from './js/msproject.js';
 
       html += '<div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">';
       html += '<button class="btn btn-secondary" id="btn-force-snap">Salvar snapshot agora</button>';
-      html += '<button class="btn btn-secondary" id="btn-dl-image">⬇ Baixar imagem</button>';
+      html += '<button class="btn btn-secondary" id="btn-dl-image">' + uiIcon('download') + ' Baixar imagem</button>';
       html += '</div>';
 
       var el = document.getElementById('hist-content');
@@ -3082,7 +3103,7 @@ import { createMSP } from './js/msproject.js';
         if (n === 'Concluído 🏆') return;
         var val = config.sla && config.sla[n] !== undefined ? config.sla[n] : DEFAULT_SLA[n];
         html += '<div class="sla-row">';
-        html += '<label>'+escHtml(n)+'</label>';
+        html += '<label for="sla_'+i+'">'+escHtml(n)+'</label>';
         html += '<input type="number" id="sla_'+i+'" min="1" max="30" value="'+val+'" data-list="'+escHtml(n)+'">';
         html += '<span class="sla-unit">d.u.</span>';
         html += '</div>';
@@ -3198,9 +3219,9 @@ import { createMSP } from './js/msproject.js';
       '<div class="slider-row">' +
         '<input type="range" id="'+id+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+value+'" data-min="'+min+'" data-max="'+max+'" data-step="'+step+'">' +
         '<div class="num-input-wrap">' +
-          '<button class="num-arrow" type="button" data-target="'+id+'" data-dir="-1">▼</button>' +
-          '<input type="number" class="num-input" id="num-'+id+'" value="'+value+'" min="'+min+'" max="'+max+'" step="'+step+'">' +
-          '<button class="num-arrow" type="button" data-target="'+id+'" data-dir="1">▲</button>' +
+          '<button class="num-arrow" type="button" aria-label="Diminuir '+escHtml(label)+'" data-target="'+id+'" data-dir="-1">▼</button>' +
+          '<input type="number" class="num-input" aria-label="'+escHtml(label)+'" id="num-'+id+'" value="'+value+'" min="'+min+'" max="'+max+'" step="'+step+'">' +
+          '<button class="num-arrow" type="button" aria-label="Aumentar '+escHtml(label)+'" data-target="'+id+'" data-dir="1">▲</button>' +
         '</div>' +
         (unidade ? '<span class="slider-unit">'+unidade+'</span>' : '') +
       '</div>' +

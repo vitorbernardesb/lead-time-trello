@@ -1,0 +1,39 @@
+/* Shared material, typography and spacing foundations. Brand yellow stays an accent. */
+:root {
+  color-scheme: light;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --background: #f4f5f5;
+  --surface: #f4f5f5;
+  --surface-secondary: #f7f8f8;
+  --surface-elevated: #fff;
+  --surface-glass: rgba(255, 255, 255, .86);
+  --card: var(--surface-elevated);
+  --ink: #202427;
+  --ink-2: #535c63;
+  --muted: #667078;
+  --faint: #939ba1;
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-2);
+  --text-tertiary: var(--muted);
+  --brand: #ffcf06;
+  --brand-2: #ffda42;
+  --brand-3: #ffe375;
+  --brand-4: #fff0ab;
+  --accent: var(--brand);
+  --border: rgba(38, 48, 56, .09);
+  --border-2: rgba(38, 48, 56, .18);
+  --ok-text: #22754f; --ok-bg: #edf6f0; --ok-line: #cce4d5;
+  --warn-text: #886214; --warn-bg: #faf4e5; --warn-line: #e9dcb8;
+  --danger-text: #ac3a42; --danger-bg: #faf0f0; --danger-line: #ecd2d4;
+  --success: var(--ok-text); --warning: var(--warn-text); --danger: var(--danger-text);
+  --radius-sm: 8px; --radius: 12px; --radius-lg: 20px; --radius-pill: 999px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px;
+  --shadow-1: 0 2px 4px rgba(30, 40, 46, .02), 0 8px 24px rgba(30, 40, 46, .035);
+  --shadow-2: 0 4px 8px rgba(30, 40, 46, .03), 0 12px 32px rgba(30, 40, 46, .065);
+  --shadow-pop: 0 16px 64px rgba(30, 40, 46, .16);
+  --shadow-glass: inset 0 1px 0 rgba(255, 255, 255, .8), 0 4px 20px rgba(30, 40, 46, .04);
+  --blur: 16px;
+  --transition: 160ms ease;
+  --content-width: 1440px;
+}
