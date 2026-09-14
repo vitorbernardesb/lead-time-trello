@@ -7,11 +7,14 @@
 // ==========================================================================
 
 import { APP_KEY, APP_NAME } from './trello-api.js';
+import { scopeIndicatorData } from './indicator-scope.js';
 
 export const t = TrelloPowerUp.iframe({ appKey: APP_KEY, appName: APP_NAME });
 
 export let cachedData = null;
-export function setCachedData(v) { cachedData = v; }
+export let ignoredIndicatorIds = new Set();
+export function setIgnoredIndicatorIds(ids) { ignoredIndicatorIds = new Set(ids); }
+export function setCachedData(v) { cachedData = v ? scopeIndicatorData(v, ignoredIndicatorIds) : null; }
 
 export let renderedTabs = {};
 export function resetRenderedTabs() { renderedTabs = {}; }

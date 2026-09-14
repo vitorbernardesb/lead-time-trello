@@ -995,3 +995,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--ink); outline-o
 .config-row input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border: 1px solid #92770d; background: var(--brand); border-radius: 50%; }
 .cp-modal.cp-modal-health { max-width: 800px; }
 @media (max-width: 900px) { #cfg-content .config-section { grid-template-columns: minmax(0, 1fr); } }
+
+.indicator-scope-note { padding: var(--space-3) var(--space-4); color: var(--muted); font-size: 12px; }
+.indicator-scope-note:empty { display: none; }
+.indicator-ignore-control { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 36px; cursor: pointer; white-space: nowrap; }
+.indicator-ignore-control input { width: 16px; height: 16px; accent-color: var(--ink); }
+.indicator-ignore-state { display: block; color: var(--muted); font-size: 11px; white-space: nowrap; }

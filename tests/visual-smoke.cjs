@@ -12,10 +12,11 @@ await context.addInitScript(()=>{
  const now=new Date(), ago=n=>new Date(+now-n*86400000).toISOString();
  let cards=Array.from({length:24},(_,i)=>({id:'card'+i,name:['Campanha de lançamento','Conteúdo institucional','Planejamento editorial','Identidade da campanha'][i%4]+' — '+(i+1), url:'https://trello.com/c/demo'+i,currentListName:i>15?'Concluído 🏆':i%2?'Em andamento 💪':'Revisão Interna 🔎', daysInCurrent:i%9+1,enteredCurrentAt:ago(i%9+1),isConcluido:i>15,concluidoNoMes:i>15,concludedAt:i>15?ago(2):null,leadTimeReal:i>15?8+i%4:null,hasDue:true,isLate:i<5,retrabalho:i%3,isConforme:i!==3,missing:i===3?['Descrição']:[],labels:['Cliente Aurora','Vitor'],members:[],idMembers:[],nivelEsforco:['BAIXO','MÉDIO','ALTO','MUITO ALTO'][i%4],createdAt:ago(25),due:ago(-2),dueComplete:i>15,primeiraEntrega:i>7?{horas:9*(i%4+1)+i,dias:i%4+1,breakdown:{'Em andamento 💪':i+3}}:null,stages:[{listName:'Em andamento 💪',enteredAt:ago(10),leftAt:ago(3),days:5}]}));
  if(location.search.includes('empty')) cards=[];
- localStorage.setItem('leadtime_cache_demo',JSON.stringify({cards,cachedAt:Date.now(),archived:[],throughput:{}}));
+ localStorage.setItem('leadtime_cache_demo',JSON.stringify({cards,cachedAt:Date.now(),archived:[],throughput:{'Em andamento 💪':2},throughputByCard:{card3:{'Em andamento 💪':2}}}));
  const snapshots={};for(let m=6;m<=9;m++)snapshots['snapshot_2026_'+String(m).padStart(2,'0')]={score:60+m*2,kpi1:10+m,kpi2:20+m,kpi3:3,kpi4:12,kpi5:90,kpi6:8,totalCards:24,savedAt:ago(30*(9-m))};
  const data={...snapshots,customPanels:[{id:'aurora',name:'Cliente Aurora',color:'#059669',criterion:'labels',values:['Cliente Aurora'],updatedAt:Date.now()}]};
- const t={board:async()=>({id:'demo',name:'Board de demonstração'}),get:async(a,b,key)=>key?data[key]:data,set:async(a,b,key,value)=>{data[key]=value;},alert:async()=>{},showCard:async()=>{},sizeTo:async()=>{},getContext:()=>({board:'demo'}),member:async()=>({id:'demo'})};
+ Object.assign(data,JSON.parse(sessionStorage.getItem('qa-board-options') || '{}'));
+ const t={board:async()=>({id:'demo',name:'Board de demonstração'}),get:async(a,b,key)=>key?data[key]:data,set:async(a,b,key,value)=>{if(window.qaFailSave) throw Error('Simulated save failure');data[key]=value;if(key.startsWith('indicatorExcluded_')){const saved=JSON.parse(sessionStorage.getItem('qa-board-options')||'{}');saved[key]=value;sessionStorage.setItem('qa-board-options',JSON.stringify(saved));}},alert:async()=>{},showCard:async()=>{},sizeTo:async()=>{},getContext:()=>({board:'demo'}),member:async()=>({id:'demo'})};
  window.TrelloPowerUp={iframe:()=>t};
 });
 const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
@@ -39,6 +40,33 @@ for(const width of [1024,768,390,320]){
  await page.locator('[data-tab="realtime"]').click();await page.waitForTimeout(220);
 }
 await page.setViewportSize({width:1440,height:1000}); await page.locator('.kpi-mode-toggle [data-mode="taxa"]').click(); assert.equal(await page.locator('.kpi-value').nth(1).textContent(),'66,7%'); await page.getByRole('button',{name:'Mediana',exact:true}).click(); await page.locator('.pe-toggle').first().click(); assert.equal(await page.locator('.pe-body.open').count(),1);
+
+ await page.locator('.kpi-mode-toggle [data-mode="abs"]').click();
+ await page.locator('[data-collapse="nc"]').click();
+ const ignored = page.locator('[data-ignore-card="card3"]');
+ const beforeIgnore = await page.locator('.kpi-value').allTextContents();
+ await ignored.check();
+ await page.getByText('Card ignorado. Indicadores recalculados.',{exact:true}).waitFor();
+ assert.equal(await ignored.isChecked(),true);
+ assert.equal(await page.locator('.kpi-value').nth(5).textContent(),'100%');
+ assert.equal(await page.evaluate(async()=> (await import('/js/state.js')).cachedData.cards.length),23);
+ assert.equal(await page.evaluate(async()=> (await import('/js/state.js')).cachedData.throughput['Em andamento 💪']),0);
+ await page.screenshot({path:path.join(out,'card-ignorado.png'),fullPage:true});
+ await page.reload(); await page.waitForSelector('#score-hero');
+ assert.equal(await ignored.isChecked(),true,'Board preference survives reload');
+ assert.equal(await page.evaluate(async()=> (await import('/js/state.js')).cachedData.cards.length),23);
+ await page.locator('[data-collapse="nc"]').click();
+ await page.evaluate(()=>{window.qaFailSave=true;});
+ await ignored.uncheck();
+ await page.getByText('Não foi possível salvar. Os indicadores não foram alterados. Tente novamente.',{exact:true}).waitFor();
+ assert.equal(await ignored.isChecked(),true);
+ assert.equal(await page.evaluate(async()=> (await import('/js/state.js')).cachedData.cards.length),23);
+ await page.evaluate(()=>{window.qaFailSave=false;});
+ await ignored.uncheck();
+ await page.getByText('Card incluído novamente. Indicadores recalculados.',{exact:true}).waitFor();
+ assert.deepEqual(await page.locator('.kpi-value').allTextContents(),beforeIgnore);
+ assert.equal(await page.evaluate(async()=> (await import('/js/state.js')).cachedData.throughput['Em andamento 💪']),2);
+ console.log('Ignore/reinclude: recalculation, stage exits, board persistence and failed-save rollback passed');
  await page.goto('http://127.0.0.1:8765/dashboard.html?empty'); await page.waitForSelector('#score-hero'); assert.equal(await page.locator('#alert-banner').isDisabled(),true); assert.equal(await page.locator('.kpi-value').first().textContent(),'Sem dados'); await page.screenshot({path:path.join(out,'empty.png'),fullPage:true});
  assert.deepEqual(errors,[]); console.log('All smoke checks passed; no browser exceptions'); await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});
