@@ -939,6 +939,52 @@ import { fmtDateTime } from './js/core-fmt.js';
 
   var AUTO_COOLDOWN = 600000;
   var _automationLock = {};
+  var _priorityAutomationState = {};
+
+  function updateOverduePriority(t, card, actions, fields, token, currentListName) {
+    var priority = fields && fields.prioridade;
+    if (currentListName !== 'Revisões em Atraso ⏰' || !priority ||
+        !priority.options || !priority.options.ALTO) return Promise.resolve();
+
+    // Somente a última movimentação pode disparar esta regra.
+    var latest = actions.filter(function(action) {
+      return action.type === 'updateCard' && action.data && action.data.listAfter;
+    }).sort(function(a, b) { return new Date(b.date) - new Date(a.date); })[0];
+    var age = latest ? Date.now() - new Date(latest.date).getTime() : NaN;
+    if (!latest || latest.data.listAfter.name.trim() !== currentListName ||
+        !Number.isFinite(age) || age < 0 || age >= AUTO_COOLDOWN) return Promise.resolve();
+
+    var eventId = latest.id || latest.date + ':' + latest.data.listAfter.id;
+    var state = _priorityAutomationState[card.id];
+    if (state && (state.pending || (state.eventId === eventId &&
+        (state.done || Date.now() < state.retryAt)))) return Promise.resolve();
+    state = { eventId: eventId, pending: true, done: false, retryAt: 0 };
+    _priorityAutomationState[card.id] = state;
+
+    // Falha na leitura do controle interrompe a tentativa. Não equivale a "não executado".
+    return t.get('card', 'shared', 'priorityAutomationEvent').then(function(savedEvent) {
+      if (savedEvent === eventId) { state.done = true; return; }
+      // Leitura fresca: o cache dos indicadores pode conter o valor anterior ao PUT.
+      return queuedFetch(apiUrl('/cards/' + card.id + '/customFieldItems', token))
+        .then(assertOk).then(function(response) { return response.json(); })
+        .then(function(items) {
+          if (!Array.isArray(items)) throw new Error('Resposta inválida dos campos personalizados');
+          var current = items.find(function(item) { return item.idCustomField === priority.fieldId; });
+          if (current && current.idValue === priority.options.ALTO) return;
+          return queuedFetch(apiUrl('/card/' + card.id + '/customField/' + priority.fieldId + '/item', token), {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idValue: priority.options.ALTO })
+          }).then(assertOk);
+        }).then(function() {
+          // Manter em memória mesmo se a persistência falhar evita repetir uma gravação concluída.
+          state.done = true;
+          return t.set('card', 'shared', 'priorityAutomationEvent', eventId);
+        });
+    }).catch(function(err) {
+      state.retryAt = Date.now() + 60000;
+      logAutoFail(err);
+    }).finally(function() { state.pending = false; });
+  }
 
   function logAutoFail(err) {
     console.warn('[AUTO] Falha na automação:', err && err.message ? err.message : String(err));
@@ -1023,26 +1069,7 @@ import { fmtDateTime } from './js/core-fmt.js';
     }
 
     // 8. Entrou em Revisões em Atraso (últimos 10min) → Prioridade = ALTO
-    if (cooled('prioAlto') && fields && fields.prioridade && fields.prioridade.options) {
-      var enteredRev = false;
-      for (var k = 0; k < actions.length; k++) {
-        if (actions[k].type === 'updateCard' && actions[k].data.listAfter &&
-            actions[k].data.listAfter.name.trim() === 'Revisões em Atraso ⏰' &&
-            (now - new Date(actions[k].date).getTime()) < AUTO_COOLDOWN) {
-          enteredRev = true; break;
-        }
-      }
-      if (enteredRev) {
-        var altoId = fields.prioridade.options['ALTO'];
-        if (altoId) {
-          queuedFetch('https://api.trello.com/1/card/' + card.id + '/customField/' + fields.prioridade.fieldId + '/item?key=' + APP_KEY + '&token=' + token, {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idValue: altoId })
-          }).then(assertOk).catch(logAutoFail);
-          mark('prioAlto');
-        }
-      }
-    }
+    updateOverduePriority(t, card, actions, fields, token, currentListName);
 
     // 10. Não conforme nas listas de reversão → mover p/ topo de Planejamento + comentário
     var cooldownConformidade = 300000;
