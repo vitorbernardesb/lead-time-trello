@@ -32,11 +32,12 @@ const failArchives=process.argv.includes('--archive-failure');
       else data=[];
       await route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
     });
-    await context.addInitScript(({board})=>{
+    await context.addInitScript(({board, ignoredArchive})=>{
       // SDK storage is mocked even in live mode: no snapshots or settings are written to Trello.
       const data={};
+      if (ignoredArchive) data['indicatorExcluded_' + ignoredArchive] = true;
       window.TrelloPowerUp={iframe:()=>({board:async()=>({id:board}),get:async(a,b,key)=>key?data[key]:data,set:async(a,b,key,v)=>{data[key]=v;},showCard:async()=>{},alert:async()=>{},sizeTo:async()=>{},member:async()=>({id:'test'})})};
-    },{board});
+    },{board, ignoredArchive: live ? null : archived.id});
     const page=await context.newPage();
     page.on('pageerror',e=>errors.push(e.message));
     const start=Date.now();
@@ -57,6 +58,17 @@ const failArchives=process.argv.includes('--archive-failure');
     assert.deepEqual(await page.locator('.kpi-value').allTextContents(),kpis,'archived data must not change main KPIs');
     const completeMs=Date.now()-start;
     const coldRequests=requests.length;
+    if (!live) {
+      const archivedControl = page.locator('[data-ignore-card="' + archived.id + '"]');
+      assert.equal(await archivedControl.count(), 1, 'late archive must appear in ignore table');
+      assert.equal(await archivedControl.isChecked(), true);
+      await page.locator('[data-collapse="nc"]').click();
+      // The successful save removes this row, so do not wait for its checkbox state.
+      await archivedControl.click();
+      await page.waitForFunction(() => !document.querySelector('[data-ignore-card]'));
+      assert.equal(await page.locator('#indicator-table-host tbody tr').count(), 0, 'reincluding archive removes stale row');
+      assert.deepEqual(await page.locator('.kpi-value').allTextContents(), kpis);
+    }
     if(live) {
       const comparison=await page.evaluate(async board=>{
         const {readHistoryCache,fetchActionPages}=await import('/js/history-loader.js');

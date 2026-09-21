@@ -1376,6 +1376,87 @@ import { createMSP } from './js/msproject.js';
     }
   }
 
+  var indicatorSaving = false;
+  function renderIndicatorTable(cachedAt) {
+    var el = document.getElementById('indicator-table-host');
+    if (!el || !cachedData || indicatorSaving) return;
+    var previousBody = el.querySelector('#nc-body');
+    var wasOpen = previousBody ? previousBody.classList.contains('open') : null;
+    var html = '';
+    // Non-conforming cards
+    var sourceCards = cachedData ? cachedData.allCards.concat(cachedData.allArchived.filter(function(c) { return ignoredIndicatorIds.has(c.id); })) : [];
+    var nonConforming = sourceCards.filter(function(c) { return (!c.isConforme && !c.isConcluido) || ignoredIndicatorIds.has(c.id); });
+    if (nonConforming.length > 0) {
+      var expanded = nonConforming.length > 3;
+      html += '<div class="collapsible">';
+      html += '<button class="collapse-toggle'+(expanded?' open':'')+'" data-collapse="nc">Cards incompletos e ignorados ('+nonConforming.length+') '+(expanded?'▲':'▼')+'</button>';
+      html += '<div class="collapse-body'+(expanded?' open':'')+'" id="nc-body">';
+      html += '<p class="indicator-scope-note">Ignore cards que não fazem parte do fluxo de atividades. A opção vale para toda a equipe e pode ser desfeita.</p><p id="indicator-scope-status" class="indicator-scope-note" role="status" aria-live="polite"></p>';
+      html += '<table><thead><tr><th>Card</th><th>Campos faltantes</th><th>Indicadores</th></tr></thead><tbody>';
+      nonConforming.forEach(function(c) {
+        html += '<tr><td><span class="card-link" role="button" tabindex="0" data-card-id="'+escHtml(c.id)+'">'+escHtml(c.name)+'</span></td><td>';
+        (c.missing || []).forEach(function(m) { html += '<span class="missing-tag">'+escHtml(m)+'</span>'; });
+        html += '</td><td><label class="indicator-ignore-control"><input type="checkbox" data-ignore-card="'+escHtml(c.id)+'" aria-label="Ignorar '+escHtml(c.name)+' nos indicadores"'+(ignoredIndicatorIds.has(c.id)?' checked':'')+'> Ignorar</label><span class="indicator-ignore-state">'+(ignoredIndicatorIds.has(c.id)?'Fora dos cálculos':'Incluído nos cálculos')+'</span></td></tr>';
+      });
+      html += '</tbody></table></div></div>';
+    }
+
+    el.innerHTML = html;
+    var toggle = el.querySelector('[data-collapse="nc"]');
+    var body = el.querySelector('#nc-body');
+    if (toggle && body) {
+      if (wasOpen !== null) {
+        body.classList.toggle('open', wasOpen);
+        toggle.classList.toggle('open', wasOpen);
+        toggle.textContent = toggle.textContent.replace(/[▲▼]/, wasOpen ? '▲' : '▼');
+      }
+      toggle.addEventListener('click', function() {
+        var open = body.classList.toggle('open');
+        toggle.classList.toggle('open', open);
+        toggle.textContent = toggle.textContent.replace(/[▲▼]/, open ? '▲' : '▼');
+      });
+    }
+    el.querySelectorAll('[data-ignore-card]').forEach(function(input) {
+      input.addEventListener('change', async function() {
+        var id = input.getAttribute('data-ignore-card');
+        var ignored = input.checked;
+        var status = document.getElementById('indicator-scope-status');
+        el.querySelectorAll('[data-ignore-card]').forEach(function(control) { control.disabled = true; });
+        status.textContent = 'Salvando opção…';
+        indicatorSaving = true;
+        try {
+          await t.set('board', 'shared', EXCLUSION_PREFIX + id, ignored);
+        } catch (err) {
+          indicatorSaving = false;
+          renderIndicatorTable(cachedAt);
+          status = document.getElementById('indicator-scope-status');
+          if (!status) return;
+          el.querySelectorAll('[data-ignore-card]').forEach(function(control) { control.disabled = false; });
+          status.textContent = 'Não foi possível salvar. Os indicadores não foram alterados. Tente novamente.';
+          return;
+        }
+        indicatorSaving = false;
+        var ids = new Set(ignoredIndicatorIds);
+        if (ignored) ids.add(id); else ids.delete(id);
+        setIgnoredIndicatorIds(ids);
+        setCachedData(cachedData);
+        resetRenderedTabs();
+        renderRealtime(calcKPIs(cachedData.cards, cachedData.config), cachedData.config, cachedData.cards, cachedAt, cachedData.archived);
+        el = document.getElementById('indicator-table-host');
+        renderAlertBanner(computeSLAAlerts(cachedData.cards, cachedData.config));
+        var body = document.getElementById('nc-body');
+        var toggle = el.querySelector('[data-collapse="nc"]');
+        if (body && toggle) {
+          body.classList.add('open'); toggle.classList.add('open');
+          toggle.textContent = toggle.textContent.replace('▼', '▲');
+        }
+        var control = Array.from(el.querySelectorAll('[data-ignore-card]')).find(function(c) { return c.getAttribute('data-ignore-card') === id; });
+        if (control) control.focus({ preventScroll: true });
+        var message = document.getElementById('indicator-scope-status');
+        if (message) message.textContent = ignored ? 'Card ignorado. Indicadores recalculados.' : 'Card incluído novamente. Indicadores recalculados.';
+      });
+    });
+  }
   function renderRealtime(kpis, config, cards, cachedAt, archived) {
     var circumference = 2 * Math.PI * 52;
     var ringCor = statusColor(kpis.healthScore); // anel usa o mesmo semáforo dos KPIs
@@ -1454,23 +1535,7 @@ import { createMSP } from './js/msproject.js';
     // Média/Mediana sem recarregar dados. Inclui os arquivados elegíveis (só este indicador os vê).
     html += '<div id="pe-host"></div>';
 
-    // Non-conforming cards
-    var sourceCards = cachedData ? cachedData.allCards.concat(cachedData.allArchived.filter(function(c) { return ignoredIndicatorIds.has(c.id); })) : cards;
-    var nonConforming = sourceCards.filter(function(c) { return (!c.isConforme && !c.isConcluido) || ignoredIndicatorIds.has(c.id); });
-    if (nonConforming.length > 0) {
-      var expanded = nonConforming.length > 3;
-      html += '<div class="collapsible">';
-      html += '<button class="collapse-toggle'+(expanded?' open':'')+'" data-collapse="nc">Cards incompletos e ignorados ('+nonConforming.length+') '+(expanded?'▲':'▼')+'</button>';
-      html += '<div class="collapse-body'+(expanded?' open':'')+'" id="nc-body">';
-      html += '<p class="indicator-scope-note">Ignore cards que não fazem parte do fluxo de atividades. A opção vale para toda a equipe e pode ser desfeita.</p><p id="indicator-scope-status" class="indicator-scope-note" role="status" aria-live="polite"></p>';
-      html += '<table><thead><tr><th>Card</th><th>Campos faltantes</th><th>Indicadores</th></tr></thead><tbody>';
-      nonConforming.forEach(function(c) {
-        html += '<tr><td><span class="card-link" role="button" tabindex="0" data-card-id="'+escHtml(c.id)+'">'+escHtml(c.name)+'</span></td><td>';
-        (c.missing || []).forEach(function(m) { html += '<span class="missing-tag">'+escHtml(m)+'</span>'; });
-        html += '</td><td><label class="indicator-ignore-control"><input type="checkbox" data-ignore-card="'+escHtml(c.id)+'" aria-label="Ignorar '+escHtml(c.name)+' nos indicadores"'+(ignoredIndicatorIds.has(c.id)?' checked':'')+'> Ignorar</label><span class="indicator-ignore-state">'+(ignoredIndicatorIds.has(c.id)?'Fora dos cálculos':'Incluído nos cálculos')+'</span></td></tr>';
-      });
-      html += '</tbody></table></div></div>';
-    }
+    html += '<div id="indicator-table-host"></div>';
 
     // Member distribution
     html += '<div class="footer-bar">';
@@ -1490,40 +1555,7 @@ import { createMSP } from './js/msproject.js';
     document.getElementById('rt-loading').style.display = 'none';
     document.getElementById('rt-error').style.display = 'none';
 
-    el.querySelectorAll('[data-ignore-card]').forEach(function(input) {
-      input.addEventListener('change', async function() {
-        var id = input.getAttribute('data-ignore-card');
-        var ignored = input.checked;
-        var status = document.getElementById('indicator-scope-status');
-        el.querySelectorAll('[data-ignore-card]').forEach(function(control) { control.disabled = true; });
-        status.textContent = 'Salvando opção…';
-        try {
-          await t.set('board', 'shared', EXCLUSION_PREFIX + id, ignored);
-        } catch (err) {
-          input.checked = !ignored;
-          el.querySelectorAll('[data-ignore-card]').forEach(function(control) { control.disabled = false; });
-          status.textContent = 'Não foi possível salvar. Os indicadores não foram alterados. Tente novamente.';
-          return;
-        }
-        var ids = new Set(ignoredIndicatorIds);
-        if (ignored) ids.add(id); else ids.delete(id);
-        setIgnoredIndicatorIds(ids);
-        setCachedData(cachedData);
-        resetRenderedTabs();
-        renderRealtime(calcKPIs(cachedData.cards, cachedData.config), cachedData.config, cachedData.cards, cachedAt, cachedData.archived);
-        renderAlertBanner(computeSLAAlerts(cachedData.cards, cachedData.config));
-        var body = document.getElementById('nc-body');
-        var toggle = el.querySelector('[data-collapse="nc"]');
-        if (body && toggle) {
-          body.classList.add('open'); toggle.classList.add('open');
-          toggle.textContent = toggle.textContent.replace('▼', '▲');
-        }
-        var control = Array.from(el.querySelectorAll('[data-ignore-card]')).find(function(c) { return c.getAttribute('data-ignore-card') === id; });
-        if (control) control.focus({ preventScroll: true });
-        var message = document.getElementById('indicator-scope-status');
-        if (message) message.textContent = ignored ? 'Card ignorado. Indicadores recalculados.' : 'Card incluído novamente. Indicadores recalculados.';
-      });
-    });
+    renderIndicatorTable(cachedAt);
 
     // Renderiza a seção "Tempo até 1ª entrega" no host e conecta suas interações.
     renderPESection();
@@ -1607,6 +1639,7 @@ import { createMSP } from './js/msproject.js';
 
     // Collapse toggles
     document.querySelectorAll('.collapse-toggle').forEach(function(btn) {
+      if (btn.closest('#indicator-table-host')) return;
       btn.addEventListener('click', function() {
         var bodyId = btn.getAttribute('data-collapse') + '-body';
         var body = document.getElementById(bodyId);
@@ -2098,6 +2131,7 @@ import { createMSP } from './js/msproject.js';
       setCachedData(Object.assign({}, cachedData, { allArchived: data.archived, archived: data.archived }));
       resetRenderedTabs();
       renderPESection();
+      renderIndicatorTable();
       if (document.getElementById('tab-custom').classList.contains('active')) CP.render();
       if (document.getElementById('tab-msproject').classList.contains('active')) MSP.render();
       showArchiveStatus('Histórico de arquivados atualizado.');
