@@ -192,7 +192,8 @@ export function createCP(deps) {
 
     // ══════════ GRÁFICOS SVG (leves, interativos, na cor do painel) ══════════
     function seg(bId, tip, body) {
-      return '<g class="cp-seg" data-b="' + bId + '" data-tip="' + escHtml(tip) + '">' + body +
+      var interactive = bId ? ' role="button" tabindex="0" aria-label="' + escHtml(tip) + '"' : '';
+      return '<g class="cp-seg" data-b="' + (bId || '') + '" data-tip="' + escHtml(tip) + '"' + interactive + '>' + body +
         '<title>' + escHtml(tip) + '</title></g>';
     }
     function emptyChart(msg) { return '<div class="cp-chart-empty">' + escHtml(msg || 'Sem dados no período.') + '</div>'; }
@@ -300,7 +301,8 @@ export function createCP(deps) {
       var n = points.length;
       function px(i) { return padL + (n === 1 ? plotW / 2 : i / (n - 1) * plotW); }
       function py(v) { return padT + plotH - (max > 0 ? v / max * plotH : 0); }
-      var s = '<svg class="cp-chart-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img">';
+      var total = points.reduce(function(sum, point) { return sum + point.value; }, 0);
+      var s = '<svg class="cp-chart-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Evolução em ' + points.length + ' períodos; total ' + nf(total) + '">';
       // grade horizontal (recessiva)
       for (var g = 0; g <= 2; g++) {
         var gy = padT + plotH - g / 2 * plotH;
@@ -1013,7 +1015,9 @@ export function createCP(deps) {
         return over;
       },
       lineChart: lineChart,
-      emptyChart: emptyChart
+      emptyChart: emptyChart,
+      showTooltip: showTip,
+      hideTooltip: hideTip
     };
   })();
 

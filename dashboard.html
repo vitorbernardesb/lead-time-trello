@@ -70,10 +70,12 @@ import { TRELLO_TOKEN, apiUrl } from './js/trello-api.js';
 import { FLOW_LISTS, PRODUCAO_ATIVA, ETAPAS_PRE_ENTREGA, NIVEIS_ESFORCO, PRIMEIRA_ENTREGA_EPOCH, DEFAULT_SLA, DEFAULTS, COR_NIVEL } from './js/config.js';
 import { EXCLUSION_PREFIX, exclusionIds } from './js/indicator-scope.js';
 import { t, cachedData, setCachedData, ignoredIndicatorIds, setIgnoredIndicatorIds, renderedTabs, resetRenderedTabs } from './js/state.js';
+import { conclusionDayKey, latestConclusionFromActions, selectCompletedCards, groupCompletedCards, throughputForPeriod } from './js/throughput.js';
+import { readHistoryCache, writeHistoryCache, loadCardHistories } from './js/history-loader.js';
 import { debounce, round1, stdDev, mean, median, validarTitulo } from './js/core-util.js';
 import { escHtml, fmtDateTime, fmtDateBR, fmtHoras, fmtDias, fmtPct } from './js/core-fmt.js';
-import { countBusinessDays, elapsedCalendarDays, elapsedCalendarHours, countBusinessHours, idToDate, buildTimeline, isOverdue, sameMonth } from './js/core-time.js';
-import { getConcludedAt, computeLeadTime, normalizeNivel, computePrimeiraEntrega } from './js/core-metrics.js';
+import { countBusinessDays, elapsedCalendarDays, elapsedCalendarHours, countBusinessHours, idToDate, buildTimeline, isOverdue } from './js/core-time.js';
+import { computeLeadTime, normalizeNivel, computePrimeiraEntrega } from './js/core-metrics.js';
 import { downloadCSV, loadXLSXLib, loadHtml2Canvas, setBtnLoading, downloadCanvas } from './js/core-io.js';
 import { createCP } from './js/custom-panels.js';
 import { createMSP } from './js/msproject.js';
@@ -91,48 +93,23 @@ import { createMSP } from './js/msproject.js';
       if (!raw) return null;
       var obj = JSON.parse(raw);
       if (obj && obj.cachedAt && (Date.now() - obj.cachedAt < CACHE_TTL)) return obj;
-    } catch(e) {}
+    } catch(e) { console.warn('[CACHE] Não foi possível ler o resumo:', e.message); }
     return null;
   }
 
   function writeCache(boardId, data) {
     try {
+      // Histórico antigo é reconstruível e não é mais consumido; liberar sua quota.
+      localStorage.removeItem('leadtime_actions_' + boardId);
       data.cachedAt = Date.now();
       localStorage.setItem(getCacheKey(boardId), JSON.stringify(data));
-    } catch(e) {}
+    } catch(e) { console.warn('[CACHE] Não foi possível salvar o resumo:', e.message); }
   }
 
   function cacheAge(cachedAt) {
     var sec = Math.floor((Date.now() - cachedAt) / 1000);
     if (sec < 60) return sec + 's atrás';
     return Math.floor(sec / 60) + 'min atrás';
-  }
-
-  // ─── CACHE INCREMENTAL DE ACTIONS (por card) ────
-  // As actions de um card só mudam quando há atividade nele — e QUALQUER atividade
-  // atualiza dateLastActivity (que o fetch de cards já traz). Então: cacheia as
-  // actions por card com o dateLastActivity da época; num load futuro, se o
-  // dateLastActivity está idêntico, reutiliza sem re-buscar. Cards sem mudança
-  // (inclusive TODOS os arquivados, imutáveis) deixam de gerar requisição.
-  // Resultado byte-idêntico ao refetch: o cache só é usado com dateLastActivity igual.
-  var ACTIONS_CACHE_VERSION = 1; // bump se o filtro/fields do fetch de actions mudar
-  function actionsCacheKey(boardId) { return 'leadtime_actions_' + boardId; }
-  function readActionsCache(boardId) {
-    try {
-      var raw = localStorage.getItem(actionsCacheKey(boardId));
-      if (!raw) return {};
-      var obj = JSON.parse(raw);
-      if (obj && obj.v === ACTIONS_CACHE_VERSION && obj.cards) return obj.cards;
-    } catch(e) {}
-    return {};
-  }
-  function writeActionsCache(boardId, map) {
-    try {
-      localStorage.setItem(actionsCacheKey(boardId), JSON.stringify({ v: ACTIONS_CACHE_VERSION, cards: map }));
-    } catch(e) {
-      // quota excedida ou storage indisponível: descarta o cache (funciona sem ele)
-      try { localStorage.removeItem(actionsCacheKey(boardId)); } catch(e2) {}
-    }
   }
 
   function showSkeleton(msg) {
@@ -565,7 +542,7 @@ import { createMSP } from './js/msproject.js';
   }
 
   function apiDispatch(item) {
-    fetch(apiUrl(item.url, item.token))
+    fetch(apiUrl(item.url, item.token), { signal: AbortSignal.timeout(20000) })
       .then(function(r) {
         if (r.status === 401) {
           console.error('[DASHBOARD] 401 Unauthorized — token expirado, url:', item.url.substring(0, 60));
@@ -581,6 +558,7 @@ import { createMSP } from './js/msproject.js';
           apiRetry(item, backoff);
           return;
         }
+        if (!r.ok) throw new Error('Trello HTTP ' + r.status);
         return r.json().then(function(data) {
           if (data && data.error && item.attempt < API_MAX_RETRIES) {
             item.attempt++;
@@ -623,20 +601,10 @@ import { createMSP } from './js/msproject.js';
     });
   }
 
-  // Substitui o antigo throttledFetch de lotes manuais: a pacing já é feita
-  // pela fila acima, então basta disparar tudo e deixar a fila regular a
-  // velocidade real. Falha de UM card não derruba o load inteiro — fica
-  // undefined (tratado como [] adiante), igual ao comportamento anterior.
-  function throttledFetch(urls, token) {
-    return Promise.all(urls.map(function(url) {
-      return fetchWithRetry(url, token).catch(function(err) {
-        console.warn('[DASHBOARD] Falha em', url.substring(0, 60), '—', err && err.message ? err.message : String(err));
-        return undefined;
-      });
-    }));
-  }
-
-  function fetchData(token, boardId) {
+  function fetchData(token, boardId, options) {
+    options = options || {};
+    var scope = options.scope || 'open';
+    var progress = options.progress || updateSkeletonMsg;
     var fieldCachePromise = t.get('board', 'private', 'retrabalhoFieldCache').then(function(fc) {
       // Só confia no cache se o ID do campo "Nível de Esforço" já é CONHECIDO (truthy).
       // Se foi cacheado como null (campo ainda não existia), reprocessa /customFields
@@ -651,7 +619,8 @@ import { createMSP } from './js/msproject.js';
         fetchWithRetry('/boards/'+boardId+'/lists?fields=name', token),
         // idMembers adicionado de forma ADITIVA: alimenta só o campo "Responsáveis" do
         // módulo de Análises Personalizadas. Nenhum KPI/fórmula lê este campo.
-        fetchWithRetry('/boards/'+boardId+'/cards?filter=all&fields=name,desc,due,dueComplete,dateLastActivity,labels,idList,idMembers,shortUrl,closed&customFieldItems=true', token),
+        fetchWithRetry('/boards/'+boardId+'/cards?filter=' + scope + '&fields=' +
+          (scope === 'closed' ? 'name,due,dueComplete,dateLastActivity,labels,idList,idMembers,shortUrl,closed' : 'name,desc,due,dueComplete,dateLastActivity,labels,idList,idMembers,shortUrl,closed') + '&customFieldItems=true', token),
         // membros do board (nome legível) — busca leve, uma vez por load; só para exibição.
         fetchWithRetry('/boards/'+boardId+'/members?fields=fullName,username', token)
       ];
@@ -660,6 +629,9 @@ import { createMSP } from './js/msproject.js';
       }
       return Promise.all(phase1).then(function(initial) {
         var lists = initial[0], allBoardCards = initial[1], boardMembers = initial[2], customFields = initial[3] || [];
+        if (!Array.isArray(lists) || !Array.isArray(allBoardCards) || !Array.isArray(boardMembers)) {
+          throw new Error('O Trello retornou dados incompletos. Tente atualizar novamente.');
+        }
 
         // idMembro → nome (só exibição; não participa de nenhum cálculo de KPI).
         var memberMap = {};
@@ -742,39 +714,23 @@ import { createMSP } from './js/msproject.js';
         cfByCard[c.id] = Array.isArray(c.customFieldItems) ? c.customFieldItems : [];
       });
 
-        updateSkeletonMsg('Calculando lead time de ' + cards.length + ' cards…');
-
-        // Cache incremental: só busca actions de cards cujo dateLastActivity mudou
-        // desde o último load (cards sem atividade nova — e todos os arquivados —
-        // reutilizam as actions cacheadas, com resultado idêntico ao refetch).
-        var actCache = readActionsCache(boardId);
-        var allActions = new Array(cards.length);
-        var toFetch = [];
-        cards.forEach(function(c, i) {
-          var hit = actCache[c.id];
-          if (hit && hit.la === c.dateLastActivity && Array.isArray(hit.a)) {
-            allActions[i] = hit.a;
-          } else {
-            toFetch.push(i);
-          }
-        });
-
-        var actionUrls = toFetch.map(function(i) {
-          // fields enxutos: só o que buildTimeline/vazão usam (type,date,data) — reduz payload/parse.
-          return '/cards/'+cards[i].id+'/actions?filter=updateCard:idList,createCard,copyCard&limit=1000&fields=type,date,data&memberCreator=false&member=false';
-        });
-
-        return throttledFetch(actionUrls, token).then(function(fetched) {
-          // falha de fetch fica undefined (processada como []), mas NUNCA entra no cache
-          toFetch.forEach(function(cardIdx, j) {
-            if (Array.isArray(fetched[j])) allActions[cardIdx] = fetched[j];
+        progress('Calculando lead time de ' + cards.length + ' cards…');
+        var historyKey = 'actions-v2:' + boardId + ':' + scope;
+        return readHistoryCache(historyKey).then(function(cache) {
+          // Chaves separadas impedem que a atualização de arquivados sobrescreva abertos.
+          var currentCache = {};
+          cards.forEach(function(card) { if (cache && cache[card.id]) currentCache[card.id] = cache[card.id]; });
+          return loadCardHistories({ cards: cards, boardId: boardId, cache: currentCache,
+            since: PRIMEIRA_ENTREGA_EPOCH.toISOString(),
+            request: function(path) { return fetchWithRetry(path, token); },
+            progress: function(done, total, page) {
+              progress('Históricos processados: ' + done + ' de ' + total +
+                (page ? ' · página ' + page : ''));
+            }
           });
-          // regrava o cache só com os cards atuais do board (prune automático dos removidos)
-          var newCache = {};
-          cards.forEach(function(c, i) {
-            if (Array.isArray(allActions[i])) newCache[c.id] = { la: c.dateLastActivity, a: allActions[i] };
-          });
-          writeActionsCache(boardId, newCache);
+        }).then(function(result) {
+          var allActions = result.actions;
+          void writeHistoryCache(historyKey, result.cache);
 
         var allCF = cards.map(function(c) { return cfByCard[c.id]; });
 
@@ -841,9 +797,10 @@ import { createMSP } from './js/msproject.js';
             var currentListName = currentStage ? currentStage.name : (flowListIds[card.idList] || '');
             var realListName = flowListIds[card.idList] || currentListName;
 
-            // Conclusão (timeline) compartilhada por vazão E lead time — calculada uma vez
-            // e reaproveitada em computeLeadTime (evita recomputar getConcludedAt).
-            var concludedAt = getConcludedAt(tl);
+            // Última entrada válida em Concluído, extraída das ações e compartilhada
+            // pela vazão, pelos gráficos históricos e pelo lead time.
+            var concludedAtIso = latestConclusionFromActions(actions);
+            var concludedAt = concludedAtIso ? new Date(concludedAtIso) : null;
             var ltReal = computeLeadTime(tl, concludedAt);
             // Tempo até 1ª entrega (criação → 1ª chegada a marco de entrega) e nível de esforço.
             var pe = computePrimeiraEntrega(tl);
@@ -864,10 +821,6 @@ import { createMSP } from './js/msproject.js';
             var isLate = isOverdue(card.due, card.dueComplete);
 
             var hasLabels = card.labels && card.labels.length > 0;
-
-            // Concluído no mês corrente = entrou em Concluído neste mês (pela data REAL
-            // de conclusão, não pela due date). É isto que mede vazão/throughput.
-            var concluidoNoMes = !!(concludedAt && sameMonth(concludedAt, now));
 
             var tituloValido = validarTitulo(card.name);
             var hasDesc = card.desc && card.desc.trim().length > 0;
@@ -912,7 +865,9 @@ import { createMSP } from './js/msproject.js';
               // Responsáveis (membros do card) — aditivo, só p/ o modal de Análises
               // Personalizadas. Resolvido para nome; não entra em nenhum KPI.
               members: Array.isArray(card.idMembers) ? card.idMembers.map(function(mid){ return memberMap[mid] || null; }).filter(Boolean) : [],
-              currentListName: currentListName,
+              // A lista atual da API é a autoridade. A timeline pode estar incompleta
+              // e nunca deve fazer um card reaberto parecer atualmente concluído.
+              currentListName: realListName,
               // entrada na etapa atual (para tempos na etapa) e URL clicável do card
               enteredCurrentAt: currentStage ? currentStage.enteredAt.toISOString() : null,
               // Timeline completa (etapa a etapa, serializada) — permite reconstruir em
@@ -924,7 +879,6 @@ import { createMSP } from './js/msproject.js';
               }),
               url: card.shortUrl || '',
               isConcluido: realListName === 'Concluído 🏆',
-              concluidoNoMes: concluidoNoMes,
               // lead time real do fluxo (dias úteis) e quando o card foi concluído.
               // concludedAt vale para QUALQUER card concluído (independe de lead time).
               leadTimeReal: ltReal ? ltReal.leadTime : null,
@@ -981,7 +935,9 @@ import { createMSP } from './js/msproject.js';
 
     // KPI4 — VAZÃO MENSAL / throughput: nº de cards CONCLUÍDOS no mês corrente
     // (pela data real de entrada em Concluído). Mede entregas no período, não due dates.
-    var cardsVazao = cards.filter(function(c){ return c.concluidoNoMes; });
+    var completedCards = selectCompletedCards(cards, ignoredIndicatorIds);
+    var currentMonthKey = conclusionDayKey(new Date()).slice(0, 7);
+    var cardsVazao = completedCards.filter(function(c){ return c.conclusionDay.slice(0, 7) === currentMonthKey; });
     var kpi4 = cardsVazao.length;
 
     var cardsParaConformidade = cards.filter(function(c){ return !c.isConcluido; });
@@ -2105,13 +2061,62 @@ import { createMSP } from './js/msproject.js';
   }
 
   // ─── LOAD REALTIME ──────────────────────────────
+  var realtimeLoading = null;
+  var archiveLoading = null;
+  function showArchiveStatus(message, retry) {
+    var el = document.getElementById('archive-progress');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'archive-progress';
+      el.className = 'indicator-scope-note';
+      el.setAttribute('role', 'status');
+      document.getElementById('rt-content').before(el);
+    }
+    el.textContent = message;
+    if (retry) {
+      var button = document.createElement('button');
+      button.className = 'btn';
+      button.textContent = 'Tentar novamente';
+      button.onclick = retry;
+      el.appendChild(button);
+    }
+  }
+  function loadArchivedData(token, boardId, force) {
+    if (archiveLoading) return archiveLoading;
+    showArchiveStatus('Indicadores principais prontos. Carregando arquivados para a primeira entrega…');
+    archiveLoading = readHistoryCache('archived-summary:' + boardId).then(function(saved) {
+      if (!force && saved && Date.now() - saved.cachedAt < CACHE_TTL) return saved;
+      return fetchData(token, boardId, { scope: 'closed', progress: function(message) {
+        showArchiveStatus('Primeira entrega — ' + message);
+      }}).then(function(data) {
+        var summary = { archived: data.archived, cachedAt: Date.now() };
+        void writeHistoryCache('archived-summary:' + boardId, summary);
+        return summary;
+      });
+    }).then(function(data) {
+      // A conclusão do histórico nunca substitui os indicadores abertos já exibidos.
+      setCachedData(Object.assign({}, cachedData, { allArchived: data.archived, archived: data.archived }));
+      resetRenderedTabs();
+      renderPESection();
+      if (document.getElementById('tab-custom').classList.contains('active')) CP.render();
+      if (document.getElementById('tab-msproject').classList.contains('active')) MSP.render();
+      showArchiveStatus('Histórico de arquivados atualizado.');
+    }).catch(function(error) {
+      console.warn('[DASHBOARD] Arquivados não carregados:', error.message);
+      showArchiveStatus('Os indicadores principais estão disponíveis. A primeira entrega ainda está sem o histórico de arquivados. ', function() {
+        loadArchivedData(token, boardId, true);
+      });
+    }).finally(function() { archiveLoading = null; });
+    return archiveLoading;
+  }
   function loadRealtime(forceRefresh) {
+    if (realtimeLoading) return realtimeLoading;
     document.getElementById('rt-content').style.display = 'none';
     document.getElementById('rt-error').style.display = 'none';
     resetRenderedTabs();
 
     var token = TRELLO_TOKEN, boardId, config;
-    t.board('id')
+    realtimeLoading = t.board('id')
       .then(function(board) { boardId = board.id; return t.get('board', 'shared'); })
       .then(function(boardData) {
         config = mergeConfig(boardData && boardData.healthConfig);
@@ -2127,6 +2132,7 @@ import { createMSP } from './js/msproject.js';
             renderRealtime(kpis, config, cachedData.cards, cache.cachedAt, cachedData.archived);
             renderAlertBanner(slaAlerts);
             document.getElementById('rt-loading').style.display = 'none';
+            void loadArchivedData(token, boardId, false);
             return;
           }
         }
@@ -2134,7 +2140,8 @@ import { createMSP } from './js/msproject.js';
         showSkeleton('Buscando cards do board…');
         return fetchData(token, boardId).then(function(data) {
           setCachedData({ cards: data.cards, config: config, throughput: data.throughput, throughputByCard: data.throughputByCard, archived: data.archived || [] });
-          writeCache(boardId, { cards: data.cards, throughput: data.throughput, throughputByCard: data.throughputByCard, archived: data.archived || [] });
+          // Resumo pequeno no localStorage; históricos e arquivados ficam no IndexedDB.
+          writeCache(boardId, { cards: data.cards, throughput: data.throughput, throughputByCard: data.throughputByCard });
           var kpis = calcKPIs(cachedData.cards, config);
           var slaAlerts = computeSLAAlerts(cachedData.cards, config);
           renderRealtime(kpis, config, cachedData.cards, null, cachedData.archived);
@@ -2142,6 +2149,7 @@ import { createMSP } from './js/msproject.js';
           saveSnapshotIfNeeded(kpis, config);
           saveWeeklySnapshot(kpis, false);   // registra a semana corrente (1x por semana)
           saveDailySnapshot(kpis, false);    // registra o dia corrente (1x por dia)
+          void loadArchivedData(token, boardId, forceRefresh);
         });
       })
       .catch(function(err) {
@@ -2149,7 +2157,8 @@ import { createMSP } from './js/msproject.js';
         var errEl = document.getElementById('rt-error');
         errEl.style.display = '';
         errEl.querySelector('p').textContent = 'Erro ao carregar dados: '+(err.message||String(err));
-      });
+      }).finally(function() { realtimeLoading = null; });
+    return realtimeLoading;
   }
 
   document.getElementById('rt-retry').addEventListener('click', function() { loadRealtime(); });
@@ -2275,10 +2284,15 @@ import { createMSP } from './js/msproject.js';
     return pts;
   }
 
-  // Vazão e Tempo de entrega por semana, dentro de [start, end] — a partir dos
-  // cards já em cache (filter=all cobre abertos + arquivados). Sem consulta nova.
+  // Vazão e Tempo de entrega por semana, dentro de [start, end]. A vazão parte
+  // somente dos cards abertos no cache; arquivados permanecem fora pela regra oficial.
   function histWeeklyDerived(metricKey, cards, start, end) {
     if (metricKey === 'kpi3') return histWeeklyKpi3(cards, start, end);
+    if (metricKey === 'kpi4') {
+      return groupCompletedCards(selectCompletedCards(cards, ignoredIndicatorIds), start, end, 'week').map(function(p) {
+        return { label: p.key.slice(8,10) + '/' + p.key.slice(5,7), value: p.value, n: p.value, cards: p.cards };
+      });
+    }
     var done = (cards || []).filter(function(c) { return c.concludedAt; });
     var byWeek = {};
     done.forEach(function(c) {
@@ -2290,9 +2304,7 @@ import { createMSP } from './js/msproject.js';
     for (var k = startWeek; k <= endWeek; k += WEEK) {
       var cs = byWeek[k] || [];
       var label = weekLabel(new Date(k));
-      if (metricKey === 'kpi4') {
-        pts.push({ label: label, value: cs.length, n: cs.length, cards: cs });
-      } else { // kpi6 — média do lead time real das conclusões da semana
+      { // kpi6 — média do lead time real das conclusões da semana
         var lts = cs.map(function(c) { return c.leadTimeReal; }).filter(function(v) { return v !== null && v !== undefined; });
         if (!lts.length) continue;               // semana sem entrega: não plota "0 d.u." (seria mentira)
         pts.push({ label: label, value: mean(lts), n: lts.length, cards: cs });
@@ -2307,6 +2319,11 @@ import { createMSP } from './js/msproject.js';
   // snapshot diário registrado em vez de reconstruir dos cards.
   function histDailyDerived(metricKey, cards, start, end) {
     if (metricKey === 'kpi3') return histDailyKpi3(cards, start, end);
+    if (metricKey === 'kpi4') {
+      return groupCompletedCards(selectCompletedCards(cards, ignoredIndicatorIds), start, end, 'day').map(function(p) {
+        return { label: p.key.slice(8,10) + '/' + p.key.slice(5,7), value: p.value, n: p.value, cards: p.cards };
+      });
+    }
     var done = (cards || []).filter(function(c) { return c.concludedAt; });
     var byDay = {};
     done.forEach(function(c) {
@@ -2320,15 +2337,19 @@ import { createMSP } from './js/msproject.js';
     for (var k = s; k <= e; k += DAY) {
       var cs = byDay[k] || [];
       var label = fmtDateBR(new Date(k)).slice(0, 5); // dd/mm
-      if (metricKey === 'kpi4') {
-        pts.push({ label: label, value: cs.length, n: cs.length, cards: cs });
-      } else {
+      {
         var lts = cs.map(function(c) { return c.leadTimeReal; }).filter(function(v) { return v !== null && v !== undefined; });
         if (!lts.length) continue;               // dia sem entrega: não plota "0 d.u." (seria mentira)
         pts.push({ label: label, value: mean(lts), n: lts.length, cards: cs });
       }
     }
     return pts;
+  }
+
+  function histMonthlyThroughput(cards, start, end) {
+    return groupCompletedCards(selectCompletedCards(cards, ignoredIndicatorIds), start, end, 'month').map(function(p) {
+      return { label: p.key.slice(5,7) + '/' + p.key.slice(0,4), value: p.value, n: p.value, cards: p.cards };
+    });
   }
 
   // Série semanal registrada (weeklySnaps) → pontos cronológicos dentro de [start, end].
@@ -2916,7 +2937,7 @@ import { createMSP } from './js/msproject.js';
           }
           nota = 'Série semanal registrada' + (recortou ? ' a partir de ' + escHtml(formatBRDate(earliestWeekly)) + ' (início da coleta)' : '') + ' — período ' + escHtml(periodoLabel) + '.';
         }
-      } else { // modo === 'day'
+      } else if (modo === 'day') {
         if (HIST_DERIVAVEL[metricKey]) {
           if (!cachedData) return '<div class="hist-collect"><b>Sem dados carregados.</b><span>Abra a aba <b>Tempo real</b> uma vez para calcular a série diária.</span></div>';
           pts = histDailyDerived(metricKey, cachedData.cards, periodo.start, periodo.end);
@@ -2945,8 +2966,13 @@ import { createMSP } from './js/msproject.js';
           }
           nota = 'Série diária registrada' + (recortouD ? ' a partir de ' + escHtml(formatBRDate(earliestDaily)) + ' (início da coleta)' : '') + ' — período ' + escHtml(periodoLabel) + '.';
         }
+      } else { // mensal: disponível para vazão, cuja fonte é retroativa
+        if (metricKey !== 'kpi4') return CP.emptyChart('O agrupamento mensal está disponível para a vazão.');
+        if (!cachedData) return CP.emptyChart('Sem dados carregados.');
+        pts = histMonthlyThroughput(cachedData.cards, periodo.start, periodo.end);
+        nota = 'Série mensal calculada pela última conclusão dos cards — período ' + escHtml(periodoLabel) + '.';
       }
-      if (!pts.length) return CP.emptyChart('Sem dados para plotar no período selecionado.');
+      if (!pts.length) return CP.emptyChart('Nenhum card concluído neste período.');
       // O lineChart do CP embute o `tip` num <title> SVG (tooltip nativo) já escapado —
       // por isso o texto vai PURO aqui: tags HTML apareceriam literais no tooltip.
       // Pontos com `.cards` (indicadores deriváveis) viram clicáveis: `bucketId` aqui é
@@ -2954,17 +2980,20 @@ import { createMSP } from './js/msproject.js';
       // existe neste modal) — resolvido no listener de clique abaixo, via lastPts.
       pts.forEach(function(p, i) {
         var qtd = p.cards ? p.cards.length : (p.n > 1 ? p.n : null);
-        p.tip = p.label + ': ' + histNum(p.value) + m.unit + (qtd !== null ? ' · ' + qtd + ' card(s)' : '');
+        p.tip = (metricKey === 'kpi4' ? 'Vazão · ' : '') + p.label + ': ' + histNum(p.value) + m.unit + (qtd !== null ? ' · ' + qtd + ' card(s) concluído(s)' : '');
         if (p.cards && p.cards.length) { p.bucketId = 'hpt' + i; hasClickable = true; }
       });
       lastPts = pts;
-      return CP.lineChart(pts, cor) + '<div class="hist-note">' + escHtml(nota) + (hasClickable ? ' <b>Clique num ponto</b> para ver os cards.' : '') + '</div>';
+      var total = metricKey === 'kpi4' ? throughputForPeriod(selectCompletedCards(cachedData.cards, ignoredIndicatorIds), periodo.start, periodo.end) : null;
+      return (total === null ? '' : '<div class="hist-chart-total" role="status">Vazão no período: <b>' + total + ' card' + (total === 1 ? '' : 's') + '</b></div>') +
+        CP.lineChart(pts, cor) + '<div class="hist-note">' + escHtml(nota) + (hasClickable ? ' <b>Clique num ponto para ver os cards.</b>' : '') + '</div>';
     }
 
     function body() {
       var h = '<div class="pe-metric" role="group" aria-label="Periodicidade" id="hist-modo">';
       h += '<button class="pe-metric-opt' + (modo === 'week' ? ' on' : '') + '" data-modo="week">Semanal</button>';
       h += '<button class="pe-metric-opt' + (modo === 'day' ? ' on' : '') + '" data-modo="day">Diário</button>';
+      if (metricKey === 'kpi4') h += '<button class="pe-metric-opt' + (modo === 'month' ? ' on' : '') + '" data-modo="month">Mensal</button>';
       h += '</div>';
       h += '<div id="hist-chart">' + chartHtml() + '</div>';
       return h;
@@ -2995,6 +3024,16 @@ import { createMSP } from './js/msproject.js';
       var p = lastPts[parseInt(mm[1], 10)];
       if (p && p.cards && p.cards.length) CP.openCards(m.name + ' · ' + p.label, p.cards, cor);
     });
+    over.addEventListener('keydown', function(e) {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('[data-b]')) {
+        e.preventDefault(); e.target.closest('[data-b]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      }
+    });
+    over.addEventListener('mousemove', function(e) {
+      var point = e.target.closest('[data-tip]');
+      if (point && CP.showTooltip) CP.showTooltip(point.getAttribute('data-tip'), e.clientX, e.clientY);
+    });
+    over.addEventListener('mouseleave', function() { if (CP.hideTooltip) CP.hideTooltip(); });
   }
 
   // ─── HISTORY ────────────────────────────────────

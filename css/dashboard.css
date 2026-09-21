@@ -679,6 +679,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--ink); outline-o
 .cp-seg { cursor: pointer; transition: opacity 0.12s; }
 .cp-seg:hover { opacity: 0.82; }
 .cp-dot-mark { cursor: pointer; }
+.cp-seg[role=button]:hover .cp-dot-mark,
+.cp-seg[role=button]:focus .cp-dot-mark { fill: var(--brand); stroke-width: 3; }
+.cp-seg[role=button]:focus { outline: none; }
+.hist-chart-total { margin: 0 0 var(--space-3); color: var(--ink-2); font-size: 12px; }
 .cp-axis-label { font-size: 10px; fill: var(--muted); font-family: inherit; }
 .cp-val-label { font-size: 10px; fill: var(--ink-2); font-weight: 700; font-family: inherit; font-variant-numeric: tabular-nums; }
 /* tooltip flutuante compartilhado */

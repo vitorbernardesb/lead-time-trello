@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import { loadCardHistories, fetchActionPages, readHistoryCache, writeHistoryCache } from '../js/history-loader.js';
+
+const cards = Array.from({length: 20}, (_, i) => ({id: 'c' + i, dateLastActivity: 'v1'}));
+const creation = c => ({id: 'create' + c.id, type: 'createCard', data: {card: {id: c.id}, list: {name: 'Planejamento'}}, date: '2026-06-01T12:00:00Z'});
+const events = cards.map(creation);
+let calls = [];
+const progress = [];
+const request = async path => { calls.push(path); return path.startsWith('/boards/') ? events : [creation(cards.find(c => path.includes('/' + c.id + '/')))]; };
+const options = {cards, boardId:'board', since:'2026-05-04T00:00:00Z', request, progress:(n,total)=>progress.push([n,total])};
+const first = await loadCardHistories(options);
+assert.equal(calls.length, 1, 'cold load uses one board request for twenty histories');
+assert.equal(first.actions.length,20);
+assert.deepEqual(progress.at(-1),[20,20]);
+calls=[];
+await loadCardHistories({...options,cache:first.cache});
+assert.equal(calls.length,0,'unchanged cards cause no requests');
+await loadCardHistories({...options,cards:cards.map((c,i)=>({...c,dateLastActivity:i===2?'v2':'v1'})),cache:first.cache});
+assert.equal(calls.length,1);
+assert.ok(calls[0].startsWith('/cards/c2/'));
+calls=[];
+await loadCardHistories({...options,request: async path => {
+  calls.push(path);
+  return path.startsWith('/boards/') ? events.slice(1) : [creation(cards[0])];
+}});
+assert.equal(calls.length,2,'older or imported card falls back to its full history');
+let pages=0;
+const page=Array.from({length:1000},(_,i)=>({id:String(i),date:'2026-06-01T12:00:00Z'}));
+const all=await fetchActionPages(async path=>{pages++; if(pages===2) {assert.ok(path.includes('before=999'));return [{id:'extra'}];}return page;},'/actions?limit=1000');
+assert.equal(all.length,1001);
+await assert.rejects(fetchActionPages(async()=>page,'/actions?limit=1000'),/não avançou/);
+await assert.rejects(fetchActionPages(async()=>({error:'invalid'}),'/actions?limit=1000'),/inválido/);
+const unchanged={};
+await assert.rejects(loadCardHistories({...options,cache:unchanged,request:async()=>{throw Error('network');}}),/network/);
+assert.deepEqual(unchanged,{},'failure does not persist a false empty history');
+await writeHistoryCache('fallback-test',{value:42});
+assert.deepEqual(await readHistoryCache('fallback-test'),{value:42},'memory fallback survives unavailable IndexedDB');
+console.log('History loader: batching, incremental reuse, complete fallback, pagination, failures and cache fallback passed');

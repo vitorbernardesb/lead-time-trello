@@ -57,7 +57,7 @@ await page.setViewportSize({width:1440,height:1000}); await page.locator('.kpi-m
  assert.equal(await page.evaluate(async()=> (await import('/js/state.js')).cachedData.cards.length),23);
  await page.locator('[data-collapse="nc"]').click();
  await page.evaluate(()=>{window.qaFailSave=true;});
- await ignored.uncheck();
+ await ignored.click();
  await page.getByText('Não foi possível salvar. Os indicadores não foram alterados. Tente novamente.',{exact:true}).waitFor();
  assert.equal(await ignored.isChecked(),true);
  assert.equal(await page.evaluate(async()=> (await import('/js/state.js')).cachedData.cards.length),23);
@@ -67,6 +67,22 @@ await page.setViewportSize({width:1440,height:1000}); await page.locator('.kpi-m
  assert.deepEqual(await page.locator('.kpi-value').allTextContents(),beforeIgnore);
  assert.equal(await page.evaluate(async()=> (await import('/js/state.js')).cachedData.throughput['Em andamento 💪']),2);
  console.log('Ignore/reinclude: recalculation, stage exits, board persistence and failed-save rollback passed');
+
+ await page.locator('[data-tab="history"]').click(); await page.waitForSelector('.hist-tile[data-hist="kpi4"]');
+ await page.locator('.hist-tile[data-hist="kpi4"]').press('Enter'); await page.waitForSelector('.cp-overlay.on #hist-chart');
+ assert.deepEqual(await page.locator('#hist-modo [data-modo]').allTextContents(),['Semanal','Diário','Mensal']);
+ assert.equal(await page.locator('.hist-chart-total').textContent(),'Vazão no período: 8 cards');
+ const point=page.locator('#hist-chart .cp-seg[role="button"]').first(); await point.hover(); await page.locator('.cp-tooltip.on').waitFor();
+ await point.focus(); await point.press('Enter'); await page.waitForFunction(()=>document.querySelectorAll('.cp-overlay.on').length===2);
+ assert.equal(await page.locator('.cp-overlay.on').last().locator('.cp-crow').count(),8);
+ await page.keyboard.press('Escape'); await page.waitForFunction(()=>document.querySelectorAll('.cp-overlay.on').length===1);
+ await page.locator('#hist-modo [data-modo="month"]').click(); assert.equal(await page.locator('.hist-chart-total').textContent(),'Vazão no período: 8 cards');
+ await page.setViewportSize({width:320,height:900}); assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'History chart modal overflow 320');
+ await page.setViewportSize({width:1440,height:1000}); await page.keyboard.press('Escape');
+ await page.locator('#hist-date-start').fill('01/01/2020'); await page.locator('#hist-date-end').fill('31/01/2020'); await page.waitForTimeout(500);
+ await page.locator('.hist-tile[data-hist="kpi4"]').press('Enter');
+ await page.getByText('Nenhum card concluído neste período.',{exact:true}).waitFor(); await page.keyboard.press('Escape');
+ console.log('History throughput: totals, grouping controls, tooltip, keyboard drill-down and mobile layout passed');
  await page.goto('http://127.0.0.1:8765/dashboard.html?empty'); await page.waitForSelector('#score-hero'); assert.equal(await page.locator('#alert-banner').isDisabled(),true); assert.equal(await page.locator('.kpi-value').first().textContent(),'Sem dados'); await page.screenshot({path:path.join(out,'empty.png'),fullPage:true});
  assert.deepEqual(errors,[]); console.log('All smoke checks passed; no browser exceptions'); await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});
