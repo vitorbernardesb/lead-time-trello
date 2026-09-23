@@ -22,6 +22,27 @@ export function conclusionDayKey(value) {
   return partsKey(parts.year, parts.month, parts.day);
 }
 
+// Meta acumulada até o dia atual (inclusive), no mesmo fuso da vazão.
+// Seg–sex, sem feriados, como o calendário útil da aplicação. Não arredondar
+// a meta antes do score: o arredondamento é apenas de apresentação.
+export function monthlyThroughputTarget(monthlyTarget, now = new Date()) {
+  const key = conclusionDayKey(now);
+  if (!key) throw new Error('Data inválida para a meta de vazão');
+  const [year, month, today] = key.split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  let elapsedBusinessDays = 0, totalBusinessDays = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    if (weekday === 0 || weekday === 6) continue;
+    totalBusinessDays++;
+    if (day <= today) elapsedBusinessDays++;
+  }
+  return {
+    expected: Number(monthlyTarget) * elapsedBusinessDays / totalBusinessDays,
+    elapsedBusinessDays, totalBusinessDays
+  };
+}
+
 // Datas escolhidas na UI já são dias civis; não devem sofrer outra conversão de fuso.
 export function selectedDayKey(date) {
   return partsKey(date.getFullYear(), date.getMonth() + 1, date.getDate());

@@ -70,7 +70,7 @@ import { TRELLO_TOKEN, apiUrl } from './js/trello-api.js';
 import { FLOW_LISTS, PRODUCAO_ATIVA, ETAPAS_PRE_ENTREGA, NIVEIS_ESFORCO, PRIMEIRA_ENTREGA_EPOCH, DEFAULT_SLA, DEFAULTS, COR_NIVEL } from './js/config.js';
 import { EXCLUSION_PREFIX, exclusionIds } from './js/indicator-scope.js';
 import { t, cachedData, setCachedData, ignoredIndicatorIds, setIgnoredIndicatorIds, renderedTabs, resetRenderedTabs } from './js/state.js';
-import { conclusionDayKey, latestConclusionFromActions, selectCompletedCards, groupCompletedCards, throughputForPeriod } from './js/throughput.js';
+import { conclusionDayKey, latestConclusionFromActions, selectCompletedCards, groupCompletedCards, throughputForPeriod, monthlyThroughputTarget } from './js/throughput.js';
 import { readHistoryCache, writeHistoryCache, loadCardHistories } from './js/history-loader.js';
 import { debounce, round1, stdDev, mean, median, validarTitulo } from './js/core-util.js';
 import { escHtml, fmtDateTime, fmtDateBR, fmtHoras, fmtDias, fmtPct } from './js/core-fmt.js';
@@ -240,9 +240,9 @@ import { createMSP } from './js/msproject.js';
   function buildKpiCards(kpis, config) {
     // `bucket` = campo de kpis com o subconjunto de cards; `bucketTitle` = título do modal.
     // (só usados pelo click-through no dashboard vivo; ignorados na imagem exportada.)
-    // `scoreOverride` (só em "Cards vencidos"): quando presente, os consumidores devem
+    // `scoreOverride` (vencidos e vazão): quando presente, os consumidores devem
     // usar ESTE valor em vez de recalcular kpiHealth(valor,meta,tipo) — é como o score
-    // já saiu de calcKPIs, com a exceção de noDueData aplicada (ver comentário lá).
+    // já saiu de calcKPIs, incluindo ausência de due date e início sem dias úteis.
     // `toggle` (só em "Retrabalhos"): sinaliza para o render exibir o controle Nº/%.
     // `pesoKey` = campo de config com o peso deste KPI no Health Score — usado só pelo
     // detalhamento "o que está pesando" (healthBreakdown), sem duplicar a lista de KPIs.
@@ -255,12 +255,12 @@ import { createMSP } from './js/msproject.js';
         metaLabel: 'Limite '+config.meta_rework, valor: kpis.kpi2, meta: config.meta_rework, tipo: 'B', bucket: 'cardsComRetrabalho', bucketTitle: 'Cards com retrabalho', toggle: true, pesoKey: 'peso2' },
       { name: 'Tempo médio de entrega', display: kpis.kpi6+' d.u.', metaLabel: 'Meta '+config.meta_leadtime_real+' d.u.', valor: kpis.kpi6, meta: config.meta_leadtime_real, tipo: 'B', bucket: 'cardsLeadTime', bucketTitle: 'Concluídos nos últimos 30 dias', pesoKey: 'peso6' },
       { name: 'Tempo médio na etapa', display: kpis.kpi3+' d.u.', metaLabel: 'Limite '+config.meta_leadtime+' d.u.', valor: kpis.kpi3, meta: config.meta_leadtime, tipo: 'B', bucket: 'cardsAging', bucketTitle: 'Cards em produção ativa', pesoKey: 'peso3' },
-      { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'Meta '+config.meta_through+' cards', valor: kpis.kpi4, meta: config.meta_through, tipo: 'A', bucket: 'cardsVazao', bucketTitle: 'Concluídos no mês', pesoKey: 'peso4' },
+      { name: 'Vazão mensal', display: kpis.kpi4+' cards', metaLabel: 'Até hoje '+String(round1(kpis.throughputTarget.expected)).replace('.', ',')+' · mês '+config.meta_through+' cards', valor: kpis.kpi4, meta: kpis.throughputTarget.expected, tipo: 'A', scoreOverride: kpis.score_through, bucket: 'cardsVazao', bucketTitle: 'Concluídos no mês', pesoKey: 'peso4' },
       { name: 'Conformidade', display: kpis.kpi5+'%', metaLabel: 'Meta '+config.meta_conformidade+'%', valor: kpis.kpi5, meta: config.meta_conformidade, tipo: 'A', bucket: 'cardsNaoConformes', bucketTitle: 'Cards não conformes', pesoKey: 'peso5' }
     ];
   }
 
-  // Score de um card de buildKpiCards: usa o scoreOverride quando presente (kpi1),
+  // Score de um card de buildKpiCards: usa o scoreOverride quando presente,
   // senão recalcula por kpiHealth. Fonte ÚNICA — evita a mesma expressão duplicada
   // em 3 lugares (imagem exportada, render ao vivo, detalhamento do Health Score).
   function kpiCardScore(k) {
@@ -968,7 +968,11 @@ import { createMSP } from './js/msproject.js';
     var score_rework        = kpiHealth(kpi2, config.meta_rework, 'B');
     var score_aging         = kpiHealth(kpi3, config.meta_leadtime, 'B');
     var score_leadtime_real = kpiHealth(kpi6, config.meta_leadtime_real, 'B');
-    var score_through       = kpiHealth(kpi4, config.meta_through, 'A');
+    var throughputTarget = monthlyThroughputTarget(config.meta_through);
+    // Antes do primeiro dia útil não há entregas exigidas. Meta inválida continua
+    // com score zero; nos demais dias avaliamos o ritmo esperado até hoje.
+    var score_through = config.meta_through > 0 && throughputTarget.elapsedBusinessDays === 0
+      ? 100 : kpiHealth(kpi4, throughputTarget.expected, 'A');
     var score_conformidade  = kpiHealth(kpi5, config.meta_conformidade, 'A');
 
     // Health Score = média ponderada dos 6 scores. Aging e lead time real entram com
@@ -990,6 +994,7 @@ import { createMSP } from './js/msproject.js';
       score_prazo: score_prazo, score_rework: score_rework,
       score_aging: score_aging, score_leadtime_real: score_leadtime_real,
       score_through: score_through,
+      throughputTarget: throughputTarget,
       score_conformidade: score_conformidade,
       healthScore: healthScore,
       totalCards: cards.length,
@@ -3203,6 +3208,7 @@ import { createMSP } from './js/msproject.js';
       html += sliderRow('meta_leadtime_real', 'Meta tempo de entrega (lead time real)', config.meta_leadtime_real, 2, 60, 1, ' d.u.');
       html += sliderRow('meta_leadtime', 'Meta tempo na etapa (aging)', config.meta_leadtime, 2, 20, 1, ' d.u.');
       html += sliderRow('meta_through', 'Meta throughput mensal', config.meta_through, 5, 1000, 5, ' cards');
+      html += '<p class="indicator-scope-note">No Health Score, a meta de vazão é proporcional aos dias úteis do mês até hoje, incluindo o dia atual (segunda a sexta, sem desconto de feriados, horário de Brasília). Nos fins de semana a meta não aumenta. Ao final do mês, vale a meta mensal completa.</p>';
       html += sliderRow('meta_conformidade', 'Meta conformidade de processo', config.meta_conformidade, 50, 100, 5, '%');
       html += '</div>';
 
