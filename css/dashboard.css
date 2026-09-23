@@ -62,6 +62,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--ink); outline-o
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+.brand-loader { width: 120px; height: 120px; position: relative; display: grid; place-items: center; }
+.brand-loader .spinner { position: absolute; inset: 0; width: 120px; height: 120px; }
+.brand-loader img { display: block; width: 80px; height: 80px; }
 .spinner-wrap p { margin-top: 12px; color: var(--muted); }
 .error-box { text-align: center; padding: 60px 20px; color: var(--ink); }
 .error-box button { margin-top: 12px; }
@@ -485,7 +488,12 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--ink); outline-o
   animation: shimmer 1.5s infinite;
   border-radius: var(--radius);
 }
-.skeleton-circle { width: 120px; height: 120px; border-radius: 50%; margin: 0 auto 8px; }
+.skeleton-brand {
+  width: 120px; height: 120px; margin: 0 auto 8px; border-radius: 0;
+  background-image: linear-gradient(90deg, var(--ink) 25%, var(--brand) 50%, var(--ink) 75%);
+  -webkit-mask: url('../icon.svg') center / contain no-repeat;
+  mask: url('../icon.svg') center / contain no-repeat;
+}
 .skeleton-card { height: 124px; }
 .skeleton-wrap { max-width: var(--content-width); margin: 0 auto; padding: 24px; }
 /* espelha o .kpi-grid real → o skeleton tem a mesma silhueta do conteúdo final */

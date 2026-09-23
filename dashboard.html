@@ -36,7 +36,7 @@
 
 <main class="body">
   <div id="tab-realtime" class="tab-content active visible">
-    <div class="spinner-wrap" id="rt-loading"><div class="spinner"></div><p>Carregando dados…</p></div>
+    <div class="spinner-wrap" id="rt-loading" role="status"><div class="brand-loader" aria-hidden="true"><div class="spinner"></div><img src="./icon.svg" alt="" width="80" height="80"></div><p>Carregando dados…</p></div>
     <div id="rt-error" class="error-box" style="display:none;"><p></p><button class="btn" id="rt-retry">Tentar novamente</button></div>
     <div id="rt-content" style="display:none;"></div>
   </div>
@@ -46,7 +46,7 @@
   </div>
 
   <div id="tab-history" class="tab-content">
-    <div class="spinner-wrap" id="hist-loading"><div class="spinner"></div><p>Carregando histórico…</p></div>
+    <div class="spinner-wrap" id="hist-loading" role="status"><div class="brand-loader" aria-hidden="true"><div class="spinner"></div><img src="./icon.svg" alt="" width="80" height="80"></div><p>Carregando histórico…</p></div>
     <div id="hist-content" style="display:none;"></div>
   </div>
 
@@ -115,7 +115,7 @@ import { createMSP } from './js/msproject.js';
   function showSkeleton(msg) {
     var el = document.getElementById('rt-loading');
     el.innerHTML = '<div class="skeleton-wrap">' +
-      '<div class="score-circle-wrap"><div class="skeleton skeleton-circle"></div></div>' +
+      '<div class="score-circle-wrap"><div class="skeleton skeleton-brand" aria-hidden="true"></div></div>' +
       '<div class="skeleton-kpi-grid">' +
       '<div class="skeleton skeleton-card"></div>'.repeat(6) +
       '</div>' +
