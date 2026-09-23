@@ -11,6 +11,8 @@ await context.route('https://**/*',r=>r.fulfill({status:200,contentType:'applica
 await context.addInitScript(()=>{
  const now=new Date(), ago=n=>new Date(+now-n*86400000).toISOString();
  let cards=Array.from({length:24},(_,i)=>({id:'card'+i,name:['Campanha de lançamento','Conteúdo institucional','Planejamento editorial','Identidade da campanha'][i%4]+' — '+(i+1), url:'https://trello.com/c/demo'+i,currentListName:i>15?'Concluído 🏆':i%2?'Em andamento 💪':'Revisão Interna 🔎', daysInCurrent:i%9+1,enteredCurrentAt:ago(i%9+1),isConcluido:i>15,concluidoNoMes:i>15,concludedAt:i>15?ago(2):null,leadTimeReal:i>15?8+i%4:null,hasDue:true,isLate:i<5,retrabalho:i%3,isConforme:i!==3,missing:i===3?['Descrição']:[],labels:['Cliente Aurora','Vitor'],members:[],idMembers:[],nivelEsforco:['BAIXO','MÉDIO','ALTO','MUITO ALTO'][i%4],createdAt:ago(25),due:ago(-2),dueComplete:i>15,primeiraEntrega:i>7?{horas:9*(i%4+1)+i,dias:i%4+1,breakdown:{'Em andamento 💪':i+3}}:null,stages:[{listName:'Em andamento 💪',enteredAt:ago(10),leftAt:ago(3),days:5}]}));
+ // A complete planning card must be selectable regardless of required fields.
+ cards[0].currentListName='Planejamento';
  if(location.search.includes('empty')) cards=[];
  localStorage.setItem('leadtime_cache_demo',JSON.stringify({cards,cachedAt:Date.now(),archived:[],throughput:{'Em andamento 💪':2},throughputByCard:{card3:{'Em andamento 💪':2}}}));
  const snapshots={};for(let m=6;m<=9;m++)snapshots['snapshot_2026_'+String(m).padStart(2,'0')]={score:60+m*2,kpi1:10+m,kpi2:20+m,kpi3:3,kpi4:12,kpi5:90,kpi6:8,totalCards:24,savedAt:ago(30*(9-m))};
@@ -67,6 +69,21 @@ await page.setViewportSize({width:1440,height:1000}); await page.locator('.kpi-m
  assert.deepEqual(await page.locator('.kpi-value').allTextContents(),beforeIgnore);
  assert.equal(await page.evaluate(async()=> (await import('/js/state.js')).cachedData.throughput['Em andamento 💪']),2);
  console.log('Ignore/reinclude: recalculation, stage exits, board persistence and failed-save rollback passed');
+
+ const planning = page.locator('[data-ignore-card="card0"]');
+ assert.equal(await planning.count(),1,'Complete planning card is selectable');
+ assert.equal(await page.locator('[data-ignore-card="card1"]').count(),0,'Complete production card stays outside this table');
+ await planning.check();
+ await page.getByText('Card ignorado. Indicadores recalculados.',{exact:true}).waitFor();
+ assert.equal(await page.evaluate(async()=> (await import('/js/state.js')).cachedData.cards.some(c=>c.id==='card0')),false);
+ await page.reload(); await page.waitForSelector('#score-hero');
+ assert.equal(await planning.isChecked(),true,'Planning exclusion survives reload');
+ await page.locator('[data-collapse="nc"]').click();
+ await planning.uncheck();
+ await page.getByText('Card incluído novamente. Indicadores recalculados.',{exact:true}).waitFor();
+ assert.equal(await planning.count(),1,'Complete planning card remains selectable after reinclusion');
+ assert.deepEqual(await page.locator('.kpi-value').allTextContents(),beforeIgnore);
+ console.log('Planning: complete card selection, exclusion, persistence and reinclusion passed');
 
  await page.locator('[data-tab="history"]').click(); await page.waitForSelector('.hist-tile[data-hist="kpi4"]');
  await page.locator('.hist-tile[data-hist="kpi4"]').press('Enter'); await page.waitForSelector('.cp-overlay.on #hist-chart');

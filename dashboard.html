@@ -1388,19 +1388,20 @@ import { createMSP } from './js/msproject.js';
     var previousBody = el.querySelector('#nc-body');
     var wasOpen = previousBody ? previousBody.classList.contains('open') : null;
     var html = '';
-    // Non-conforming cards
+    // Planejamento pode ser excluído mesmo com todos os campos preenchidos.
     var sourceCards = cachedData ? cachedData.allCards.concat(cachedData.allArchived.filter(function(c) { return ignoredIndicatorIds.has(c.id); })) : [];
-    var nonConforming = sourceCards.filter(function(c) { return (!c.isConforme && !c.isConcluido) || ignoredIndicatorIds.has(c.id); });
+    var nonConforming = sourceCards.filter(function(c) { return c.currentListName === 'Planejamento' || (!c.isConforme && !c.isConcluido) || ignoredIndicatorIds.has(c.id); });
     if (nonConforming.length > 0) {
       var expanded = nonConforming.length > 3;
       html += '<div class="collapsible">';
-      html += '<button class="collapse-toggle'+(expanded?' open':'')+'" data-collapse="nc">Cards incompletos e ignorados ('+nonConforming.length+') '+(expanded?'▲':'▼')+'</button>';
+      html += '<button class="collapse-toggle'+(expanded?' open':'')+'" data-collapse="nc">Cards em planejamento, incompletos e ignorados ('+nonConforming.length+') '+(expanded?'▲':'▼')+'</button>';
       html += '<div class="collapse-body'+(expanded?' open':'')+'" id="nc-body">';
-      html += '<p class="indicator-scope-note">Ignore cards que não fazem parte do fluxo de atividades. A opção vale para toda a equipe e pode ser desfeita.</p><p id="indicator-scope-status" class="indicator-scope-note" role="status" aria-live="polite"></p>';
+      html += '<p class="indicator-scope-note">Todos os cards em Planejamento aparecem aqui, mesmo com os campos completos, além dos cards incompletos e dos já ignorados. Marque Ignorar para retirar um card dos indicadores. A opção vale para toda a equipe e pode ser desfeita.</p><p id="indicator-scope-status" class="indicator-scope-note" role="status" aria-live="polite"></p>';
       html += '<table><thead><tr><th>Card</th><th>Campos faltantes</th><th>Indicadores</th></tr></thead><tbody>';
       nonConforming.forEach(function(c) {
         html += '<tr><td><span class="card-link" role="button" tabindex="0" data-card-id="'+escHtml(c.id)+'">'+escHtml(c.name)+'</span></td><td>';
         (c.missing || []).forEach(function(m) { html += '<span class="missing-tag">'+escHtml(m)+'</span>'; });
+        if (!(c.missing || []).length) html += 'Nenhum';
         html += '</td><td><label class="indicator-ignore-control"><input type="checkbox" data-ignore-card="'+escHtml(c.id)+'" aria-label="Ignorar '+escHtml(c.name)+' nos indicadores"'+(ignoredIndicatorIds.has(c.id)?' checked':'')+'> Ignorar</label><span class="indicator-ignore-state">'+(ignoredIndicatorIds.has(c.id)?'Fora dos cálculos':'Incluído nos cálculos')+'</span></td></tr>';
       });
       html += '</tbody></table></div></div>';
